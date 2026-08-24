@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('kvmRecon', {
   startCapture(target: StartCaptureTarget) {
     return ipcRenderer.invoke('capture:start', target);
   },
+  exportCapture(jobId: string) {
+    return ipcRenderer.invoke('capture:export', jobId);
+  },
 });

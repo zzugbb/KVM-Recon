@@ -36,6 +36,22 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
 - `docs/development-plan.md`：分阶段开发计划与验收标准。
+- `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
+
+## 打包与交付
+
+```bash
+npm run package:mac
+npm run package:win
+```
+
+打包产物输出到 `release/`。导出 Capture Pack 默认命名为：
+
+```text
+KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
+```
+
+可离线查看的样例资料位于 `examples/sample-capture-pack/`。
 
 ## MVP 成功标准
 

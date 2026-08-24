@@ -114,6 +114,25 @@ h1 {
   font-weight: 700;
 }
 
+.error-card {
+  margin: 16px 0 0;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fef2f2;
+  padding: 16px 18px;
+  color: #7f1d1d;
+}
+
+.error-card p {
+  margin: 8px 0 0;
+}
+
+.error-detail {
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .status-card {
   width: min(860px, 100%);
   margin-top: 20px;

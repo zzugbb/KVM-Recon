@@ -2,6 +2,13 @@ import { useState } from 'react';
 
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
 
+interface FormattedCaptureError {
+  title: string;
+  impact: string;
+  action: string;
+  detail: string;
+}
+
 const previewPack = createEmptyCapturePack({
   jobId: 'preview-empty-job',
   startedAt: '2026-08-24T10:00:00.000+08:00',
@@ -15,10 +22,14 @@ const previewPack = createEmptyCapturePack({
 export function App() {
   const [host, setHost] = useState('10.0.0.10');
   const [port, setPort] = useState('443');
+  const [jobId, setJobId] = useState('');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState<FormattedCaptureError | null>(null);
+  const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
 
   async function startCapture() {
     const numericPort = Number(port) || 443;
+    setError(null);
     if (!window.kvmRecon?.startCapture) {
       setMessage('当前运行环境不支持采集窗口。');
       return;
@@ -29,7 +40,43 @@ export function App() {
       port: numericPort,
       scheme: 'https',
     });
+    if (!result.ok) {
+      setError(result.error);
+      setMessage('');
+      return;
+    }
+    setJobId(result.jobId);
     setMessage(`采集作业已启动：${result.jobId}`);
+  }
+
+  async function exportCapture() {
+    setError(null);
+    if (!window.kvmRecon?.exportCapture) {
+      setMessage('当前运行环境不支持导出 Capture Pack。');
+      return;
+    }
+    if (!jobId) {
+      setError({
+        title: '尚未开始采集',
+        impact: '当前没有可导出的 Capture Pack。',
+        action: '请先点击“新建采集作业”，完成登录和 HTML5 KVM 打开后再导出。',
+        detail: '',
+      });
+      return;
+    }
+
+    const result = await window.kvmRecon.exportCapture(jobId);
+    if (!result.ok) {
+      if (result.canceled) {
+        setMessage('已取消导出。');
+        return;
+      }
+      setError(result.error);
+      setMessage('');
+      return;
+    }
+    setReadiness(result.readiness);
+    setMessage(`已导出：${result.fileName}`);
   }
 
   return (
@@ -56,18 +103,24 @@ export function App() {
           <button type="button" onClick={startCapture}>
             新建采集作业
           </button>
-          <button type="button" className="secondary">
-            打开 Capture Pack
+          <button type="button" className="secondary" onClick={exportCapture}>
+            停止采集并导出
           </button>
         </div>
         {message ? <p className="message">{message}</p> : null}
+        {error ? (
+          <aside className="error-card" aria-label="Capture error">
+            <strong>{error.title}</strong>
+            <p>{error.impact}</p>
+            <p>{error.action}</p>
+            {error.detail ? <p className="error-detail">{error.detail}</p> : null}
+          </aside>
+        ) : null}
       </section>
 
       <section className="status-card" aria-label="Capture Pack readiness">
         <div>
-          <strong className="status-label">
-            离场适配就绪：{previewPack.manifest.readiness.status}
-          </strong>
+          <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
         <p>{previewPack.checklist.items[0]?.userAction}</p>
       </section>

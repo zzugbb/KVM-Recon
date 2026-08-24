@@ -1,0 +1,33 @@
+{
+  "readiness": "PARTIAL",
+  "items": [
+    {
+      "id": "bmc.connection",
+      "title": "BMC 基础连接已采集",
+      "status": "pass",
+      "severity": "blocking",
+      "evidence": [
+        "https://10.0.0.10:443"
+      ],
+      "userAction": ""
+    },
+    {
+      "id": "ws.kvm.established",
+      "title": "KVM WebSocket 已建立并捕获帧",
+      "status": "pass",
+      "severity": "blocking",
+      "evidence": [
+        "ws-1"
+      ],
+      "userAction": ""
+    },
+    {
+      "id": "page.viewer.screenshot",
+      "title": "viewer 页面截图已采集",
+      "status": "missing",
+      "severity": "warning",
+      "evidence": [],
+      "userAction": "请打开 HTML5 KVM 后等待画面区域稳定，再采集 viewer 页面截图。"
+    }
+  ]
+}

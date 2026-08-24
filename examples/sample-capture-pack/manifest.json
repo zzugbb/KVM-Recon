@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.0.0",
+  "tool": {
+    "name": "KVM-Recon",
+    "version": "0.1.0"
+  },
+  "job": {
+    "id": "sample-job",
+    "startedAt": "2026-08-24T13:55:00.000+08:00",
+    "endedAt": "2026-08-24T14:05:00.000+08:00",
+    "operatorNote": "Sample pack for offline handoff format review."
+  },
+  "target": {
+    "host": "10.0.0.10",
+    "port": 443,
+    "scheme": "https"
+  },
+  "family": {
+    "primary": "ami-megarac",
+    "confidence": 0.9,
+    "candidates": [
+      {
+        "kvmFamily": "ami-megarac",
+        "confidence": 0.9,
+        "evidence": [
+          "/api/randomtag",
+          "/api/session",
+          "/api/kvm/token"
+        ]
+      }
+    ]
+  },
+  "readiness": {
+    "status": "PARTIAL",
+    "blockingCount": 0,
+    "warningCount": 1
+  },
+  "redaction": {
+    "status": "pass",
+    "redactedFields": 6
+  }
+}

@@ -1,0 +1,25 @@
+schemaVersion: 1
+kind: oem-profile-draft
+kvmFamily: ami-megarac
+confidence: 0.9
+reviewRequired: true
+source:
+  vendor: AMI
+  product: MegaRAC
+  firmwareVersion: sample
+amiMegaRac:
+  cookieNames:
+    - QSESSIONID
+  csrfNames:
+    - CSRFToken
+  tokenApi: /api/kvm/token
+  wsPaths:
+    - /kvm
+  subProtocols:
+    - binary
+  permissionFields:
+    - privilege
+  loginFingerprint:
+    - /api/randomtag
+    - /api/session
+    - /api/kvm/token
