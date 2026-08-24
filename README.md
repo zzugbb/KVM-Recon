@@ -19,7 +19,9 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS（dmg/zip）和 Windows（NSIS/zip）安装包。当前发布包**未代码签名**；请只从本仓库 Releases 下载，并核对 `SHA256SUMS.txt`。现场安装步骤见 `docs/offline-field-guide.md`，发版流程见 `docs/releasing.md`。
+安装包在维护者推送 `v*` 标签后由 GitHub Actions 生成，发布到 [Releases](https://github.com/zzugbb/KVM-Recon/releases)。若尚无 Release，请按下面「开发」从源码构建，或按 `docs/releasing.md` 打一次标签。
+
+当前构建**未代码签名、未公证**。请只从本仓库 Releases 下载，并核对 `SHA256SUMS.txt`。现场步骤见 `docs/offline-field-guide.md`。
 
 ## 现场流程
 
@@ -57,7 +59,7 @@ npm run dev
 - `docs/releasing.md`：GitHub Actions 打包与 Release
 - `schema/`：Capture Pack JSON Schema
 - `CHANGELOG.md`：版本记录
-- `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md`
+- `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md` / `LICENSE`：GitHub 仓库页顶栏会自动列出，给贡献者和安全报告用；现场采集请看上面的「下载」和「现场流程」
 
 ## 安全与边界
 

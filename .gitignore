@@ -52,3 +52,15 @@ Thumbs.db
 # Test runner leftovers
 test-results/
 playwright-report/
+
+# Local work notes (not part of the published project)
+总结.md
+
+# Installers accidentally dropped at repo root
+*.dmg
+*.exe
+*.blockmap
+*.AppImage
+
+# Editor / agent local state
+.cursor/

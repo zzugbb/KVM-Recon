@@ -1,5 +1,9 @@
 # Contributor Covenant Code of Conduct
 
+KVM-Recon 社区行为准则采用 [Contributor Covenant](https://www.contributor-covenant.org) 2.1。公约以英文文本为准；中文说明见 `CONTRIBUTING.md`。
+
+行为问题请通过 GitHub 私下联系维护者，**不要**把 BMC 密码、Cookie 或未脱敏 Capture Pack 写进公开 Issue。安全漏洞请改走 `SECURITY.md`，不要和社区行为问题混用同一入口。
+
 ## Our Pledge
 
 We as members, contributors, and leaders pledge to make participation in our
@@ -44,8 +48,8 @@ an individual is officially representing the community in public spaces.
 
 ## Enforcement
 
-Report incidents to the maintainers via [GitHub private vulnerability reporting](https://github.com/zzugbb/KVM-Recon/security/advisories/new)
-or by opening a private maintainer contact if that feature is unavailable.
+Report Code of Conduct incidents to the maintainers by emailing the account that owns this repository or by opening a GitHub issue **without** secrets or private capture data. Do not use Security Advisories for interpersonal conduct reports; those are for product vulnerabilities (see `SECURITY.md`).
+
 All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution

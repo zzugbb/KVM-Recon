@@ -42,6 +42,10 @@ npm run test:e2e
 4. 描述里说明：改了什么、为什么、如何验证（`npm test` / `npm run typecheck` / 是否跑过 `test:e2e`）。
 5. 使用仓库里的 PR 模板。
 
+## Dependabot
+
+仓库启用了 Dependabot。`github-actions` 和 `npm` 的版本 bump PR 由 `dependabot[bot]` 自动开出，不是人工从网页点的。官方 Action 的 major 升级（例如 `actions/checkout`）在 CI 通过后可以由维护者合并。
+
 ## 发布
 
-维护者按 `docs/releasing.md` 打 `v*` 标签后，GitHub Actions 会构建未签名的 macOS / Windows 安装包并上传到 GitHub Releases。
+维护者按 `docs/releasing.md` 打 `v*` 标签后，GitHub Actions 会构建未签名的 macOS / Windows 安装包并上传到 GitHub Releases。若还没有任何 Release，从源码 `npm run package:mac` / GitHub 上的 Package workflow 也可得到安装包。
