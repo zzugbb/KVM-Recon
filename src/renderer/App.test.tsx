@@ -18,6 +18,7 @@ describe('App', () => {
     expect(html).toContain('采集进度');
     expect(html).toContain('采集当前页面');
     expect(html).toContain('关闭采集窗口');
+    expect(html).toContain('登录后复验探测');
     expect(html).toContain('请确认 BMC 地址、端口和网络可达后重新执行基础探测。');
     expect(html).toMatch(/采集当前页面[\s\S]*disabled|disabled[\s\S]*采集当前页面/);
   });

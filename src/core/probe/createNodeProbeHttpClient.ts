@@ -17,7 +17,10 @@ function parseResponseBody(buffer: Buffer, contentType: string): unknown {
   return text;
 }
 
-export function createNodeProbeHttpClient(target: CaptureTarget): ProbeHttpClient {
+export function createNodeProbeHttpClient(
+  target: CaptureTarget,
+  options: { extraHeaders?: Record<string, string> } = {},
+): ProbeHttpClient {
   return {
     get(path: string): Promise<ProbeHttpResponse> {
       const transport = target.scheme === 'https' ? https : http;
@@ -40,6 +43,7 @@ export function createNodeProbeHttpClient(target: CaptureTarget): ProbeHttpClien
             headers: {
               Host: target.host,
               Accept: 'application/json,text/html,*/*',
+              ...options.extraHeaders,
             },
           },
           response => {

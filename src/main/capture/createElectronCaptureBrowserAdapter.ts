@@ -218,6 +218,20 @@ export function createElectronCaptureBrowserAdapter(
             return [];
           }
         },
+        async collectSessionCookies() {
+          try {
+            const cookies = await captureSession.cookies.get({});
+            return cookies.map(cookie => ({
+              name: String(cookie.name || ''),
+              value: String(cookie.value || ''),
+            }));
+          } catch (error) {
+            // 捕获读取 Chromium Cookie 失败：分区可能已销毁
+            // 策略：返回空列表，导出仍使用匿名探测结果，不记录 Cookie 值
+            void error;
+            return [];
+          }
+        },
         async close() {
           for (const targetWindow of [...windows]) {
             try {

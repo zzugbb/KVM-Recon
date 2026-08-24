@@ -96,6 +96,10 @@ export function App() {
       });
       return;
     }
+    if (phase === 'capturing' && jobId) {
+      const confirmed = window.confirm('当前作业尚未导出，新建会丢掉未导出资料。确定继续？');
+      if (!confirmed) return;
+    }
     if (!window.kvmRecon?.startCapture) {
       setMessage('当前运行环境不支持采集窗口。');
       return;
@@ -139,6 +143,26 @@ export function App() {
     applySnapshot(result);
     setWindowsOpen(false);
     setMessage('采集窗口已关闭，作业数据仍保留，可继续导出 Capture Pack。');
+  }
+
+  async function refreshProbeAfterLogin() {
+    setError(null);
+    if (!jobId || !window.kvmRecon?.refreshCaptureProbe) {
+      setError({
+        title: '尚未开始采集',
+        impact: '当前没有可复验的探测作业。',
+        action: '请先登录 BMC，再点击“登录后复验探测”。',
+        detail: '',
+      });
+      return;
+    }
+    const result = await window.kvmRecon.refreshCaptureProbe(jobId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    applySnapshot(result);
+    setMessage('已用当前浏览器会话复验 BMC 指纹，Cookie 值不会写入导出包。');
   }
 
   async function collectCurrentPage() {
@@ -261,10 +285,18 @@ export function App() {
           <button
             type="button"
             className="secondary"
-            onClick={exportCapture}
-            disabled={phase !== 'capturing'}
+            onClick={refreshProbeAfterLogin}
+            disabled={!jobId || phase === 'idle'}
           >
-            停止采集并导出
+            登录后复验探测
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={exportCapture}
+            disabled={!jobId}
+          >
+            {phase === 'exported' ? '再次导出' : '停止采集并导出'}
           </button>
         </div>
         {message ? <p className="message">{message}</p> : null}

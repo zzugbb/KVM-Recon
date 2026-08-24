@@ -53,4 +53,25 @@ describe('createNodeProbeHttpClient', () => {
       data: 'not found',
     });
   });
+
+  it('sends extra session headers for authenticated probes', async () => {
+    const seen: string[] = [];
+    const { port } = await startServer((request, response) => {
+      seen.push(String(request.headers.cookie || ''));
+      response.statusCode = 401;
+      response.end('auth required');
+    });
+
+    const client = createNodeProbeHttpClient(
+      {
+        host: '127.0.0.1',
+        port,
+        scheme: 'http',
+      },
+      { extraHeaders: { Cookie: 'QSESSIONID=abc123' } },
+    );
+
+    await expect(client.get('/api/kvm/token')).resolves.toMatchObject({ status: 401 });
+    expect(seen[0]).toBe('QSESSIONID=abc123');
+  });
 });

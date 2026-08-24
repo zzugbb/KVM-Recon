@@ -41,5 +41,13 @@ export function buildProbeArtifacts(result: ProbeBmcTargetResult): ProbeArtifact
       path: 'tls/certificate.json',
       content: stringify(result.tls),
     },
+    ...(result.authenticated
+      ? [
+          {
+            path: 'probe/authenticated.json',
+            content: stringify(result.authenticated),
+          },
+        ]
+      : []),
   ];
 }

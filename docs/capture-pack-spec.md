@@ -20,6 +20,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
 - 每个包都有 `artifacts/handover.md`：说明出机房后如何把资料交给工程师或 AI。
+- 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 
 阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 文件仍以 TypeScript 类型为权威。
 
@@ -135,7 +136,8 @@ capture-pack/
     "bytes": 512,
     "redactedFields": ["CSRFToken"]
   },
-  "tags": ["login", "ami-megarac"]
+  "tags": ["login", "ami-megarac"],
+  "windowRole": "main"
 }
 ```
 
@@ -164,7 +166,8 @@ HTTP 资料必须脱敏：
   },
   "binaryFrameCount": 128,
   "textFrameCount": 0,
-  "tags": ["kvm-video", "ami-megarac"]
+  "tags": ["kvm-video", "ami-megarac"],
+  "windowRole": "popup"
 }
 ```
 
@@ -183,6 +186,7 @@ HTTP 资料必须脱敏：
 ```
 
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
+`windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口）。未区分时可省略。
 
 限制：
 

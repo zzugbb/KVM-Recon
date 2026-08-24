@@ -24,4 +24,7 @@ contextBridge.exposeInMainWorld('kvmRecon', {
   stopCapture(jobId: string) {
     return ipcRenderer.invoke('capture:stop', jobId);
   },
+  refreshCaptureProbe(jobId: string) {
+    return ipcRenderer.invoke('capture:refreshProbe', jobId);
+  },
 });

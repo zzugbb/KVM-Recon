@@ -48,7 +48,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 采集范围：
 
-- HTTP 请求和响应摘要。
+- HTTP 请求和响应摘要（含来自首窗口或 popup）。
 - HAR 或结构化请求列表。
 - Cookie、CSRF、Token 等敏感字段脱敏后的 Header/摘要。
 - WebSocket 创建事件、URL、子协议、关闭时间 `closedAt`。
@@ -59,7 +59,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 ### 3.4 Probe Engine
 
-Node.js 本地探测引擎，不依赖浏览器登录状态时先跑基础探测。登录后带着 Cookie/Token 复验不属于本采集工具；出机房后的分析由工程师或 AI 基于 Capture Pack 完成。
+Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可用浏览器会话复验需鉴权的路径。Cookie 值只在内存中使用，不写入 Capture Pack。出机房后的写 Adapter 仍不在本工具内。
 
 MVP 探测项：
 

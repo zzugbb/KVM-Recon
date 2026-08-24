@@ -16,6 +16,7 @@ interface HttpRequestInput {
   resourceType: string;
   requestHeaders: HeaderMap;
   requestBody?: string;
+  windowRole?: 'main' | 'popup';
 }
 
 interface HttpResponseInput {
@@ -50,6 +51,7 @@ export interface HttpRequestRecord {
     jsonKeys?: string[];
   };
   tags: HttpTag[];
+  windowRole?: 'main' | 'popup';
 }
 
 interface WebSocketCreatedInput {
@@ -58,6 +60,7 @@ interface WebSocketCreatedInput {
   url: string;
   subProtocols: string[];
   requestHeaders: HeaderMap;
+  windowRole?: 'main' | 'popup';
 }
 
 interface WebSocketHandshakeInput {
@@ -89,6 +92,7 @@ export interface WebSocketRecord {
   binaryFrameCount: number;
   textFrameCount: number;
   tags: WebSocketTag[];
+  windowRole?: 'main' | 'popup';
 }
 
 export interface WebSocketFrameRecord {
@@ -215,6 +219,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         requestBodySummary: summarizeBody(input.requestBody),
         responseBodySummary: summarizeBody(),
         tags: tagHttp(input.url),
+        ...(input.windowRole ? { windowRole: input.windowRole } : {}),
       });
     },
     recordHttpResponse(input: HttpResponseInput) {
@@ -239,6 +244,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         binaryFrameCount: 0,
         textFrameCount: 0,
         tags: tagWebSocket(input.url),
+        ...(input.windowRole ? { windowRole: input.windowRole } : {}),
       });
     },
     recordWebSocketHandshake(input: WebSocketHandshakeInput) {

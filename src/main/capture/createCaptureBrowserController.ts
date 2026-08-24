@@ -40,6 +40,7 @@ export interface CaptureBrowserWindowHandle {
     sourcePath: string;
   }>;
   drainClicks(): Promise<ClickSummary[]>;
+  collectSessionCookies(): Promise<Array<{ name: string; value: string }>>;
   close(): Promise<void>;
 }
 
@@ -81,9 +82,12 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
   };
   let previousLocalStorage: string[] = [];
   let previousSessionStorage: string[] = [];
+  let captureWindowsOpen = false;
+  let debuggerCount = 0;
 
   return {
     async start() {
+      debuggerCount = 0;
       windowHandle = await input.adapter.createWindow({
         partition: buildPartition(input.jobId),
         targetHost: input.target.host,
@@ -99,22 +103,24 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
           attachCdpNetworkCapture({
             cdp,
             recorder: networkRecorder,
+            windowRole: debuggerCount++ === 0 ? 'main' : 'popup',
           }),
         onChromiumAccess: info => {
           chromiumAccess = info;
         },
         onAllWindowsClosed: () => {
-          windowHandle = null;
+          captureWindowsOpen = false;
         },
       });
+      captureWindowsOpen = true;
 
       await windowHandle.loadURL(buildBmcUrl(input.target));
     },
     windowsOpen() {
-      return windowHandle !== null;
+      return captureWindowsOpen && windowHandle !== null;
     },
     async ingestLiveEvents() {
-      if (!windowHandle) return;
+      if (!captureWindowsOpen || !windowHandle) return;
       try {
         await recordClicks(windowHandle, timeline);
       } catch (error) {
@@ -124,7 +130,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
       }
     },
     async collectPageFacts(label: string) {
-      if (!windowHandle) return;
+      if (!captureWindowsOpen || !windowHandle) return;
 
       try {
         await recordClicks(windowHandle, timeline);
@@ -154,7 +160,19 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         void error;
       }
     },
+    async readSessionCookies() {
+      if (!windowHandle) return [];
+      try {
+        return await windowHandle.collectSessionCookies();
+      } catch (error) {
+        // 捕获读取浏览器 Cookie 失败：窗口可能已销毁或分区已清理
+        // 策略：返回空列表，匿名 probe 结果仍可用于导出，不把 Cookie 值写入日志
+        void error;
+        return [];
+      }
+    },
     async stop() {
+      captureWindowsOpen = false;
       if (!windowHandle) return;
       try {
         await recordClicks(windowHandle, timeline);

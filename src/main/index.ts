@@ -10,7 +10,8 @@ import {
 } from '../core/delivery/formatCaptureError';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 import { createCaptureLogger } from '../core/log/createCaptureLogger';
-import { probeBmcTarget } from '../core/probe/probeBmcTarget';
+import { applyAuthenticatedProbe, probeBmcTarget } from '../core/probe/probeBmcTarget';
+import { createNodeProbeHttpClient } from '../core/probe/createNodeProbeHttpClient';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
 
@@ -44,6 +45,47 @@ function sessionSnapshot(session: CaptureSession) {
       network: session.controller.network(),
     }),
   };
+}
+
+async function refreshAuthenticatedProbe(session: CaptureSession) {
+  try {
+    const cookies = await session.controller.readSessionCookies();
+    const cookieNames = cookies.map(cookie => cookie.name).filter(Boolean);
+    if (cookieNames.length === 0) {
+      if (!session.probe.authenticated) {
+        session.probe = {
+          ...session.probe,
+          authenticated: {
+            attempted: true,
+            cookieNames: [],
+            paths: {},
+          },
+        };
+      }
+      return;
+    }
+    const header = cookies
+      .filter(cookie => cookie.name && cookie.value)
+      .map(cookie => `${cookie.name}=${cookie.value}`)
+      .join('; ');
+    const authenticated = await probeBmcTarget({
+      target: session.target,
+      httpClient: createNodeProbeHttpClient(session.target, {
+        extraHeaders: { Cookie: header },
+      }),
+    });
+    session.probe = applyAuthenticatedProbe(session.probe, authenticated, cookieNames);
+    logger.info('authenticated-probe', {
+      jobId: session.jobId,
+      cookieCount: cookieNames.length,
+      family: session.probe.familySignatures.primary,
+    });
+  } catch (error) {
+    // 捕获登录后复验失败：BMC 可能拒绝带会话的探测或网络中断
+    // 策略：保留匿名 probe，不把 Cookie 值写入日志，不阻断导出
+    logger.info('authenticated-probe-failed', { jobId: session.jobId });
+    void error;
+  }
 }
 
 function registerCaptureHandlers() {
@@ -121,6 +163,7 @@ function registerCaptureHandlers() {
     }
 
     const parentWindow = BrowserWindow.fromWebContents(event.sender);
+    await refreshAuthenticatedProbe(session);
     const result = await exportCaptureJob({
       job: session,
       collectPageFacts: label => session.controller.collectPageFacts(label),
@@ -268,6 +311,37 @@ function registerCaptureHandlers() {
     } catch (error) {
       // 捕获页面补采失败：采集窗口可能已关闭或截图目录不可写
       // 策略：返回现场可读错误，保留当前作业，便于重试补采
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: classifyCaptureError(error),
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      };
+    }
+  });
+
+  ipcMain.handle('capture:refreshProbe', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) {
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: 'EXPORT_FAILED',
+          detail: '没有正在进行的采集作业。',
+        }),
+      };
+    }
+
+    try {
+      await refreshAuthenticatedProbe(session);
+      return {
+        ok: true as const,
+        ...sessionSnapshot(session),
+      };
+    } catch (error) {
+      // 捕获登录后复验 IPC 失败：探测超时或目标拒绝
+      // 策略：返回可读错误，保留当前作业和已采集网络事实
       return {
         ok: false as const,
         error: formatCaptureError({

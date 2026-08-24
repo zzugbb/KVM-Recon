@@ -17,6 +17,7 @@ interface AttachCdpNetworkCaptureInput {
   cdp: CdpDebuggerLike;
   recorder: NetworkRecorder;
   now?: () => string;
+  windowRole?: 'main' | 'popup';
 }
 
 type HeaderMap = Record<string, string>;
@@ -101,6 +102,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         resourceType: stringValue(params.type),
         requestHeaders: headersValue(request.headers),
         requestBody: stringValue(request.postData),
+        windowRole: input.windowRole,
       });
       return;
     }
@@ -127,6 +129,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         url: stringValue(params.url),
         subProtocols: [],
         requestHeaders: {},
+        windowRole: input.windowRole,
       });
       return;
     }

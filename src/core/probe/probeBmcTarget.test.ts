@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { probeBmcTarget } from './probeBmcTarget';
+import { applyAuthenticatedProbe, probeBmcTarget } from './probeBmcTarget';
 import type { ProbeHttpClient } from './probeBmcBasics';
 
 const httpClient: ProbeHttpClient = {
@@ -50,5 +50,48 @@ describe('probeBmcTarget', () => {
     expect(result.paths.randomtag).toBe(true);
     expect(result.paths.kvmVideo).toBe(true);
     expect(result.familySignatures.primary).toBe('openbmc-h5');
+  });
+
+  it('merges anonymous and authenticated path evidence without storing cookie values', async () => {
+    const anonymous = await probeBmcTarget({
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      httpClient: {
+        async get() {
+          return { status: 404 };
+        },
+      },
+      tlsConnector: async () => ({
+        authorized: false,
+        protocol: 'TLSv1.2',
+        cipher: null,
+        certificate: null,
+      }),
+    });
+    const authenticated = await probeBmcTarget({
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      httpClient: {
+        async get(path) {
+          if (path === '/api/randomtag' || path === '/api/session' || path === '/api/kvm/token') {
+            return { status: 200 };
+          }
+          return { status: 404 };
+        },
+      },
+      tlsConnector: async () => ({
+        authorized: false,
+        protocol: 'TLSv1.2',
+        cipher: null,
+        certificate: null,
+      }),
+    });
+
+    const merged = applyAuthenticatedProbe(anonymous, authenticated, ['QSESSIONID', 'QSESSIONID']);
+    expect(merged.familySignatures.primary).toBe('ami-megarac');
+    expect(merged.authenticated).toEqual({
+      attempted: true,
+      cookieNames: ['QSESSIONID'],
+      paths: authenticated.paths,
+    });
+    expect(JSON.stringify(merged)).not.toContain('abc123');
   });
 });

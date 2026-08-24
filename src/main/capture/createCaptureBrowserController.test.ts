@@ -58,6 +58,9 @@ describe('createCaptureBrowserController', () => {
           async drainClicks() {
             return [];
           },
+          async collectSessionCookies() {
+            return [];
+          },
           async close() {},
         };
       },
@@ -110,6 +113,7 @@ describe('createCaptureBrowserController', () => {
       id: 'req-1',
       url: 'https://10.0.0.10/api/kvm/token',
       tags: ['kvm-token'],
+      windowRole: 'main',
     });
     expect(controller.timeline().events.find(event => event.type === 'screenshot')).toMatchObject({
       role: 'login',
@@ -176,6 +180,9 @@ describe('createCaptureBrowserController', () => {
               ? [{ selector: 'canvas', text: 'viewer', tagName: 'canvas' }]
               : [];
           },
+          async collectSessionCookies() {
+            return [];
+          },
           async close() {},
         };
       },
@@ -211,6 +218,7 @@ describe('createCaptureBrowserController', () => {
     expect(controller.network().webSockets[0]).toMatchObject({
       url: 'wss://10.0.0.10/kvm',
       tags: ['kvm-video'],
+      windowRole: 'popup',
     });
     expect(controller.network().webSocketFrames[0]?.socketId).toBe('ws-popup');
     expect(controller.timeline().events.map(event => event.type)).toContain('popup');
@@ -246,6 +254,9 @@ describe('createCaptureBrowserController', () => {
             const items = pendingClicks;
             pendingClicks = [];
             return items;
+          },
+          async collectSessionCookies() {
+            return [{ name: 'QSESSIONID', value: 'abc123' }];
           },
           async close() {
             closed = true;
@@ -286,7 +297,7 @@ describe('createCaptureBrowserController', () => {
     });
   });
 
-  it('clears the window handle when the operator closes all capture windows', async () => {
+  it('clears live windows but can still read session cookies after the operator closes them', async () => {
     let capturedOptions: CaptureBrowserAdapterOptions | undefined;
     const adapter: CaptureBrowserAdapter = {
       async createWindow(nextOptions) {
@@ -307,6 +318,9 @@ describe('createCaptureBrowserController', () => {
           },
           async drainClicks() {
             return [];
+          },
+          async collectSessionCookies() {
+            return [{ name: 'QSESSIONID', value: 'session-secret' }];
           },
           async close() {},
         };
@@ -329,5 +343,9 @@ describe('createCaptureBrowserController', () => {
     expect(controller.windowsOpen()).toBe(false);
     await controller.collectPageFacts('viewer');
     expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');
+    await expect(controller.readSessionCookies()).resolves.toEqual([
+      { name: 'QSESSIONID', value: 'session-secret' },
+    ]);
+    expect(JSON.stringify(controller.timeline())).not.toContain('session-secret');
   });
 });
