@@ -1,2 +1,46 @@
 # KVM-Recon
-Offline BMC/KVM Discovery &amp; Compatibility Toolkit / KVM 离线探测与兼容性采集工具
+
+Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。
+
+KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“登录 BMC → 打开 HTML5 KVM → 建立 KVM 相关 HTTP/WebSocket 链路”的事实资料，并导出脱敏 Capture Pack，供离开机房后进行 KVM 网关兼容性分析。
+
+## 项目定位
+
+- KVM-Recon 是离线采集工具，不是生产 KVM 网关。
+- KVM-Recon 不直接提供用户远程控制台，不替代下游平台的 KVM 网关链路。
+- KVM-Recon 不依赖公网，不在机房内调用外部分析服务。
+- 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
+- 导出的 Capture Pack 用于后续判断是新增 OEM Profile、修正已知协议族兼容层，还是需要新增 KVM Family Adapter。
+
+## 核心原则
+
+- 主键使用 `kvmFamily`，不是厂商 Logo 或型号字符串。
+- 已知协议族生成或辅助生成 OEM Profile；未知协议族只导出资料包，不生成空壳 Adapter。
+- 不保存明文密码到导出包。
+- 不保存完整 KVM 视频码流，只保存 WebSocket 元数据、首包特征和必要魔数。
+- 采集结果最终服务于 `ami-megarac`、`openbmc-h5`、`huawei-ibmc` 等 KVM 网关兼容开发。
+
+## 目标用户流程
+
+1. 在机房内安装并打开 KVM-Recon 桌面客户端。
+2. 输入目标 BMC 地址、端口和作业备注。
+3. 开始采集，工具执行基础探测与 TLS/指纹采集。
+4. 内嵌浏览器打开 BMC，现场人员按需手工登录。
+5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。
+6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。
+7. 停止采集，工具执行脱敏与离场验收检查。
+8. 导出 Capture Pack，离开机房后交给工程师或离线分析流程进行适配。
+
+## 文档
+
+- `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
+- `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
+- `docs/development-plan.md`：分阶段开发计划与验收标准。
+
+## MVP 成功标准
+
+- 在无公网环境中完成一次 BMC 登录到 HTML5 KVM 打开的采集。
+- 导出包不包含明文密码和完整视频流。
+- 能明确标记 `kvmFamily` 候选、采集完整度和缺失项。
+- 对已知 AMI/华为/OpenBMC 族输出可用于后续网关适配的关键事实资料。
+- 对未知族输出可带离现场的 Capture Pack，并明确下一步需要人工分析的项目。
