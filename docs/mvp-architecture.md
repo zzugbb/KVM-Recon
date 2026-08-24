@@ -55,7 +55,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 - WebSocket frame 方向、时间戳、长度、前 N 字节 hex、是否二进制。
 - 页面截图、导航时间线、popup URL、选择器候选。
 
-注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。点击摘要在采集进度轮询中写入时间线；Cookie 写入来源仍不采集。
+注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
 
 ### 3.4 Probe Engine
 
@@ -69,7 +69,7 @@ MVP 探测项：
 - OpenBMC H5 指纹：`/randomtag`、`/kvm/video`、`/redfish/v1/SessionService`。
 - 华为 iBMC 指纹：Redfish Session、`KvmService`、`SetKvmKey`。
 
-已验证过的手工探测脚本可作为后续无头复验内核的参考来源；迁移时应抽出通用 HTTP、WS、crypto 工具，避免把一次性调试脚本直接做进产品主流程。
+探测实现以当前仓库的 Node probe 与登录后会话复验为准。不要把一次性手工调试脚本直接做进产品主流程。无头批量复验、从调试脚本抽公共库，都不是本项目目标。
 
 ### 3.5 Signature Engine
 
@@ -164,4 +164,4 @@ KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发：
 
 ## 7. 本阶段范围
 
-采集侧代码已收口，见 `docs/development-plan.md` 第 22 节。架构上不再规划 Adapter 生成器、在线分析或 MITM。真机验收与 Windows 实打安装包延后。
+采集侧代码已收口，见 `docs/development-plan.md` 第 22 节。架构上不再规划 Adapter 生成器、在线分析或 MITM。真机验收与代码签名延后。未签名 Windows / macOS 安装包由 GitHub Actions 构建，见第 24 节与 `docs/releasing.md`。

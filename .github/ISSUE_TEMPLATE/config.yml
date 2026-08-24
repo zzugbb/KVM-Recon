@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Capture Pack 规范
+    url: https://github.com/zzugbb/KVM-Recon/blob/main/docs/capture-pack-spec.md
+    about: 导出包目录、字段与离场验收
+  - name: 离线现场说明
+    url: https://github.com/zzugbb/KVM-Recon/blob/main/docs/offline-field-guide.md
+    about: 安装、采集步骤与错误提示
+  - name: 安全漏洞（请勿公开贴凭证）
+    url: https://github.com/zzugbb/KVM-Recon/security/advisories/new
+    about: 使用 GitHub 私下报告安全问题

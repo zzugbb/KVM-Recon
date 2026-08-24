@@ -1,79 +1,70 @@
 # KVM-Recon
 
+[![CI](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml/badge.svg)](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases)](https://github.com/zzugbb/KVM-Recon/releases)
+
 Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。
 
-KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“登录 BMC → 打开 HTML5 KVM → 建立 KVM 相关 HTTP/WebSocket 链路”的事实资料，并导出脱敏 Capture Pack，供离开机房后进行 KVM 网关兼容性分析。
+KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC → 打开 HTML5 KVM → 建立相关 HTTP/WebSocket」的事实资料，导出脱敏 Capture Pack。离开机房、联网之后，再把资料包交给工程师或 AI 做网关兼容分析。
 
 ## 项目定位
 
-- KVM-Recon 是离线采集工具，不是生产 KVM 网关。
-- KVM-Recon 不直接提供用户远程控制台，不替代下游平台的 KVM 网关链路。
-- KVM-Recon 不依赖公网，不在机房内调用外部分析服务。
+- 这是离线采集工具，**不是**生产 KVM 网关，也不提供用户远程控制台。
+- 不依赖公网，不在机房内调用外部分析服务。
 - 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
-- 导出的 Capture Pack 供离开机房、联网之后给工程师或 AI 做兼容分析；本工具不写 Adapter。
+- 本工具**不写 Adapter**。
 
-## 核心原则
+主键是 `kvmFamily`（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`），不是厂商 Logo 或型号字符串。现场铭牌（厂商/型号/固件/位置）只作为证据。
 
-- 主键使用 `kvmFamily`，不是厂商 Logo 或型号字符串。
-- 已知协议族可附带 OEM Profile **草稿**（需离场审核）；未知协议族只导出资料包。本工具不生成 Adapter。
-- 不保存明文密码到导出包。
-- 不保存完整 KVM 视频码流，只保存 WebSocket 元数据和首包特征。
-- 采集结果最终服务于 `ami-megarac`、`openbmc-h5`、`huawei-ibmc` 等 KVM 网关兼容开发。
+## 下载
 
-## 目标用户流程
+从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS（dmg/zip）和 Windows（NSIS/zip）安装包。当前发布包**未代码签名**；请只从本仓库 Releases 下载，并核对 `SHA256SUMS.txt`。现场安装步骤见 `docs/offline-field-guide.md`，发版流程见 `docs/releasing.md`。
 
-1. 在机房内安装并打开 KVM-Recon 桌面客户端。
-2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。
+## 现场流程
+
+1. 在机房内安装并打开 KVM-Recon。
+2. 输入 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。
 3. 开始采集，工具执行基础探测与 TLS/指纹采集。
-4. 内嵌浏览器打开 BMC，现场人员按需手工登录。
-5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
-6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。主窗口进度会自动收录点击摘要。
-7. 可先关闭采集窗口再导出，或直接停止采集并导出。工具执行脱敏与离场验收检查。
-8. 导出 Capture Pack。出机房联网后，把 zip 交给工程师或 AI 做适配；阅读包内 `artifacts/handover.md`。
+4. 内嵌浏览器打开 BMC，现场人员按需**手工**登录。
+5. 点击 HTML5 KVM 入口，等待 viewer 与 WebSocket。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
+6. 工具记录 HTTP、WebSocket、页面、截图、storage key、TLS、指纹和 checklist。
+7. 导出 Capture Pack。出机房后阅读包内 `artifacts/handover.md`。
+
+## 开发
+
+需要 Node.js 22+。
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run test:e2e
+npm run dev
+```
+
+- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环
+- `npm run test:e2e`：启动 Electron 主窗口，加载成功后退出（需先 build）
+- `npm run package:mac` / `npm run package:win`：本机构建；CI 在 tag `v*` 时发布到 Releases
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段开发计划、完成度、本阶段收口、真机验收闸门（延后）与项目边界。本工具不写 Adapter。
-- `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
-- `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
-- `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
-- `schema/`：Capture Pack 独立 JSON Schema，供离线校验 zip 形状。
+- `docs/development-plan.md`：分阶段计划、采集侧收口、真机闸门与项目边界
+- `docs/mvp-architecture.md`：技术架构与模块边界
+- `docs/capture-pack-spec.md`：Capture Pack 目录与数据契约
+- `docs/offline-field-guide.md`：离线安装与现场采集
+- `docs/releasing.md`：GitHub Actions 打包与 Release
+- `schema/`：Capture Pack JSON Schema
+- `CHANGELOG.md`：版本记录
+- `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md`
 
-## 当前进度
+## 安全与边界
 
-**采集侧代码阶段已收口（2026-08-24）。** 探测、手工登录采集、HTTP/WS、脱敏导出、作业暂停/多作业、本地打开对比 Capture Pack、现场铭牌备注均已有代码与单测。本阶段不再新增采集功能。
+- 不保存明文密码；Cookie 值不落盘；不保存完整 KVM 视频码流。
+- 不会做：自动登录、MITM、机房内调 AI、自动写 Adapter、完整视频解码。
+- 漏洞请走 [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new)，不要在 Issue 里贴凭证或未脱敏资料包。
 
-尚未做、且按安排延后：真实 BMC 验收、本机打 Windows 安装包、macOS 代码签名。
+## 许可
 
-本项目不会做自动写 Adapter、机房内在线分析、MITM 或自动登录。出机房后把 Capture Pack 交给工程师或 AI。
-
-详见 `docs/development-plan.md` 第 3 节与第 22 节。
-
-## 打包与交付
-
-```bash
-npm run package:mac
-npm run package:win
-```
-
-打包产物输出到 `release/`。导出 Capture Pack 默认命名为：
-
-```text
-KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
-```
-
-可离线查看的样例资料位于 `examples/sample-capture-pack/`。
-
-## MVP 成功标准
-
-代码与单测已覆盖（模拟数据）：
-
-- 导出包不包含明文密码和完整视频流。
-- 能标记 `kvmFamily` 候选、采集完整度和缺失项。
-- 已知族可生成 OEM Profile 草稿（需离场审核）；未知族只出 Capture Pack 与备注。本工具不写 Adapter。
-
-现场成功标准（真机闸门）：
-
-- 在无公网环境中完成一次 BMC 登录到 HTML5 KVM 打开的采集。
-- 对已知 AMI/华为/OpenBMC 族输出可用于后续网关适配的关键事实资料。
-- 对未知族或非 H5 输出可带离现场的 Capture Pack，并明确下一步需要人工分析的项目。
+[MIT](LICENSE)

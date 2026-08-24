@@ -522,6 +522,10 @@ function registerCaptureHandlers() {
   });
 }
 
+function isE2eSmokeLaunch() {
+  return process.env.KVM_RECON_E2E === '1' || process.argv.includes('--e2e-smoke');
+}
+
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -529,6 +533,7 @@ function createMainWindow() {
     minWidth: 980,
     minHeight: 640,
     title: 'KVM-Recon',
+    show: !isE2eSmokeLaunch(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -536,6 +541,18 @@ function createMainWindow() {
       sandbox: false,
     },
   });
+
+  if (isE2eSmokeLaunch()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      app.quit();
+    });
+    mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+      // 捕获烟测加载失败：构建产物缺失或 renderer 路径错误
+      // 策略：以非零退出让 CI 失败，避免误报启动成功
+      console.error(`e2e smoke load failed: ${errorCode} ${errorDescription}`);
+      app.exit(1);
+    });
+  }
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (rendererUrl) {
@@ -557,7 +574,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' || isE2eSmokeLaunch()) {
     app.quit();
   }
 });

@@ -1,0 +1,55 @@
+name: 缺陷报告
+description: 采集、导出、打包或文档中的错误
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        不要粘贴 BMC 密码、Cookie 值或未脱敏的 Capture Pack。
+        本项目不做自动登录、MITM、机房调 AI 或自动写 Adapter。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 探测 / 指纹
+        - 采集窗口 / HTTP / WebSocket
+        - 导出 / 脱敏 / Capture Pack
+        - 桌面 UI
+        - 打包 / GitHub Actions
+        - 文档
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: 1. 新建作业 2. …（不要写真实密码）
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: git commit、Release tag 或 package.json version
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - macOS
+        - Windows
+        - 其他

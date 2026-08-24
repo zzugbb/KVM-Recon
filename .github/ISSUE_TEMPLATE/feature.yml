@@ -1,0 +1,32 @@
+name: 功能建议
+description: 采集工具范围内的改进建议
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        采集侧功能已收口。请确认建议不属于以下边界外事项：
+        自动登录、MITM、机房内调 AI、自动写 Adapter、完整视频解码。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的现场问题
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议做法
+    validations:
+      required: true
+  - type: dropdown
+    id: in-scope
+    attributes:
+      label: 是否仍属于离线采集 / 导出 / 打包 / 文档
+      options:
+        - 是，只改采集、导出、打包或文档
+        - 不确定
+        - 否（可能越界）
+    validations:
+      required: true

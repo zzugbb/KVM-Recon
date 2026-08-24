@@ -48,3 +48,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Test runner leftovers
+test-results/
+playwright-report/

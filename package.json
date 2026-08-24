@@ -12,14 +12,26 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node e2e/launch-app.mjs",
     "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zzugbb/KVM-Recon.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "kvm",
+    "bmc",
+    "html5-kvm",
+    "redfish",
+    "electron",
+    "offline",
+    "capture-pack"
+  ],
+  "author": "KVM-Recon contributors",
   "license": "MIT",
   "type": "module",
   "bugs": {
@@ -47,6 +59,11 @@
     "productName": "KVM-Recon",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "zzugbb",
+      "repo": "KVM-Recon"
     },
     "files": [
       "dist/**/*",

@@ -1,4 +1,4 @@
-# KVM-Recon 后续开发计划
+# KVM-Recon 开发计划（采集侧已收口）
 
 ## 1. 目标
 
@@ -467,14 +467,65 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 - 现场说明：`docs/offline-field-guide.md`。
 - 打包脚本：`package:mac` / `package:win`（本机未实打 Windows 包、未做 macOS 签名）。
 
-本阶段之后默认不再开发新的采集功能。若要继续，只应是：
+本阶段之后默认不再开发新的采集功能。开源仓库治理、CI 与未签名安装包发布见第 24 节，不属于新的采集功能。
+
+若要继续，只应是：
 
 1. 第 13 节真机验收（产品安排后再做）。
-2. 联网构建机执行 `package:win` 并归档产物路径。
-3. 按发布需要补 macOS 签名。
+2. 用 GitHub Actions `Release`（tag `v*`）或 `Package` 生成 Windows / macOS 安装包；本机交叉打 Windows 包仍非必须。
+3. 按发布需要补代码签名与公证（证书放在 GitHub Secrets，不进仓库）。
 4. 真机或现场反馈暴露的缺陷修复。
 
 不要把「写 Adapter、机房调 AI、MITM、自动登录、完整视频解码」当作本仓库后续迭代。
+
+## 23. 最终核对（含原 MVP 外清单）
+
+核对日期：2026-08-24。
+
+**采集功能：没有待开发项。** 原「MVP 外、采集工具可做」的项已全部落地；原 V3 路线（自动登录 / MITM / 在线分析 / 写 Adapter）已确认为项目边界外，不是待办。
+
+| 类别 | 项 | 结论 |
+| --- | --- | --- |
+| 原 V1.1 | 暂停 / 继续采集 | 已做 |
+| 原 V1.1 | 多作业列表 | 已做 |
+| 原可做 | 独立 JSON Schema | 已做（主要文件；其余以 TS 为权威） |
+| 原可做 | 本地打开 / 对比 Capture Pack | 已做 |
+| 原可做 | 现场厂商 / 型号 / 固件 / 位置 | 已做 |
+| 原 V2 | 登录后 Cookie 复验 probe | 已做（值不落盘） |
+| 原可做 | HTTP/WS `windowRole` | 已做 |
+| 原可做 | 未导出关闭确认、再次导出 | 已做 |
+| 原 V3 | 自动登录、MITM、机房内 AI、自动写 Adapter、完整视频解码 | **永不做** |
+| 延后 | 真机验收、本机交叉打 Windows 包、代码签名/公证 | 不是功能缺口；未签名包由 GitHub Actions 构建 |
+
+故意保持的约束（不是未完成优化）：
+
+- storage 只导出 key，不导明文。
+- 不采集 Cookie 写入调用来源。
+- `page/timeline.jsonl`、`tls/certificate.json` 等不以独立 JSON Schema 全覆盖，以 TypeScript 导出代码为权威。
+- 铭牌字段在新建作业时填写，不提供作业中途改铭牌。
+
+本阶段之后默认不新增采集功能。
+
+## 24. GitHub 开源治理与发布（非采集功能）
+
+状态：`代码完成` / 签名与真机 `延后`
+
+目标：仓库按常见 GitHub 开源项目补齐治理文件和自动化，**不改变采集产品边界**。
+
+已落地：
+
+- MIT `LICENSE`，以及 `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`CHANGELOG.md`、Issue/PR 模板、Dependabot、CODEOWNERS。
+- CI：`typecheck`、单测、本地 mock BMC 探测/导出闭环、构建、Electron 主窗口启动烟测。
+- `Package` workflow：手动构建未签名 macOS / Windows 产物为 Artifact。
+- `Release` workflow：推送 `v*` 标签后发布到 GitHub Releases，并附 `SHA256SUMS.txt`。
+- 说明：`docs/releasing.md`；README 增加徽章、下载与安全入口。
+
+不做：
+
+- 用 GitHub 在机房调 AI 或自动写 Adapter。
+- 把证书写入仓库。未签名是当前发布方式。
+- 对真实 BMC 的在线 e2e（没有公开 BMC，也不做自动登录）。
+
 
 
 
