@@ -15,19 +15,25 @@
 - `kvmFamily` 是协议主键，厂商和型号只作为 profile/证据字段。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-08-24）
+## 3. 当前状态（2026-08-24）：采集侧代码阶段收口
 
-阶段 0–8 的 **MVP 核心代码与单测已闭环**（含 popup 窗口采集、截图角色、`not-h5`、导出确认和安全日志）。
+**结论：机房离线采集闭环的代码与单测已完成，本阶段不再新增采集功能。**
 
-阶段 9 补的是 **采集作业可用性**（生命周期、进度轮询收点击、WebSocket `closedAt`）。阶段 10 补的是 **出机房后能用的资料质量**（Cookie 名、JSON 字段名、交接说明），不是在本工具里写 Adapter。
+已完成（模拟数据 / 单测）：
 
-仍未做、且本轮继续延后：
+- 阶段 0–8：MVP 核心（探测、内嵌浏览器、HTTP/WS、清单、Profile 草稿、导出脱敏、popup、截图角色、`not-h5`）。
+- 阶段 9–12：作业生命周期、出机房资料质量、登录后复验、暂停/多作业、独立 JSON Schema、本地打开/对比 Capture Pack。
+- 第 21 节：现场厂商/型号/固件/位置铭牌备注（不改写 `kvmFamily`）。
+
+明确延后、不作为本阶段缺口：
 
 - 真实 BMC 验收（第 13 节闸门）。
-- 本机 Windows 安装包。
+- 本机实际打 Windows 安装包。
 - macOS 代码签名。
 
-**KVM-Recon 的产品边界止于导出脱敏 Capture Pack。** 自动写 Adapter、机房内在线分析、MITM、自动登录不属于本项目。采集工具后续仍可做登录后复验 probe、再次导出等，见第 14、18、19 节。真机验收和 Windows 安装包继续延后。
+**产品边界止于导出脱敏 Capture Pack。** 自动写 Adapter、机房内在线分析、MITM、自动登录、完整视频解码不属于本项目，也不进入下一采集功能迭代。
+
+出机房后的协议分析与写 Adapter，由工程师或 AI 基于 Capture Pack 完成。
 
 状态标记：
 
@@ -35,7 +41,7 @@
 - `部分完成`：主路径有了，规范或架构仍有缺口。
 - `待真机`：代码有了，必须用真实 BMC 或安装包证明。
 - `未开始`：下一阶段或更后。
-- `规划中`：已写入后续版本，本轮不实现。
+- `延后`：已确认不做或等产品安排，不阻塞采集侧收口。
 
 ## 4. 阶段 0：项目初始化
 
@@ -47,7 +53,7 @@
 
 - 初始化 Electron + TypeScript 项目。`代码完成`
 - 增加 renderer 页面：新建采集、采集中、导出结果。`代码完成`（同一页用阶段标签，不是三套独立路由）
-- 增加 main process 作业生命周期管理。`代码完成`（开始 / 关闭窗口 / 导出后关窗；同一时刻一份作业）
+- 增加 main process 作业生命周期管理。`代码完成`（开始 / 关闭窗口 / 导出后关窗；作业列表最多 8 份，可暂停）
 - 增加本地数据目录与临时作业目录。`代码完成`（截图目录）
 - 增加基础日志，但默认不记录敏感值。`代码完成`（`createCaptureLogger`）
 
@@ -59,13 +65,13 @@
 
 ## 5. 阶段 1：Capture Pack Schema 与脱敏器
 
-状态：`代码完成`（TypeScript 契约）/ 独立 JSON Schema 文件 `未开始`
+状态：`代码完成`（TypeScript 契约 + `schema/` JSON Schema）
 
 目标：先固定导出契约，避免后续采集逻辑散乱。
 
 任务：
 
-- 定义 `manifest.json`、`http/requests.jsonl`、`ws/frames.jsonl`、`page/timeline.jsonl`、`tls/certificate.json`、`checklist.json` schema。`代码完成`（`src/core/capture-pack/types.ts` 等）
+- 定义 `manifest.json`、`http/requests.jsonl`、`ws/frames.jsonl`、`page/timeline.jsonl`、`tls/certificate.json`、`checklist.json` schema。`代码完成`（`src/core/capture-pack/types.ts` 与 `schema/*.json`）
 - 实现字段级脱敏器。`代码完成`
 - 实现 URL、Header、Cookie、JSON body、storage 的敏感字段识别。`代码完成`（storage 目前只导出 key 列表）
 - 实现导出前脱敏检查。`代码完成`（失败则不弹保存框、不写 zip）
@@ -183,7 +189,7 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 
 ## 11. 阶段 7：打包与现场交付
 
-状态：`部分完成` / `待真机`
+状态：`代码完成`（安装包脚本）/ `待真机`（现场无公网安装与签名）
 
 目标：让非开发人员可安装、采集、导出。
 
@@ -264,11 +270,11 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 
 ### 8.5 契约文件
 
-状态：`代码完成`（以 TypeScript 类型为权威，规范目录已对齐）
+状态：`代码完成`（TypeScript 类型为权威，`schema/` 已提供独立 JSON Schema）
 
 任务：
 
-- 将 Capture Pack 主要文件补为独立 JSON Schema，或在规范中明确「以 TypeScript 类型为权威」。
+- 将 Capture Pack 主要文件补为独立 JSON Schema，或在规范中明确「以 TypeScript 类型为权威」。`代码完成`（`schema/`：manifest、checklist、HTTP 行、WS socket/frame、operator-observed；其余文件以 TypeScript 类型为权威）
 
 验收：
 
@@ -276,9 +282,9 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 
 ## 13. 真机验收闸门
 
-状态：`未开始`
+状态：`延后` / `未开始`
 
-本闸门不是功能开发。代码完成后，用真实 BMC 证明 popup KVM 与三族资料可采集。当前按产品安排 **延后**，不阻塞采集侧补齐。
+本闸门不是功能开发。采集侧代码完成后，用真实 BMC 证明 popup KVM 与三族资料可采集。当前按产品安排 **延后**，不阻塞采集侧代码阶段收口。
 
 最低证据：
 
@@ -300,6 +306,7 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 - 截图和 storage。
 - 脱敏导出。
 - 离场验收报告与交接说明。
+- 暂停采集、多作业、本地打开/对比 Capture Pack、现场铭牌备注。
 
 **本项目不做：**
 
@@ -309,12 +316,13 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 - 根据 Capture Pack 自动编写下游网关 Adapter。
 - 完整 KVM 视频解码。
 
-**本项目还可以做、但不是写 Adapter**（现场采集体验与资料完整度）：
+**采集侧功能清单（本阶段已完成，不再作为待开发项）：**
 
 - 登录后带着浏览器会话复验 probe（Cookie 值只在内存中用，不落盘）。
 - HTTP/WS 标注来自首窗口还是 popup。
-- 未导出作业被新建覆盖前提示；同一作业允许再次导出。
+- 未导出作业关闭前提示；同一作业允许再次导出。
 - 暂停采集、多作业列表、独立 JSON Schema、本地 Capture Pack 对比查看。
+- 结构化填写现场厂商/型号/固件/位置。
 
 机房里通常没有公网。采集到的数据应在 **出机房、联网之后** 交给工程师或 AI 做协议分析和写 Adapter。
 
@@ -343,7 +351,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - 导出成功后关闭采集窗口（含 popup）。
 - 「关闭采集窗口」与导出拆开：关窗后作业数据保留，仍可导出。
-- 新建作业前关掉上一作业窗口，避免窗口残留。
+- 新建作业前关掉上一作业窗口，避免窗口残留。`代码完成`（阶段 12 改为多作业并行，新建不再关闭上一作业）
 - 采集窗口被关掉后，「采集当前页面」不可用，导出不因补采截图失败而整包失败。
 - 用户手动关掉全部采集窗口时，主界面同步为窗口已关闭。
 
@@ -395,15 +403,9 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 - 自动登录脚本。
 - 完整 KVM 视频解码。
 
-**属于采集工具、可继续做：**
+**采集侧功能清单已完成。** 下一事项只剩第 13 节真机验收闸门，以及 Windows 安装包实打 / macOS 签名（均延后）。
 
-- 暂停 / 继续采集。
-- 多作业或作业列表。
-- 独立 JSON Schema（当前以 TypeScript 类型为权威）。
-- 本地打开/对比两份 Capture Pack（仍不调用公网）。
-- 结构化填写厂商/型号备注。
-
-真机验收和 Windows 安装包继续延后，见第 13 节。
+结构化填写厂商/型号备注已在第 21 节落地。暂停采集、多作业、独立 JSON Schema、本地 Pack 对比已在阶段 12 落地。真机验收和 Windows 安装包继续延后，见第 13 节。
 
 ## 19. 阶段 11：采集完整度（不依赖真机）
 
@@ -411,11 +413,69 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - 登录后用浏览器会话 Cookie 复验 probe；导出包只保留 cookie **名** 与路径可达性。
 - HTTP / WebSocket 记录 `windowRole`：`main` 或 `popup`。
-- 新建作业覆盖未导出资料前确认；导出后允许再次导出。
+- 新建作业覆盖未导出资料前确认；导出后允许再次导出。`代码完成`（阶段 12 起改为关闭作业前确认，新建不再覆盖）
 
 验收（模拟）：
 
 - 匿名探测看不到 token 路径、带会话后能看到时，主族可从 `unknown-h5`/`not-h5` 提升为已知族。
 - popup 上的 KVM WS 带 `windowRole: "popup"`。
 - 复验日志不含 Cookie 值。
+
+## 20. 阶段 12：现场作业与离线复核（不依赖真机）
+
+状态：`代码完成` / 真机仍延后
+
+目标：提升现场采集体验，并让出机房后能在本机打开、对比 Capture Pack。本阶段不写 Adapter、不调用公网。
+
+- 暂停 / 继续采集：采集窗口保持打开，暂停期间不记录新的 HTTP / WebSocket / 点击；进行中的 HTTP 响应和 WebSocket 关闭仍会补全。
+- 多作业列表：新建不再关闭或丢弃上一份作业；最多同时保留 8 份；可切换查看、关闭作业（未导出需确认）。
+- 独立 JSON Schema：`schema/` 提供 `manifest`、`checklist`、HTTP 行、WS socket/frame 的 JSON Schema；运行时仍用轻量必填字段检查，不引入 ajv。
+- 本地打开 / 对比 Capture Pack：选择 zip 后展示族、就绪结论、HTTP/WS 数量和差异表。
+
+验收（模拟）：
+
+- 暂停后新的 HTTP/WS 不进入记录器，继续后恢复记录。
+- 同时存在两份作业时，导出其中一份不影响另一份。
+- 样例 Capture Pack zip 通过形状检查；对比能标出 `kvmFamily` 差异。
+
+## 21. 现场厂商/型号备注（不依赖真机）
+
+状态：`代码完成` / 真机仍延后
+
+目标：让现场把机箱铭牌写成结构化证据，供出机房后对照，而不是用厂商 Logo 覆盖 `kvmFamily`。
+
+- 界面增加现场厂商、型号、固件、机柜位置；作业备注仍为自由文本。
+- 导出写入 `manifest.job.observed` 与 `probe/operator-observed.json`。
+- `artifacts/handover.md` 分别列出铭牌字段，并写明不能替代 `kvmFamily`。
+- 探测得到的协议族不受铭牌字段影响。
+
+验收（模拟）：
+
+- 铭牌填写华为、probe 判定 `ami-megarac` 时，导出包主族仍为 `ami-megarac`。
+- 空铭牌不写入 `manifest.job.observed`；若连备注也没有，则不生成 `probe/operator-observed.json`。
+
+## 22. 本阶段收口
+
+状态：`代码完成`（采集侧）/ 真机与安装包 `延后`
+
+2026-08-24 起，KVM-Recon **采集侧代码阶段结束**。仓库可作为离线采集工具的代码基线：能探测、采集、脱敏导出 Capture Pack，并在本机打开/对比资料包。
+
+本阶段交付物：
+
+- Electron + TypeScript 桌面客户端源码与单测。
+- Capture Pack 契约：`docs/capture-pack-spec.md`、`schema/`、`examples/sample-capture-pack/`。
+- 现场说明：`docs/offline-field-guide.md`。
+- 打包脚本：`package:mac` / `package:win`（本机未实打 Windows 包、未做 macOS 签名）。
+
+本阶段之后默认不再开发新的采集功能。若要继续，只应是：
+
+1. 第 13 节真机验收（产品安排后再做）。
+2. 联网构建机执行 `package:win` 并归档产物路径。
+3. 按发布需要补 macOS 签名。
+4. 真机或现场反馈暴露的缺陷修复。
+
+不要把「写 Adapter、机房调 AI、MITM、自动登录、完整视频解码」当作本仓库后续迭代。
+
+
+
 

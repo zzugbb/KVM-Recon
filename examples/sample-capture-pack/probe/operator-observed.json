@@ -1,0 +1,8 @@
+{
+  "source": "operator",
+  "vendor": "AMI",
+  "product": "MegaRAC SPX",
+  "firmware": "1.0.0",
+  "location": "Lab rack A",
+  "note": "Sample pack for offline handoff format review."
+}

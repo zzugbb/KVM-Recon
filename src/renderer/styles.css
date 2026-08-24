@@ -45,18 +45,19 @@ select {
 
 .app-shell {
   display: grid;
+  justify-items: center;
+  gap: 20px;
   min-height: 100vh;
-  place-items: center;
-  padding: 56px;
+  padding: 40px 32px 64px;
 }
 
 .hero {
-  width: min(860px, 100%);
+  width: min(980px, 100%);
   border: 1px solid #e2e8f0;
   border-radius: 28px;
   background: #fff;
   box-shadow: 0 24px 80px rgb(15 23 42 / 10%);
-  padding: 56px;
+  padding: 48px;
 }
 
 .eyebrow {
@@ -147,9 +148,14 @@ h1 {
   font-weight: 500;
 }
 
+button.secondary {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
 .status-card {
-  width: min(860px, 100%);
-  margin-top: 20px;
+  width: min(980px, 100%);
+  margin-top: 0;
   border: 1px solid #fee2e2;
   border-radius: 18px;
   background: #fff7ed;
@@ -193,4 +199,88 @@ h1 {
   margin: 4px 0 0;
   font-weight: 400;
   line-height: 1.5;
+}
+
+.job-list h2,
+.pack-review h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.job-list ul,
+.pack-review ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #fed7aa;
+}
+
+.job-item {
+  flex: 1;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  background: #fff;
+  color: #9a3412;
+  text-align: left;
+}
+
+.job-item.active {
+  outline: 2px solid #ea580c;
+}
+
+.job-item span {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pack-summary {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.pack-summary div {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pack-summary dt {
+  margin: 0;
+  font-weight: 700;
+}
+
+.pack-summary dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.pack-diff {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pack-diff th,
+.pack-diff td {
+  border-top: 1px solid #fed7aa;
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-all;
+}
+
+.pack-diff tr.changed td {
+  font-weight: 700;
+  color: #9a3412;
 }

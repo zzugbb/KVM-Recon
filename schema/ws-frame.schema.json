@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/ws-frame.schema.json",
+  "title": "KVM-Recon WebSocket frame sample",
+  "type": "object",
+  "required": ["socketId", "timestamp", "direction", "opcode", "bytes", "headHex", "sampled"],
+  "properties": {
+    "socketId": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "direction": { "enum": ["up", "down"] },
+    "opcode": { "enum": ["text", "binary"] },
+    "bytes": { "type": "integer" },
+    "headHex": { "type": "string" },
+    "sampled": { "type": "boolean" },
+    "magic": { "type": "string" }
+  }
+}

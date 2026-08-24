@@ -136,6 +136,13 @@ export function createSampleCapturePack() {
       scheme: 'https',
     },
     operatorNote: 'Sample pack for offline handoff format review.',
+    operatorObserved: {
+      vendor: 'AMI',
+      product: 'MegaRAC SPX',
+      firmware: '1.0.0',
+      location: 'Lab rack A',
+      note: 'Sample pack for offline handoff format review.',
+    },
     probe: sampleProbe,
     page: samplePage,
     network: sampleNetwork,

@@ -11,7 +11,7 @@ Capture Pack 是 KVM-Recon 的核心导出物。它需要让工程师在离开�
 
 Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机房联网后，工程师或 AI 应能仅凭本包分析协议；KVM-Recon 本身不写 Adapter。
 
-权威实现契约是 TypeScript 类型与导出代码（`src/core/capture-pack/`、`buildProbeArtifacts`、`buildBrowserArtifacts`、`buildNetworkArtifacts`）。独立 JSON Schema 文件见开发计划阶段 8.5。
+权威实现契约是 TypeScript 类型与导出代码（`src/core/capture-pack/`、`buildProbeArtifacts`、`buildBrowserArtifacts`、`buildNetworkArtifacts`）。独立 JSON Schema 见仓库 `schema/`。
 
 当前已导出但易被忽略的文件：
 
@@ -21,8 +21,9 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
 - 每个包都有 `artifacts/handover.md`：说明出机房后如何把资料交给工程师或 AI。
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
+- 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代 `kvmFamily`。
 
-阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 文件仍以 TypeScript 类型为权威。
+阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 位于 `schema/`（manifest、checklist、HTTP 行、WS socket/frame、operator-observed）；其余文件以 TypeScript 类型与导出代码为权威。采集侧代码阶段已收口，见 `docs/development-plan.md` 第 22 节。
 
 ## 2. 目录结构
 
@@ -34,6 +35,7 @@ capture-pack/
     family-signatures.json
     path-evidence.json
     redfish.json
+    operator-observed.json
   http/
     requests.jsonl
     har.json
@@ -74,7 +76,13 @@ capture-pack/
     "id": "2026-08-24T10-45-00Z-demo",
     "startedAt": "2026-08-24T10:45:00+08:00",
     "endedAt": "2026-08-24T10:58:00+08:00",
-    "operatorNote": "现场采集备注"
+    "operatorNote": "现场采集备注",
+    "observed": {
+      "vendor": "AMI",
+      "product": "MegaRAC SPX",
+      "firmware": "1.0.0",
+      "location": "A柜 U12"
+    }
   },
   "target": {
     "host": "10.0.0.10",
@@ -126,17 +134,15 @@ capture-pack/
     "set-cookie": "QSESSIONID=<redacted:len:32>; Path=/"
   },
   "requestBodySummary": {
-    "contentType": "application/json",
     "bytes": 128,
     "redactedFields": ["Password"],
     "jsonKeys": ["UserName", "Password"]
   },
   "responseBodySummary": {
-    "contentType": "application/json",
     "bytes": 512,
     "redactedFields": ["CSRFToken"]
   },
-  "tags": ["login", "ami-megarac"],
+  "tags": ["login"],
   "windowRole": "main"
 }
 ```
@@ -166,7 +172,7 @@ HTTP 资料必须脱敏：
   },
   "binaryFrameCount": 128,
   "textFrameCount": 0,
-  "tags": ["kvm-video", "ami-megarac"],
+  "tags": ["kvm-video"],
   "windowRole": "popup"
 }
 ```
@@ -282,7 +288,7 @@ HTTP 资料必须脱敏：
       "status": "missing",
       "severity": "warning",
       "evidence": [],
-      "userAction": "请重新开始采集，打开 HTML5 KVM 后等待画面区域稳定 10 秒，再点击停止采集。"
+      "userAction": "请打开 HTML5 KVM 后把画面窗口留在前台，选择截图角色并点击“采集当前页面”。"
     }
   ]
 }
@@ -314,11 +320,10 @@ HTTP 资料必须脱敏：
 缺失：未捕获 KVM WebSocket。
 影响：离开机房后无法判断播放面协议。
 建议操作：
-1. 点击“重新采集”。
-2. 在采集窗口登录 BMC。
-3. 点击“远程控制台 / HTML5 KVM”。
-4. 等待至少 10 秒，直到工具显示“WS 下行帧已捕获”。
-5. 再点击“停止采集并导出”。
+1. 点击“新建采集作业”，在采集窗口登录 BMC。
+2. 点击“远程控制台 / HTML5 KVM”。若打开了新窗口，把新窗口留在前台至少 10 秒。
+3. 主窗口「采集进度」中「KVM WebSocket」变为已采集。
+4. 再点击“停止采集并导出”。
 ```
 
 ## 11. 导出安全要求
@@ -329,4 +334,9 @@ HTTP 资料必须脱敏：
 - Token/Cookie/CSRF 不得明文进入导出包。
 - 完整 KVM 视频流不得进入导出包。
 - 用户可查看脱敏摘要。
-- 工具应默认导出安全包；调试级原始包不作为 MVP 功能。
+- 工具应默认导出安全包；调试级原始包不作为本阶段功能。
+
+## 12. 本阶段契约范围
+
+采集侧代码阶段已收口。本规范与 `schema/`、`examples/sample-capture-pack/` 对齐当前导出物。`probe/operator-observed.json` 仅在现场填写了铭牌或备注时出现。`probe/authenticated.json` 仅在做过登录后复验时出现。
+

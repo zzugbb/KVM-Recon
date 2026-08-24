@@ -174,4 +174,45 @@ describe('assembleCapturePackForExport', () => {
       content: png,
     });
   });
+
+  it('writes operator-observed labels without changing kvmFamily', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-001',
+      startedAt: '2026-08-24T13:55:00.000+08:00',
+      endedAt: '2026-08-24T14:05:00.000+08:00',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      operatorObserved: {
+        vendor: 'Huawei',
+        product: '2288H V5',
+        firmware: 'iBMC 3.10',
+        location: 'A柜 U12',
+        note: '铭牌与 Redfish 不一致',
+      },
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+    });
+
+    expect(result.pack.manifest.family.primary).toBe('ami-megarac');
+    expect(result.pack.manifest.job.observed).toEqual({
+      vendor: 'Huawei',
+      product: '2288H V5',
+      firmware: 'iBMC 3.10',
+      location: 'A柜 U12',
+    });
+    expect(result.pack.manifest.job.operatorNote).toBe('铭牌与 Redfish 不一致');
+    const observed = result.pack.artifacts?.find(item => item.path === 'probe/operator-observed.json');
+    expect(observed).toBeDefined();
+    expect(JSON.parse(String(observed?.content))).toMatchObject({
+      source: 'operator',
+      vendor: 'Huawei',
+      product: '2288H V5',
+    });
+    const handover = result.pack.artifacts?.find(item => item.path === 'artifacts/handover.md');
+    expect(String(handover?.content)).toContain('不能替代 kvmFamily');
+  });
 });

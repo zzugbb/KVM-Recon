@@ -15,6 +15,7 @@ import {
   formatCaptureError,
   type FormattedCaptureError,
 } from './formatCaptureError';
+import type { OperatorObservedAsset } from './operatorObserved';
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -36,6 +37,7 @@ export interface CaptureExportJob {
   target: CaptureTarget;
   probe: ProbeBmcTargetResult;
   operatorNote?: string;
+  operatorObserved?: OperatorObservedAsset;
 }
 
 export interface ExportConfirmSummary {
@@ -98,6 +100,7 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       endedAt: (input.now ?? (() => new Date().toISOString()))(),
       target: input.job.target,
       operatorNote: input.job.operatorNote,
+      operatorObserved: input.job.operatorObserved,
       probe: {
         ...input.job.probe,
         tls: {

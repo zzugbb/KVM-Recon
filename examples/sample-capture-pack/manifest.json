@@ -8,7 +8,13 @@
     "id": "sample-job",
     "startedAt": "2026-08-24T13:55:00.000+08:00",
     "endedAt": "2026-08-24T14:05:00.000+08:00",
-    "operatorNote": "Sample pack for offline handoff format review."
+    "operatorNote": "Sample pack for offline handoff format review.",
+    "observed": {
+      "vendor": "AMI",
+      "product": "MegaRAC SPX",
+      "firmware": "1.0.0",
+      "location": "Lab rack A"
+    }
   },
   "target": {
     "host": "10.0.0.10",

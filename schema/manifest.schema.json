@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/manifest.schema.json",
+  "title": "KVM-Recon Capture Pack manifest",
+  "type": "object",
+  "required": ["schemaVersion", "tool", "job", "target", "family", "readiness", "redaction"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "KVM-Recon" },
+        "version": { "type": "string" }
+      }
+    },
+    "job": {
+      "type": "object",
+      "required": ["id", "startedAt", "endedAt", "operatorNote"],
+      "properties": {
+        "id": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "endedAt": { "type": ["string", "null"] },
+        "operatorNote": { "type": "string" },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "vendor": { "type": "string" },
+            "product": { "type": "string" },
+            "firmware": { "type": "string" },
+            "location": { "type": "string" }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["host", "port", "scheme"],
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer" },
+        "scheme": { "enum": ["http", "https"] }
+      }
+    },
+    "family": {
+      "type": "object",
+      "required": ["primary", "confidence", "candidates"],
+      "properties": {
+        "primary": { "type": "string" },
+        "confidence": { "type": "number" },
+        "candidates": { "type": "array" }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "required": ["status", "blockingCount", "warningCount"],
+      "properties": {
+        "status": { "enum": ["YES", "PARTIAL", "NO"] },
+        "blockingCount": { "type": "integer" },
+        "warningCount": { "type": "integer" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "required": ["status", "redactedFields"],
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "redactedFields": { "type": "integer" }
+      }
+    }
+  }
+}

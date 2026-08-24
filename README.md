@@ -23,7 +23,7 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 ## 目标用户流程
 
 1. 在机房内安装并打开 KVM-Recon 桌面客户端。
-2. 输入目标 BMC 地址、端口和作业备注。
+2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。
 3. 开始采集，工具执行基础探测与 TLS/指纹采集。
 4. 内嵌浏览器打开 BMC，现场人员按需手工登录。
 5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
@@ -33,16 +33,21 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段开发计划、完成度、真机验收闸门（延后）与项目边界。本工具不写 Adapter。
+- `docs/development-plan.md`：分阶段开发计划、完成度、本阶段收口、真机验收闸门（延后）与项目边界。本工具不写 Adapter。
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
 - `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
+- `schema/`：Capture Pack 独立 JSON Schema，供离线校验 zip 形状。
 
 ## 当前进度
 
-阶段 0–11 的代码与单测已闭环：离线采集、作业生命周期、出机房交接资料，以及登录后复验探测 / popup 窗口归属 / 再次导出。尚未做真实 BMC 验收，本轮不打 Windows 安装包。
+**采集侧代码阶段已收口（2026-08-24）。** 探测、手工登录采集、HTTP/WS、脱敏导出、作业暂停/多作业、本地打开对比 Capture Pack、现场铭牌备注均已有代码与单测。本阶段不再新增采集功能。
 
-本项目不会做自动写 Adapter、机房内在线分析、MITM 或自动登录。暂停采集、多作业、本地 Pack 对比等仍属采集工具，尚未做。
+尚未做、且按安排延后：真实 BMC 验收、本机打 Windows 安装包、macOS 代码签名。
+
+本项目不会做自动写 Adapter、机房内在线分析、MITM 或自动登录。出机房后把 Capture Pack 交给工程师或 AI。
+
+详见 `docs/development-plan.md` 第 3 节与第 22 节。
 
 ## 打包与交付
 

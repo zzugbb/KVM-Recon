@@ -84,8 +84,28 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
   let previousSessionStorage: string[] = [];
   let captureWindowsOpen = false;
   let debuggerCount = 0;
+  let paused = false;
+
+  function unlessPaused<Args extends unknown[]>(fn: (...args: Args) => void) {
+    return (...args: Args) => {
+      if (!paused) {
+        fn(...args);
+      }
+    };
+  }
 
   return {
+    pause() {
+      paused = true;
+      networkRecorder.setPaused(true);
+    },
+    resume() {
+      paused = false;
+      networkRecorder.setPaused(false);
+    },
+    isPaused() {
+      return paused;
+    },
     async start() {
       debuggerCount = 0;
       windowHandle = await input.adapter.createWindow({
@@ -96,9 +116,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
             targetHost: input.target.host,
             url,
           }),
-        onNavigation: url => timeline.recordNavigation(url),
-        onHashChange: url => timeline.recordHashChange(url),
-        onPopup: popup => timeline.recordPopup(popup),
+        onNavigation: unlessPaused(url => timeline.recordNavigation(url)),
+        onHashChange: unlessPaused(url => timeline.recordHashChange(url)),
+        onPopup: unlessPaused(popup => timeline.recordPopup(popup)),
         onNetworkDebugger: cdp =>
           attachCdpNetworkCapture({
             cdp,
@@ -122,6 +142,10 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     async ingestLiveEvents() {
       if (!captureWindowsOpen || !windowHandle) return;
       try {
+        if (paused) {
+          await windowHandle.drainClicks();
+          return;
+        }
         await recordClicks(windowHandle, timeline);
       } catch (error) {
         // 捕获进度轮询时读取点击失败：窗口可能已关闭或页面正在导航
@@ -133,7 +157,11 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
       if (!captureWindowsOpen || !windowHandle) return;
 
       try {
-        await recordClicks(windowHandle, timeline);
+        if (paused) {
+          await windowHandle.drainClicks();
+        } else {
+          await recordClicks(windowHandle, timeline);
+        }
         const storage = await windowHandle.collectStorageKeys();
         const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
         const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);

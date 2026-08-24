@@ -54,7 +54,8 @@
       "LICENSE",
       "README.md",
       "docs/**/*",
-      "examples/**/*"
+      "examples/**/*",
+      "schema/**/*"
     ],
     "asar": true,
     "mac": {

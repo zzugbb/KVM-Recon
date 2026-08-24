@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/operator-observed.schema.json",
+  "title": "KVM-Recon operator-observed asset labels",
+  "type": "object",
+  "required": ["source"],
+  "properties": {
+    "source": { "const": "operator" },
+    "vendor": { "type": "string" },
+    "product": { "type": "string" },
+    "firmware": { "type": "string" },
+    "location": { "type": "string" },
+    "note": { "type": "string" }
+  }
+}

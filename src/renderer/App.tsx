@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 
 import type { CaptureReadiness, ChecklistItem } from '../core/capture-pack/types';
+import type { CapturePackComparison, CapturePackSummary } from '../core/capture-pack/summarizeCapturePack';
 import type { ScreenshotRole } from '../core/browser/browserCaptureCore';
+import type { CaptureJobSummary } from '../core/delivery/captureJob';
+import { MAX_CAPTURE_JOBS } from '../core/delivery/captureJob';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 
@@ -41,12 +44,31 @@ function statusText(status: string) {
   return status;
 }
 
+function jobRowStatus(job: CaptureJobSummary) {
+  if (job.exported) return '已导出';
+  if (job.paused) return '已暂停';
+  if (job.windowsOpen) return '采集中';
+  return '窗口已关';
+}
+
+function formatSummaryValue(value: string | number | string[]) {
+  if (Array.isArray(value)) return value.join(', ') || '无';
+  if (value === '' || value === 0) return String(value);
+  return String(value);
+}
+
 export function App() {
   const [host, setHost] = useState('10.0.0.10');
   const [port, setPort] = useState('443');
   const [operatorNote, setOperatorNote] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [product, setProduct] = useState('');
+  const [firmware, setFirmware] = useState('');
+  const [location, setLocation] = useState('');
   const [phase, setPhase] = useState<CapturePhase>('idle');
   const [jobId, setJobId] = useState('');
+  const [jobs, setJobs] = useState<CaptureJobSummary[]>([]);
+  const [paused, setPaused] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<FormattedCaptureError | null>(null);
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
@@ -54,19 +76,49 @@ export function App() {
   const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
   const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
   const [windowsOpen, setWindowsOpen] = useState(false);
+  const [packSummary, setPackSummary] = useState<CapturePackSummary | null>(null);
+  const [packPath, setPackPath] = useState('');
+  const [packComparison, setPackComparison] = useState<CapturePackComparison | null>(null);
+
+  function applyJobs(nextJobs?: CaptureJobSummary[]) {
+    if (nextJobs) {
+      setJobs(nextJobs);
+    }
+  }
 
   function applySnapshot(snapshot: {
     readiness: CaptureReadiness;
     items: ChecklistItem[];
     windowsOpen?: boolean;
+    paused?: boolean;
+    jobs?: CaptureJobSummary[];
   }) {
     setReadiness(snapshot.readiness);
     setProgressItems(snapshot.items);
     if (typeof snapshot.windowsOpen === 'boolean') {
       setWindowsOpen(snapshot.windowsOpen);
     }
+    if (typeof snapshot.paused === 'boolean') {
+      setPaused(snapshot.paused);
+    }
+    applyJobs(snapshot.jobs);
     const pending = snapshot.items.find(item => item.status !== 'pass' && item.status !== 'not_applicable');
     setStatusHint(pending?.userAction || '关键资料已采集，可导出后查看报告。');
+  }
+
+  function applySelectedJob(nextJobId: string, nextJobs = jobs) {
+    const selected = nextJobs.find(job => job.jobId === nextJobId);
+    setJobId(nextJobId);
+    if (!selected) {
+      setPhase('idle');
+      setWindowsOpen(false);
+      setPaused(false);
+      return;
+    }
+    setPhase(selected.exported ? 'exported' : 'capturing');
+    setWindowsOpen(selected.windowsOpen);
+    setPaused(selected.paused);
+    setReadiness(selected.readiness);
   }
 
   async function refreshSnapshot(nextJobId = jobId) {
@@ -75,14 +127,21 @@ export function App() {
     if (result.ok) applySnapshot(result);
   }
 
+  async function refreshJobs() {
+    if (!window.kvmRecon?.listCaptureJobs) return;
+    const result = await window.kvmRecon.listCaptureJobs();
+    if (result.ok) applyJobs(result.jobs);
+  }
+
   useEffect(() => {
-    if (phase !== 'capturing' || !jobId) return undefined;
+    if (!jobId && jobs.length === 0) return undefined;
     void refreshSnapshot(jobId);
     const timer = window.setInterval(() => {
       void refreshSnapshot(jobId);
+      void refreshJobs();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [phase, jobId]);
+  }, [jobId, jobs.length]);
 
   async function startCapture() {
     const numericPort = Number(port) || 443;
@@ -96,10 +155,6 @@ export function App() {
       });
       return;
     }
-    if (phase === 'capturing' && jobId) {
-      const confirmed = window.confirm('当前作业尚未导出，新建会丢掉未导出资料。确定继续？');
-      if (!confirmed) return;
-    }
     if (!window.kvmRecon?.startCapture) {
       setMessage('当前运行环境不支持采集窗口。');
       return;
@@ -110,16 +165,21 @@ export function App() {
       port: numericPort,
       scheme: 'https',
       operatorNote,
+      operatorObserved: {
+        vendor,
+        product,
+        firmware,
+        location,
+        note: operatorNote,
+      },
     });
     if (!result.ok) {
-      setPhase('idle');
       setError(result.error);
       setMessage('');
       return;
     }
-    setJobId(result.jobId);
-    setPhase('capturing');
-    setWindowsOpen(true);
+    applyJobs(result.jobs);
+    applySelectedJob(result.jobId, result.jobs);
     applySnapshot(result.snapshot);
     setMessage(`采集作业已启动：${result.jobId}`);
   }
@@ -143,6 +203,54 @@ export function App() {
     applySnapshot(result);
     setWindowsOpen(false);
     setMessage('采集窗口已关闭，作业数据仍保留，可继续导出 Capture Pack。');
+  }
+
+  async function togglePause() {
+    setError(null);
+    if (!jobId) return;
+    const api = paused ? window.kvmRecon?.resumeCapture : window.kvmRecon?.pauseCapture;
+    if (!api) return;
+    const result = await api(jobId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    applySnapshot(result);
+    setMessage(paused ? '已继续记录 HTTP / WebSocket / 点击。' : '已暂停记录，采集窗口仍保持打开。');
+  }
+
+  async function closeSelectedJob(targetJobId = jobId) {
+    setError(null);
+    const job = jobs.find(item => item.jobId === targetJobId);
+    if (job && !job.exported) {
+      const confirmed = window.confirm('该作业尚未导出，关闭后未导出资料会丢失。确定关闭？');
+      if (!confirmed) return;
+    }
+    if (!targetJobId || !window.kvmRecon?.closeCaptureJob) return;
+    const result = await window.kvmRecon.closeCaptureJob(targetJobId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    applyJobs(result.jobs);
+    const next = result.jobs[result.jobs.length - 1];
+    if (next) {
+      applySelectedJob(next.jobId, result.jobs);
+      await refreshSnapshot(next.jobId);
+      setMessage(`已关闭作业 ${targetJobId}`);
+      return;
+    }
+    setJobId('');
+    setPhase('idle');
+    setWindowsOpen(false);
+    setPaused(false);
+    applySnapshot(emptySnapshot);
+    setMessage(`已关闭作业 ${targetJobId}`);
+  }
+
+  async function selectJob(nextJobId: string) {
+    applySelectedJob(nextJobId);
+    await refreshSnapshot(nextJobId);
   }
 
   async function refreshProbeAfterLogin() {
@@ -211,6 +319,7 @@ export function App() {
       setMessage('');
       return;
     }
+    applyJobs(result.jobs);
     setPhase('exported');
     setWindowsOpen(false);
     setReadiness(result.readiness);
@@ -218,6 +327,57 @@ export function App() {
     setMessage(`已导出：${result.fileName}`);
     await refreshSnapshot(jobId);
   }
+
+  async function openCapturePack() {
+    setError(null);
+    if (!window.kvmRecon?.chooseCapturePack || !window.kvmRecon.summarizeCapturePack) {
+      setMessage('当前运行环境不支持打开 Capture Pack。');
+      return;
+    }
+    const chosen = await window.kvmRecon.chooseCapturePack();
+    if (!chosen.ok) {
+      if (chosen.canceled) setMessage('已取消打开 Capture Pack。');
+      return;
+    }
+    const result = await window.kvmRecon.summarizeCapturePack(chosen.filePath);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPackSummary(result.summary);
+    setPackPath(result.filePath);
+    setPackComparison(null);
+    setMessage(`已打开 Capture Pack：${result.filePath}`);
+  }
+
+  async function compareOpenedPacks() {
+    setError(null);
+    if (!window.kvmRecon?.chooseCapturePack || !window.kvmRecon.compareCapturePacks) {
+      setMessage('当前运行环境不支持对比 Capture Pack。');
+      return;
+    }
+    const left = await window.kvmRecon.chooseCapturePack();
+    if (!left.ok) {
+      if (left.canceled) setMessage('已取消对比。');
+      return;
+    }
+    const right = await window.kvmRecon.chooseCapturePack();
+    if (!right.ok) {
+      if (right.canceled) setMessage('已取消对比。');
+      return;
+    }
+    const result = await window.kvmRecon.compareCapturePacks(left.filePath, right.filePath);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPackComparison(result.comparison);
+    setPackSummary(result.comparison.left);
+    setPackPath(result.leftPath);
+    setMessage('已完成本地对比，未调用公网。');
+  }
+
+  const selectedJob = jobs.find(job => job.jobId === jobId);
 
   return (
     <main className="app-shell">
@@ -253,6 +413,38 @@ export function App() {
               <option value="error">异常画面</option>
             </select>
           </label>
+          <label>
+            现场厂商
+            <input
+              value={vendor}
+              onChange={event => setVendor(event.target.value)}
+              placeholder="铭牌，不作为 kvmFamily"
+            />
+          </label>
+          <label>
+            现场型号
+            <input
+              value={product}
+              onChange={event => setProduct(event.target.value)}
+              placeholder="可选"
+            />
+          </label>
+          <label>
+            现场固件
+            <input
+              value={firmware}
+              onChange={event => setFirmware(event.target.value)}
+              placeholder="可选"
+            />
+          </label>
+          <label>
+            机柜位置
+            <input
+              value={location}
+              onChange={event => setLocation(event.target.value)}
+              placeholder="可选"
+            />
+          </label>
           <label className="note-field">
             作业备注
             <input
@@ -263,7 +455,7 @@ export function App() {
           </label>
         </div>
         <div className="actions">
-          <button type="button" onClick={startCapture} disabled={phase === 'capturing' && windowsOpen}>
+          <button type="button" onClick={startCapture} disabled={jobs.length >= MAX_CAPTURE_JOBS}>
             新建采集作业
           </button>
           <button
@@ -273,6 +465,14 @@ export function App() {
             disabled={phase !== 'capturing' || !windowsOpen}
           >
             采集当前页面
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={togglePause}
+            disabled={!jobId || !windowsOpen}
+          >
+            {paused ? '继续采集' : '暂停采集'}
           </button>
           <button
             type="button"
@@ -315,6 +515,11 @@ export function App() {
           <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
         <p>{statusHint}</p>
+        {selectedJob ? (
+          <p>
+            当前作业 {selectedJob.jobId} · {selectedJob.host}:{selectedJob.port} · {jobRowStatus(selectedJob)}
+          </p>
+        ) : null}
         <div className="progress-list" aria-label="Capture progress">
           <h2>采集进度</h2>
           <ul>
@@ -329,6 +534,114 @@ export function App() {
             ))}
           </ul>
         </div>
+      </section>
+
+      <section className="status-card job-list" aria-label="Capture jobs">
+        <h2>作业列表</h2>
+        <p>可同时保留最多 {MAX_CAPTURE_JOBS} 个作业；新建不会覆盖上一份未导出资料。</p>
+        {jobs.length === 0 ? (
+          <p>还没有采集作业。</p>
+        ) : (
+          <ul>
+            {jobs.map(job => (
+              <li key={job.jobId}>
+                <button
+                  type="button"
+                  className={job.jobId === jobId ? 'job-item active' : 'job-item'}
+                  onClick={() => {
+                    void selectJob(job.jobId);
+                  }}
+                >
+                  <strong>
+                    {job.host}:{job.port}
+                  </strong>
+                  <span>
+                    {job.family} · {job.readiness} · {jobRowStatus(job)}
+                    {job.vendor || job.product ? ` · ${[job.vendor, job.product].filter(Boolean).join(' ')}` : ''}
+                  </span>
+                </button>
+                <button type="button" className="secondary" onClick={() => void closeSelectedJob(job.jobId)}>
+                  关闭作业
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="status-card pack-review" aria-label="Capture pack review">
+        <h2>本地打开 / 对比 Capture Pack</h2>
+        <p>只在本机读取 zip，不调用公网，也不写 Adapter。</p>
+        <div className="actions">
+          <button type="button" className="secondary" onClick={() => void openCapturePack()}>
+            打开 Capture Pack
+          </button>
+          <button type="button" className="secondary" onClick={() => void compareOpenedPacks()}>
+            对比两份
+          </button>
+        </div>
+        {packSummary ? (
+          <dl className="pack-summary">
+            <div>
+              <dt>文件</dt>
+              <dd>{packPath || '本地 zip'}</dd>
+            </div>
+            <div>
+              <dt>协议族</dt>
+              <dd>{packSummary.family}</dd>
+            </div>
+            <div>
+              <dt>现场厂商/型号</dt>
+              <dd>
+                {[packSummary.observedVendor, packSummary.observedProduct].filter(Boolean).join(' ') || '无'}
+              </dd>
+            </div>
+            <div>
+              <dt>离场结论</dt>
+              <dd>{packSummary.readiness}</dd>
+            </div>
+            <div>
+              <dt>HTTP / WS</dt>
+              <dd>
+                {packSummary.httpRequestCount} / {packSummary.webSocketCount}
+              </dd>
+            </div>
+            <div>
+              <dt>WebSocket</dt>
+              <dd>{formatSummaryValue(packSummary.webSocketUrls)}</dd>
+            </div>
+            <div>
+              <dt>截图角色</dt>
+              <dd>{formatSummaryValue(packSummary.screenshotRoles)}</dd>
+            </div>
+            {packSummary.schemaErrors.length > 0 ? (
+              <div>
+                <dt>Schema</dt>
+                <dd>{packSummary.schemaErrors.join('；')}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
+        {packComparison ? (
+          <table className="pack-diff">
+            <thead>
+              <tr>
+                <th>字段</th>
+                <th>左</th>
+                <th>右</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packComparison.diffs.map(diff => (
+                <tr key={diff.field} className={diff.changed ? 'changed' : undefined}>
+                  <td>{diff.field}</td>
+                  <td>{diff.left || '无'}</td>
+                  <td>{diff.right || '无'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
       </section>
     </main>
   );

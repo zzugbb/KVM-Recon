@@ -27,6 +27,12 @@ export interface CaptureManifest {
     startedAt: string;
     endedAt: string | null;
     operatorNote: string;
+    observed?: {
+      vendor: string;
+      product: string;
+      firmware: string;
+      location: string;
+    };
   };
   target: CaptureTarget;
   family: {

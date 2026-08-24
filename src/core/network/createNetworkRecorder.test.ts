@@ -187,4 +187,73 @@ describe('createNetworkRecorder', () => {
       opcode: 'text',
     });
   });
+
+  it('ignores new HTTP and WebSocket records while paused but still closes in-flight items', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    recorder.recordHttpRequest({
+      id: 'req-1',
+      timestamp: '2026-08-24T12:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/api/session',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketCreated({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url: 'wss://10.0.0.10/kvm',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+
+    recorder.setPaused(true);
+    recorder.recordHttpRequest({
+      id: 'req-2',
+      timestamp: '2026-08-24T12:00:03.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/api/kvm/token',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'req-1',
+      status: 200,
+      responseHeaders: {},
+    });
+    recorder.recordWebSocketCreated({
+      id: 'ws-2',
+      timestamp: '2026-08-24T12:00:04.000+08:00',
+      url: 'wss://10.0.0.10/kvm/video',
+      subProtocols: [],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-1',
+      timestamp: '2026-08-24T12:00:04.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array([0x17, 0x00]),
+    });
+    recorder.recordWebSocketClosed({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:05.000+08:00',
+    });
+
+    recorder.setPaused(false);
+    recorder.recordHttpRequest({
+      id: 'req-3',
+      timestamp: '2026-08-24T12:00:06.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/api/randomtag',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+
+    const snapshot = recorder.toJSON();
+    expect(snapshot.httpRequests.map(item => item.id)).toEqual(['req-1', 'req-3']);
+    expect(snapshot.httpRequests[0]?.status).toBe(200);
+    expect(snapshot.webSockets.map(item => item.id)).toEqual(['ws-1']);
+    expect(snapshot.webSockets[0]?.closedAt).toBe('2026-08-24T12:00:05.000+08:00');
+    expect(snapshot.webSocketFrames).toHaveLength(0);
+  });
 });

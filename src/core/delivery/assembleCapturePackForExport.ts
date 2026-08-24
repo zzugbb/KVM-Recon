@@ -15,6 +15,12 @@ import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
 import { validateRedactionForExport } from '../redaction/validateRedactionForExport';
 import { buildCapturePackFileName } from './buildCapturePackFileName';
 import { buildHandoverArtifact } from './buildHandoverArtifact';
+import {
+  buildOperatorObservedArtifact,
+  normalizeOperatorObserved,
+  observedForManifest,
+  type OperatorObservedAsset,
+} from './operatorObserved';
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -36,6 +42,7 @@ export interface AssembleCapturePackForExportInput {
   endedAt: string;
   target: CaptureTarget;
   operatorNote?: string;
+  operatorObserved?: Partial<OperatorObservedAsset> | null;
   probe: ProbeBmcTargetResult;
   page: BrowserTimelineJson;
   network: NetworkSnapshot;
@@ -62,11 +69,17 @@ function countRedactedFields(network: NetworkSnapshot): number {
 export function assembleCapturePackForExport(
   input: AssembleCapturePackForExportInput,
 ): AssembledCapturePack {
+  const operatorObserved = normalizeOperatorObserved({
+    ...input.operatorObserved,
+    note: input.operatorObserved?.note ?? input.operatorNote,
+  });
+  const operatorArtifact = buildOperatorObservedArtifact(operatorObserved);
   let pack = createEmptyCapturePack({
     jobId: input.jobId,
     startedAt: input.startedAt,
     target: input.target,
-    operatorNote: input.operatorNote,
+    operatorNote: operatorObserved.note,
+    observed: observedForManifest(operatorObserved),
   });
 
   pack.manifest.job.endedAt = input.endedAt;
@@ -78,6 +91,7 @@ export function assembleCapturePackForExport(
 
   const artifacts = [
     ...buildProbeArtifacts(input.probe),
+    ...(operatorArtifact ? [operatorArtifact] : []),
     ...buildBrowserArtifacts(input.page),
     ...(input.screenshotArtifacts ?? []),
     ...buildNetworkArtifacts(input.network),
@@ -119,7 +133,8 @@ export function assembleCapturePackForExport(
     buildHandoverArtifact({
       kvmFamily: pack.manifest.family.primary,
       readiness: pack.manifest.readiness.status,
-      operatorNote: input.operatorNote,
+      operatorNote: operatorObserved.note,
+      operatorObserved,
       httpRequestCount: input.network.httpRequests.length,
       webSocketCount: input.network.webSockets.length,
       screenshotCount: input.page.events.filter(event => event.type === 'screenshot').length,

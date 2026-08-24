@@ -5,6 +5,13 @@ interface StartCaptureTarget {
   port: number;
   scheme: 'http' | 'https';
   operatorNote?: string;
+  operatorObserved?: {
+    vendor?: string;
+    product?: string;
+    firmware?: string;
+    location?: string;
+    note?: string;
+  };
 }
 
 contextBridge.exposeInMainWorld('kvmRecon', {
@@ -26,5 +33,26 @@ contextBridge.exposeInMainWorld('kvmRecon', {
   },
   refreshCaptureProbe(jobId: string) {
     return ipcRenderer.invoke('capture:refreshProbe', jobId);
+  },
+  listCaptureJobs() {
+    return ipcRenderer.invoke('capture:listJobs');
+  },
+  pauseCapture(jobId: string) {
+    return ipcRenderer.invoke('capture:pause', jobId);
+  },
+  resumeCapture(jobId: string) {
+    return ipcRenderer.invoke('capture:resume', jobId);
+  },
+  closeCaptureJob(jobId: string) {
+    return ipcRenderer.invoke('capture:closeJob', jobId);
+  },
+  chooseCapturePack() {
+    return ipcRenderer.invoke('pack:choose');
+  },
+  summarizeCapturePack(filePath: string) {
+    return ipcRenderer.invoke('pack:summarize', filePath);
+  },
+  compareCapturePacks(leftPath: string, rightPath: string) {
+    return ipcRenderer.invoke('pack:compare', leftPath, rightPath);
   },
 });

@@ -1,9 +1,12 @@
 import type { CapturePackArtifact, CaptureReadiness } from '../capture-pack/types';
+import type { OperatorObservedAsset } from './operatorObserved';
+import { hasStructuredObserved, normalizeOperatorObserved } from './operatorObserved';
 
 interface BuildHandoverArtifactInput {
   kvmFamily: string;
   readiness: CaptureReadiness;
   operatorNote?: string;
+  operatorObserved?: Partial<OperatorObservedAsset> | null;
   httpRequestCount: number;
   webSocketCount: number;
   screenshotCount: number;
@@ -11,6 +14,10 @@ interface BuildHandoverArtifactInput {
 }
 
 export function buildHandoverArtifact(input: BuildHandoverArtifactInput): CapturePackArtifact {
+  const observed = normalizeOperatorObserved({
+    ...input.operatorObserved,
+    note: input.operatorObserved?.note ?? input.operatorNote,
+  });
   const nextStep = input.hasOemProfile
     ? '已知族草稿在 `artifacts/oem-profile.yaml`，供出机房后人工或 AI 审核，不是可直接上线的 Adapter。'
     : '未知/非 H5 族没有 Profile。出机房后请将本包交给工程师或 AI 判断协议，不要期望本工具写出 Adapter。';
@@ -30,7 +37,14 @@ export function buildHandoverArtifact(input: BuildHandoverArtifactInput): Captur
       `- HTTP 请求：${input.httpRequestCount}`,
       `- WebSocket 连接：${input.webSocketCount}`,
       `- 页面截图：${input.screenshotCount}`,
-      `- 作业备注：${input.operatorNote?.trim() || '（无）'}`,
+      `- 现场厂商：${observed.vendor || '（无）'}`,
+      `- 现场型号：${observed.product || '（无）'}`,
+      `- 现场固件：${observed.firmware || '（无）'}`,
+      `- 机柜位置：${observed.location || '（无）'}`,
+      `- 作业备注：${observed.note || '（无）'}`,
+      ...(hasStructuredObserved(observed)
+        ? ['- 现场厂商/型号只是铭牌证据，不能替代 kvmFamily。']
+        : []),
       '',
       '## 出机房后建议',
       '',

@@ -1,9 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import {
+  compareCapturePacks,
+  summarizeCapturePackZip,
+} from '../core/capture-pack/summarizeCapturePack';
 import type { CaptureTarget } from '../core/capture-pack/types';
+import { canAddCaptureJob, type CaptureJobSummary } from '../core/delivery/captureJob';
 import { exportCaptureJob, type CaptureExportJob } from '../core/delivery/exportCaptureJob';
+import { normalizeOperatorObserved, type OperatorObservedAsset } from '../core/delivery/operatorObserved';
 import {
   classifyCaptureError,
   formatCaptureError,
@@ -19,30 +25,55 @@ const logger = createCaptureLogger();
 
 interface CaptureSession extends CaptureExportJob {
   controller: ReturnType<typeof createCaptureBrowserController>;
+  exported: boolean;
+  exportedAt?: string;
 }
 
 const captureSessions = new Map<string, CaptureSession>();
 
-async function stopExistingCaptureSessions() {
-  const previous = [...captureSessions.values()];
-  for (const session of previous) {
-    try {
-      await session.controller.stop();
-    } catch (error) {
-      // 捕获上一作业关窗失败：用户可能已手动关闭采集窗口
-      // 策略：仍替换作业，避免新采集被旧窗口占用
-      void error;
-    }
-  }
-}
-
 function sessionSnapshot(session: CaptureSession) {
   return {
     windowsOpen: session.controller.windowsOpen(),
+    paused: session.controller.isPaused(),
     ...buildLiveCaptureSnapshot({
       probe: session.probe,
       page: session.controller.timeline(),
       network: session.controller.network(),
+    }),
+  };
+}
+
+function toJobSummary(session: CaptureSession): CaptureJobSummary {
+  const snapshot = sessionSnapshot(session);
+  return {
+    jobId: session.jobId,
+    host: session.target.host,
+    port: session.target.port,
+    scheme: session.target.scheme,
+    family: session.probe.familySignatures.primary,
+    startedAt: session.startedAt,
+    vendor: session.operatorObserved?.vendor || '',
+    product: session.operatorObserved?.product || '',
+    windowsOpen: snapshot.windowsOpen,
+    paused: snapshot.paused,
+    exported: session.exported,
+    exportedAt: session.exportedAt,
+    readiness: snapshot.readiness,
+  };
+}
+
+function listJobSummaries() {
+  return [...captureSessions.values()]
+    .map(toJobSummary)
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
+function missingSessionResult() {
+  return {
+    ok: false as const,
+    error: formatCaptureError({
+      code: 'EXPORT_FAILED',
+      detail: '没有正在进行的采集作业。',
     }),
   };
 }
@@ -95,9 +126,20 @@ function registerCaptureHandlers() {
       _event,
       payload: CaptureTarget & {
         operatorNote?: string;
+        operatorObserved?: Partial<OperatorObservedAsset> | null;
       },
     ) => {
     try {
+      const limit = canAddCaptureJob(captureSessions.size);
+      if (!limit.ok) {
+        return {
+          ok: false as const,
+          error: formatCaptureError({
+            code: 'UNKNOWN',
+            detail: limit.message,
+          }),
+        };
+      }
       const target: CaptureTarget = {
         host: String(payload.host || '').trim(),
         port: payload.port,
@@ -116,16 +158,26 @@ function registerCaptureHandlers() {
       });
 
       await controller.start();
-      await stopExistingCaptureSessions();
-      captureSessions.clear();
-      logger.info('capture-start', { jobId, host: target.host, port: target.port });
+      const operatorObserved = normalizeOperatorObserved({
+        ...payload.operatorObserved,
+        note: payload.operatorObserved?.note ?? payload.operatorNote,
+      });
+      logger.info('capture-start', {
+        jobId,
+        host: target.host,
+        port: target.port,
+        vendor: operatorObserved.vendor || undefined,
+        product: operatorObserved.product || undefined,
+      });
       const session: CaptureSession = {
         jobId,
         startedAt,
         target,
         probe,
-        operatorNote: payload.operatorNote,
+        operatorNote: operatorObserved.note,
+        operatorObserved,
         controller,
+        exported: false,
       };
       captureSessions.set(jobId, session);
 
@@ -136,6 +188,7 @@ function registerCaptureHandlers() {
         timeline: controller.timeline(),
         network: controller.network(),
         snapshot: sessionSnapshot(session),
+        jobs: listJobSummaries(),
       };
     } catch (error) {
       // 捕获采集启动失败：BMC 不可达、证书策略、权限不足或窗口创建失败
@@ -216,6 +269,8 @@ function registerCaptureHandlers() {
       writeFile,
     });
     if (result.ok) {
+      session.exported = true;
+      session.exportedAt = new Date().toISOString();
       try {
         await session.controller.stop();
       } catch (error) {
@@ -224,7 +279,10 @@ function registerCaptureHandlers() {
         void error;
       }
     }
-    return result;
+    return {
+      ...result,
+      jobs: listJobSummaries(),
+    };
   });
 
   ipcMain.handle('capture:stop', async (_event, jobId: string) => {
@@ -246,6 +304,7 @@ function registerCaptureHandlers() {
       return {
         ok: true as const,
         ...sessionSnapshot(session),
+        jobs: listJobSummaries(),
       };
     } catch (error) {
       // 捕获停止采集失败：窗口可能已关闭，作业数据仍应可导出
@@ -276,6 +335,7 @@ function registerCaptureHandlers() {
     return {
       ok: true as const,
       ...sessionSnapshot(session),
+      jobs: listJobSummaries(),
     };
   });
 
@@ -307,10 +367,118 @@ function registerCaptureHandlers() {
       return {
         ok: true as const,
         ...sessionSnapshot(session),
+        jobs: listJobSummaries(),
       };
     } catch (error) {
       // 捕获页面补采失败：采集窗口可能已关闭或截图目录不可写
       // 策略：返回现场可读错误，保留当前作业，便于重试补采
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: classifyCaptureError(error),
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      };
+    }
+  });
+
+  ipcMain.handle('capture:listJobs', async () => {
+    return {
+      ok: true as const,
+      jobs: listJobSummaries(),
+    };
+  });
+
+  ipcMain.handle('capture:pause', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) return missingSessionResult();
+    session.controller.pause();
+    logger.info('capture-pause', { jobId });
+    return {
+      ok: true as const,
+      ...sessionSnapshot(session),
+      jobs: listJobSummaries(),
+    };
+  });
+
+  ipcMain.handle('capture:resume', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) return missingSessionResult();
+    session.controller.resume();
+    logger.info('capture-resume', { jobId });
+    return {
+      ok: true as const,
+      ...sessionSnapshot(session),
+      jobs: listJobSummaries(),
+    };
+  });
+
+  ipcMain.handle('capture:closeJob', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) return missingSessionResult();
+    try {
+      await session.controller.stop();
+    } catch (error) {
+      // 捕获关闭作业时关窗失败：窗口可能已不存在
+      // 策略：仍从内存列表移除作业，避免残留不可操作的条目
+      void error;
+    }
+    captureSessions.delete(jobId);
+    logger.info('capture-close-job', { jobId });
+    return {
+      ok: true as const,
+      jobs: listJobSummaries(),
+    };
+  });
+
+  ipcMain.handle('pack:choose', async event => {
+    const parentWindow = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      title: '打开 Capture Pack',
+      filters: [{ name: 'Capture Pack', extensions: ['zip'] }],
+      properties: ['openFile' as const],
+    };
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths[0]) {
+      return { ok: false as const, canceled: true as const };
+    }
+    return { ok: true as const, filePath: result.filePaths[0] };
+  });
+
+  ipcMain.handle('pack:summarize', async (_event, filePath: string) => {
+    try {
+      const bytes = await readFile(filePath);
+      const summary = await summarizeCapturePackZip(bytes);
+      return { ok: true as const, summary, filePath };
+    } catch (error) {
+      // 捕获打开资料包失败：路径无效、不是 zip 或 JSON 损坏
+      // 策略：返回可读错误，不调用公网，不影响当前采集作业
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: classifyCaptureError(error),
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      };
+    }
+  });
+
+  ipcMain.handle('pack:compare', async (_event, leftPath: string, rightPath: string) => {
+    try {
+      const [leftBytes, rightBytes] = await Promise.all([readFile(leftPath), readFile(rightPath)]);
+      const left = await summarizeCapturePackZip(leftBytes);
+      const right = await summarizeCapturePackZip(rightBytes);
+      return {
+        ok: true as const,
+        comparison: compareCapturePacks(left, right),
+        leftPath,
+        rightPath,
+      };
+    } catch (error) {
+      // 捕获对比资料包失败：其中一个 zip 无法读取或解析
+      // 策略：返回可读错误，保留已打开的另一份摘要（由界面决定是否清空）
       return {
         ok: false as const,
         error: formatCaptureError({
@@ -338,6 +506,7 @@ function registerCaptureHandlers() {
       return {
         ok: true as const,
         ...sessionSnapshot(session),
+        jobs: listJobSummaries(),
       };
     } catch (error) {
       // 捕获登录后复验 IPC 失败：探测超时或目标拒绝
@@ -355,8 +524,8 @@ function registerCaptureHandlers() {
 
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: 1280,
+    height: 860,
     minWidth: 980,
     minHeight: 640,
     title: 'KVM-Recon',

@@ -348,4 +348,107 @@ describe('createCaptureBrowserController', () => {
     ]);
     expect(JSON.stringify(controller.timeline())).not.toContain('session-secret');
   });
+
+  it('pauses HTTP, navigation and click recording without closing the capture window', async () => {
+    const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') cdpListeners.push(listener);
+      },
+    };
+    let pendingClicks = [{ selector: '#paused', text: 'ignored', tagName: 'button' }];
+    let capturedOptions: CaptureBrowserAdapterOptions | undefined;
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        capturedOptions = nextOptions;
+        await nextOptions.onNetworkDebugger(cdp);
+        return {
+          async loadURL(url) {
+            nextOptions.onNavigation(url);
+          },
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            const items = pendingClicks;
+            pendingClicks = [];
+            return items;
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-pause',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.requestWillBeSent', {
+        requestId: 'req-1',
+        type: 'XHR',
+        request: {
+          method: 'GET',
+          url: 'https://10.0.0.10/api/session',
+          headers: {},
+        },
+      });
+    }
+
+    controller.pause();
+    expect(controller.isPaused()).toBe(true);
+    expect(controller.windowsOpen()).toBe(true);
+    capturedOptions?.onNavigation('https://10.0.0.10/kvm');
+    await controller.ingestLiveEvents();
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.requestWillBeSent', {
+        requestId: 'req-2',
+        type: 'XHR',
+        request: {
+          method: 'GET',
+          url: 'https://10.0.0.10/api/kvm/token',
+          headers: {},
+        },
+      });
+    }
+
+    controller.resume();
+    pendingClicks = [{ selector: '#kvm', text: 'HTML5 KVM', tagName: 'button' }];
+    await controller.ingestLiveEvents();
+
+    expect(controller.network().httpRequests.map(item => item.id)).toEqual(['req-1']);
+    expect(controller.timeline().events.map(event => event.type)).toEqual(['navigation', 'click']);
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'click',
+        selector: '#kvm',
+      }),
+    );
+    expect(controller.timeline().events).not.toContainEqual(
+      expect.objectContaining({
+        selector: '#paused',
+      }),
+    );
+  });
 });

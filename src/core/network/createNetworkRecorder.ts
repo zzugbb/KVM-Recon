@@ -204,9 +204,17 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const httpRequests = new Map<string, HttpRequestRecord>();
   const webSockets = new Map<string, WebSocketRecord>();
   const webSocketFrames: WebSocketFrameRecord[] = [];
+  let paused = false;
 
   return {
+    setPaused(next: boolean) {
+      paused = next;
+    },
+    isPaused() {
+      return paused;
+    },
     recordHttpRequest(input: HttpRequestInput) {
+      if (paused) return;
       httpRequests.set(input.id, {
         id: input.id,
         timestamp: input.timestamp,
@@ -235,6 +243,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       existing.responseBodySummary = summarizeBody(input.responseBody);
     },
     recordWebSocketCreated(input: WebSocketCreatedInput) {
+      if (paused) return;
       webSockets.set(input.id, {
         id: input.id,
         createdAt: input.timestamp,
@@ -259,6 +268,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       socket.closedAt = input.timestamp;
     },
     recordWebSocketFrame(input: WebSocketFrameInput) {
+      if (paused) return;
       const socket = webSockets.get(input.socketId);
       if (socket) {
         if (input.opcode === 'binary') socket.binaryFrameCount += 1;

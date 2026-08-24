@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/http-request.schema.json",
+  "title": "KVM-Recon HTTP request summary",
+  "type": "object",
+  "required": ["id", "timestamp", "method", "url", "resourceType", "status", "tags"],
+  "properties": {
+    "id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "method": { "type": "string" },
+    "url": { "type": "string" },
+    "resourceType": { "type": "string" },
+    "status": { "type": ["integer", "null"] },
+    "requestHeaders": { "type": "object" },
+    "responseHeaders": { "type": "object" },
+    "requestBodySummary": { "type": "object" },
+    "responseBodySummary": { "type": "object" },
+    "tags": {
+      "type": "array",
+      "items": { "enum": ["login", "kvm-token", "kvm-entry"] }
+    },
+    "windowRole": { "enum": ["main", "popup"] }
+  }
+}

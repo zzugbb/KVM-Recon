@@ -10,7 +10,12 @@ KVM-Recon 是机房离线采集工具，不是 KVM 网关，也不会根据本�
 - HTTP 请求：2
 - WebSocket 连接：1
 - 页面截图：0
+- 现场厂商：AMI
+- 现场型号：MegaRAC SPX
+- 现场固件：1.0.0
+- 机柜位置：Lab rack A
 - 作业备注：Sample pack for offline handoff format review.
+- 现场厂商/型号只是铭牌证据，不能替代 kvmFamily。
 
 ## 出机房后建议
 

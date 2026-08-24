@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/ws-socket.schema.json",
+  "title": "KVM-Recon WebSocket socket summary",
+  "type": "object",
+  "required": ["id", "createdAt", "url", "binaryFrameCount", "textFrameCount", "tags"],
+  "properties": {
+    "id": { "type": "string" },
+    "createdAt": { "type": "string" },
+    "closedAt": { "type": "string" },
+    "url": { "type": "string" },
+    "subProtocols": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requestHeaders": { "type": "object" },
+    "binaryFrameCount": { "type": "integer" },
+    "textFrameCount": { "type": "integer" },
+    "tags": {
+      "type": "array",
+      "items": { "enum": ["kvm-video", "vmedia", "unknown"] }
+    },
+    "windowRole": { "enum": ["main", "popup"] }
+  }
+}

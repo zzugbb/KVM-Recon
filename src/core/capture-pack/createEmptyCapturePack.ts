@@ -9,6 +9,12 @@ interface CreateEmptyCapturePackInput {
   target: CaptureTarget;
   startedAt: string;
   operatorNote?: string;
+  observed?: {
+    vendor: string;
+    product: string;
+    firmware: string;
+    location: string;
+  };
 }
 
 const TOOL_VERSION = '0.1.0';
@@ -40,6 +46,7 @@ export function createEmptyCapturePack(input: CreateEmptyCapturePackInput): Capt
         startedAt: input.startedAt,
         endedAt: null,
         operatorNote: input.operatorNote || '',
+        ...(input.observed ? { observed: input.observed } : {}),
       },
       target: input.target,
       family: {

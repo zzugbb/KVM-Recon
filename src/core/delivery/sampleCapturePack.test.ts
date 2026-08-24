@@ -16,6 +16,7 @@ describe('sample capture pack', () => {
       'probe/path-evidence.json',
       'probe/family-signatures.json',
       'probe/redfish.json',
+      'probe/operator-observed.json',
       'tls/certificate.json',
       'http/requests.jsonl',
       'http/har.json',
@@ -42,6 +43,7 @@ describe('sample capture pack', () => {
         'ws/frames.jsonl',
         'page/timeline.jsonl',
         'tls/certificate.json',
+        'probe/operator-observed.json',
       ]),
     );
   });

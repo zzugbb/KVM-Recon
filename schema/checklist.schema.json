@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/checklist.schema.json",
+  "title": "KVM-Recon Capture Pack checklist",
+  "type": "object",
+  "required": ["readiness", "items"],
+  "properties": {
+    "readiness": { "enum": ["YES", "PARTIAL", "NO"] },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "severity", "evidence", "userAction"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "status": {
+            "enum": ["pass", "fail", "unknown", "missing", "not_applicable", "needs_user_action"]
+          },
+          "severity": { "enum": ["blocking", "warning", "info"] },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "userAction": { "type": "string" }
+        }
+      }
+    }
+  }
+}
