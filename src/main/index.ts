@@ -1,5 +1,33 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
+
+import type { CaptureTarget } from '../core/capture-pack/types';
+import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
+import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
+
+const captureControllers = new Map<string, ReturnType<typeof createCaptureBrowserController>>();
+
+function registerCaptureHandlers() {
+  ipcMain.handle('capture:start', async (_event, target: CaptureTarget) => {
+    const jobId = `job-${Date.now()}`;
+    const screenshotDir = join(app.getPath('userData'), 'captures', jobId, 'screenshots');
+    const controller = createCaptureBrowserController({
+      jobId,
+      target,
+      adapter: createElectronCaptureBrowserAdapter({
+        screenshotDir,
+      }),
+    });
+
+    await controller.start();
+    captureControllers.set(jobId, controller);
+
+    return {
+      jobId,
+      timeline: controller.timeline(),
+    };
+  });
+}
 
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
@@ -25,6 +53,7 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
+  registerCaptureHandlers();
   createMainWindow();
 
   app.on('activate', () => {

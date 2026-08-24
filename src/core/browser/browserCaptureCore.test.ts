@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  buildBmcUrl,
+  createBrowserTimeline,
+  shouldAllowCertificateError,
+} from './browserCaptureCore';
+
+describe('browserCaptureCore', () => {
+  it('builds the BMC home URL from target connection fields', () => {
+    expect(
+      buildBmcUrl({
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      }),
+    ).toBe('https://10.0.0.10:443/');
+  });
+
+  it('allows certificate errors only for the target host', () => {
+    expect(
+      shouldAllowCertificateError({
+        targetHost: '10.0.0.10',
+        url: 'https://10.0.0.10/login.html',
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowCertificateError({
+        targetHost: '10.0.0.10',
+        url: 'https://example.com/login.html',
+      }),
+    ).toBe(false);
+  });
+
+  it('records navigation, hash changes, popup, storage, screenshot and selector events', () => {
+    const timeline = createBrowserTimeline('job-001');
+
+    timeline.recordNavigation('https://10.0.0.10/');
+    timeline.recordHashChange('https://10.0.0.10/#/kvm');
+    timeline.recordPopup({
+      url: 'https://10.0.0.10/kvm.html',
+      disposition: 'new-window',
+    });
+    timeline.recordStorageSnapshot({
+      localStorageKeys: ['LOCAL_USERNAME'],
+      sessionStorageKeys: ['QSESSIONID'],
+    });
+    timeline.recordScreenshot('page/screenshots/login.png');
+    timeline.recordSelectorCandidates([
+      {
+        role: 'kvm-entry',
+        selector: 'button[data-testid="kvm"]',
+        confidence: 0.82,
+      },
+    ]);
+
+    expect(timeline.toJSON()).toMatchObject({
+      jobId: 'job-001',
+      events: [
+        { type: 'navigation', url: 'https://10.0.0.10/' },
+        { type: 'hash-change', url: 'https://10.0.0.10/#/kvm' },
+        { type: 'popup', url: 'https://10.0.0.10/kvm.html' },
+        { type: 'storage-snapshot' },
+        { type: 'screenshot', path: 'page/screenshots/login.png' },
+        { type: 'selector-candidates' },
+      ],
+    });
+  });
+});

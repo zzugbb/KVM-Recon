@@ -32,6 +32,15 @@ button.secondary {
   color: #0f172a;
 }
 
+input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #0f172a;
+  font-size: 15px;
+}
+
 .app-shell {
   display: grid;
   min-height: 100vh;
@@ -77,10 +86,32 @@ h1 {
   line-height: 1.8;
 }
 
+.target-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 140px;
+  gap: 12px;
+  max-width: 560px;
+  margin-top: 24px;
+}
+
+.target-form label {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .actions {
   display: flex;
   gap: 12px;
   margin-top: 28px;
+}
+
+.message {
+  margin: 16px 0 0;
+  color: #2563eb;
+  font-weight: 700;
 }
 
 .status-card {
