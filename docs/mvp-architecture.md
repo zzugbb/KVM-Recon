@@ -40,7 +40,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 - 记录页面导航、storage key、截图、选择器候选。
 - 保留用户真实操作路径，避免工具自动操作破坏 BMC 会话状态。
 
-当前限制：popup 与首个窗口共用 partition，但 CDP、截图和 storage 只挂在第一个窗口。阶段 8.1 要求 popup 完整纳入同一作业的网络与页面采集。
+当前限制：popup 与首个窗口共用同一作业的时间线、网络记录器和前台截图/storage。新窗口会挂 CDP。
 
 ### 3.3 CDP Recorder
 
@@ -89,8 +89,9 @@ MVP 先覆盖：
 - `openbmc-h5`
 - `huawei-ibmc`
 - `unknown-h5`
+- `not-h5`
 
-`not-h5` 为阶段 8.3：当前无指纹时输出 `unknown-h5`。
+无 HTML5 KVM 路径迹象时为 `not-h5`；有 H5 迹象但未命中已知族时为 `unknown-h5`。
 
 ### 3.6 Redactor
 
@@ -127,7 +128,7 @@ MVP 先覆盖：
 - 脱敏检查通过。
 - checklist 已生成。
 
-导出路径由用户在保存框中选择。导出前确认 checklist/脱敏摘要见阶段 8.4。
+导出路径由用户在确认离场结论和脱敏摘要后，再通过保存框选择。
 
 ## 4. 与下游网关适配的衔接
 
@@ -151,7 +152,7 @@ KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发：
 ## 6. 关键风险与降级路径
 
 - 老 TLS / 自签证书：Electron 采集窗口受控忽略证书错误；Node probe 记录 TLS 失败原因。
-- popup / 新窗口：当前记录 popup URL，并允许同 partition 打开；CDP 尚未挂到 popup。阶段 8.1 要求统一纳入同一作业的 HTTP/WS/截图。在此之前，若 KVM 只在新窗口建连，离场清单可能为 `NO`。
+- popup / 新窗口：与首个窗口共用作业，挂 CDP，前台窗口用于截图/storage。
 - 登录无法自动化：支持现场人员手工登录，工具只做记录。
 - KVM 协议不可解码：只记录 WS 元数据和首包特征，离场后分析。
 - 资料不完整：导出前用 checklist 阻断或提示补采。

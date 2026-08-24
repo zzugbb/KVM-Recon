@@ -25,13 +25,23 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
   const latestStorage = storageEvents.at(-1) || {
     localStorageKeys: [],
     sessionStorageKeys: [],
+    localStorageAdded: [],
+    localStorageRemoved: [],
+    sessionStorageAdded: [],
+    sessionStorageRemoved: [],
   };
   const latestSelectorEvent = selectorEvents.at(-1);
   const selectors = (latestSelectorEvent?.candidates || []) as SelectorCandidate[];
   const screenshots = screenshotEvents
-    .map(event => event.path)
-    .filter((path): path is string => typeof path === 'string')
-    .map(path => toPackScreenshotPath(path));
+    .map(event => {
+      const path = typeof event.path === 'string' ? toPackScreenshotPath(event.path) : '';
+      if (!path) return null;
+      return {
+        path,
+        role: typeof event.role === 'string' ? event.role : 'unknown',
+      };
+    })
+    .filter((item): item is { path: string; role: string } => Boolean(item));
 
   return [
     {
@@ -53,6 +63,10 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
       content: stringify({
         localStorageKeys: latestStorage.localStorageKeys || [],
         sessionStorageKeys: latestStorage.sessionStorageKeys || [],
+        localStorageAdded: latestStorage.localStorageAdded || [],
+        localStorageRemoved: latestStorage.localStorageRemoved || [],
+        sessionStorageAdded: latestStorage.sessionStorageAdded || [],
+        sessionStorageRemoved: latestStorage.sessionStorageRemoved || [],
       }),
     },
     {

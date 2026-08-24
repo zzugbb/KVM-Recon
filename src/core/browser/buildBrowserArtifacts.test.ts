@@ -34,9 +34,13 @@ describe('buildBrowserArtifacts', () => {
     expect(JSON.parse(artifacts.find(artifact => artifact.path === 'page/storage.json')!.content)).toEqual({
       localStorageKeys: ['LOCAL_USERNAME'],
       sessionStorageKeys: ['QSESSIONID'],
+      localStorageAdded: [],
+      localStorageRemoved: [],
+      sessionStorageAdded: [],
+      sessionStorageRemoved: [],
     });
     expect(JSON.parse(artifacts.find(artifact => artifact.path === 'page/screenshots.json')!.content)).toEqual([
-      'page/screenshots/login.png',
+      { path: 'page/screenshots/login.png', role: 'unknown' },
     ]);
     expect(artifacts.find(artifact => artifact.path === 'page/timeline.jsonl')!.content).not.toContain(
       '/tmp/kvm-recon/login.png',

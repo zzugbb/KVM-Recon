@@ -69,7 +69,7 @@ declare global {
       startCapture(target: StartCaptureTarget): Promise<StartCaptureResult>;
       exportCapture(jobId: string): Promise<ExportCaptureResult>;
       getCaptureSnapshot(jobId: string): Promise<SnapshotResult>;
-      collectCapturePage(jobId: string): Promise<SnapshotResult>;
+      collectCapturePage(jobId: string, role?: string): Promise<SnapshotResult>;
     };
   }
 }

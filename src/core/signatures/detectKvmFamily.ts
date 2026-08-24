@@ -22,7 +22,7 @@ export interface KvmFamilyCandidate {
 }
 
 export interface KvmFamilyDetectionResult {
-  primary: KvmFamilyCandidate['kvmFamily'] | 'unknown-h5';
+  primary: KvmFamilyCandidate['kvmFamily'] | 'unknown-h5' | 'not-h5';
   confidence: number;
   candidates: KvmFamilyCandidate[];
 }
@@ -98,18 +98,26 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
   candidates.sort((left, right) => right.confidence - left.confidence);
 
   const primary = candidates[0];
-  if (!primary) {
-    // 阶段 8.3：无指纹时目前输出 unknown-h5；not-h5 需能区分“无 H5 KVM 迹象”与“有 H5 但未命中已知族”。
+  if (primary) {
     return {
-      primary: 'unknown-h5',
-      confidence: 0,
-      candidates: [],
+      primary: primary.kvmFamily,
+      confidence: primary.confidence,
+      candidates,
     };
   }
 
+  const h5Signals = [
+    input.paths?.apiRandomtag,
+    input.paths?.apiKvmToken,
+    input.paths?.randomtag,
+    input.paths?.kvmVideo,
+    input.paths?.kvmService,
+    input.paths?.setKvmKey,
+  ].some(Boolean);
+
   return {
-    primary: primary.kvmFamily,
-    confidence: primary.confidence,
-    candidates,
+    primary: h5Signals ? 'unknown-h5' : 'not-h5',
+    confidence: 0,
+    candidates: [],
   };
 }

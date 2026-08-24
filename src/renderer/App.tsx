@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { CaptureReadiness, ChecklistItem } from '../core/capture-pack/types';
+import type { ScreenshotRole } from '../core/browser/browserCaptureCore';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 
@@ -51,6 +52,7 @@ export function App() {
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
   const [statusHint, setStatusHint] = useState(previewPack.checklist.items[0]?.userAction || '');
   const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
+  const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
 
   function applySnapshot(snapshot: { readiness: CaptureReadiness; items: ChecklistItem[] }) {
     setReadiness(snapshot.readiness);
@@ -111,7 +113,7 @@ export function App() {
       });
       return;
     }
-    const result = await window.kvmRecon.collectCapturePage(jobId);
+    const result = await window.kvmRecon.collectCapturePage(jobId, screenshotRole);
     if (!result.ok) {
       setError(result.error);
       return;
@@ -172,6 +174,20 @@ export function App() {
           <label>
             端口
             <input value={port} onChange={event => setPort(event.target.value)} />
+          </label>
+          <label>
+            截图角色
+            <select
+              value={screenshotRole}
+              onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
+              disabled={phase !== 'capturing'}
+            >
+              <option value="login">登录页</option>
+              <option value="home">登录后首页</option>
+              <option value="kvm-entry">KVM 入口</option>
+              <option value="viewer">viewer</option>
+              <option value="error">异常画面</option>
+            </select>
           </label>
           <label className="note-field">
             作业备注

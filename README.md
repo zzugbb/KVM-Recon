@@ -33,14 +33,14 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段开发计划、当前完成度、阶段 8 MVP 补齐与真机闸门。**下一阶段从 8.1（popup 完整采集）开始。**
+- `docs/development-plan.md`：分阶段开发计划、完成度与真机验收闸门。阶段 8 已完成，下一阶段是真机验收。
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
 - `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
 
 ## 当前进度
 
-阶段 0–7 的 MVP 代码与单测已闭环，可本地构建并导出脱敏 Capture Pack。尚未做真实 BMC 验收，Windows 安装包未在本机打出。已知限制：HTML5 KVM 若在新窗口建立 WebSocket，当前可能采不到该连接。补齐项与开发顺序见 `docs/development-plan.md` 第 12–13 节。
+阶段 0–8 的 MVP 代码与单测已闭环，含 popup 窗口采集、截图角色、`not-h5`、导出确认和安全日志。尚未做真实 BMC 验收，Windows 安装包未在本机打出。真机步骤见 `docs/development-plan.md` 第 13 节。
 
 ## 打包与交付
 
@@ -65,7 +65,7 @@ KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
 - 能标记 `kvmFamily` 候选、采集完整度和缺失项。
 - 已知族可生成 OEM Profile 草稿；未知族只出 Capture Pack 与备注。
 
-现场成功标准（真机闸门，须先完成阶段 8.1）：
+现场成功标准（真机闸门）：
 
 - 在无公网环境中完成一次 BMC 登录到 HTML5 KVM 打开的采集。
 - 对已知 AMI/华为/OpenBMC 族输出可用于后续网关适配的关键事实资料。

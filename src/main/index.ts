@@ -9,9 +9,12 @@ import {
   formatCaptureError,
 } from '../core/delivery/formatCaptureError';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
+import { createCaptureLogger } from '../core/log/createCaptureLogger';
 import { probeBmcTarget } from '../core/probe/probeBmcTarget';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
+
+const logger = createCaptureLogger();
 
 interface CaptureSession extends CaptureExportJob {
   controller: ReturnType<typeof createCaptureBrowserController>;
@@ -47,6 +50,7 @@ function registerCaptureHandlers() {
       });
 
       await controller.start();
+      logger.info('capture-start', { jobId, host: target.host, port: target.port });
       captureSessions.set(jobId, {
         jobId,
         startedAt,
@@ -99,6 +103,39 @@ function registerCaptureHandlers() {
       collectPageFacts: label => session.controller.collectPageFacts(label),
       getPage: () => session.controller.timeline(),
       getNetwork: () => session.controller.network(),
+      getChromiumAccess: () => session.controller.chromiumAccess(),
+      confirmExport: async summary => {
+        logger.info('export-confirm', {
+          jobId,
+          readiness: summary.readiness,
+          redactionStatus: summary.redactionStatus,
+          redactedFields: summary.redactedFields,
+        });
+        const detail = [
+          `脱敏：${summary.redactionStatus}，已脱敏字段 ${summary.redactedFields}`,
+          ...summary.pendingActions.slice(0, 6),
+        ].join('\n');
+        const result = parentWindow
+          ? await dialog.showMessageBox(parentWindow, {
+              type: 'info',
+              title: '确认导出 Capture Pack',
+              message: `离场适配就绪：${summary.readiness}`,
+              detail,
+              buttons: ['取消', '选择保存位置'],
+              defaultId: 1,
+              cancelId: 0,
+            })
+          : await dialog.showMessageBox({
+              type: 'info',
+              title: '确认导出 Capture Pack',
+              message: `离场适配就绪：${summary.readiness}`,
+              detail,
+              buttons: ['取消', '选择保存位置'],
+              defaultId: 1,
+              cancelId: 0,
+            });
+        return result.response === 1;
+      },
       chooseSavePath: async fileName => {
         const options = {
           title: '导出 Capture Pack',
@@ -136,7 +173,7 @@ function registerCaptureHandlers() {
     };
   });
 
-  ipcMain.handle('capture:collectPage', async (_event, jobId: string) => {
+  ipcMain.handle('capture:collectPage', async (_event, jobId: string, role = 'live') => {
     const session = captureSessions.get(jobId);
     if (!session) {
       return {
@@ -149,7 +186,9 @@ function registerCaptureHandlers() {
     }
 
     try {
-      await session.controller.collectPageFacts('live');
+      const screenshotRole = typeof role === 'string' && role ? role : 'live';
+      logger.info('collect-page', { jobId, role: screenshotRole });
+      await session.controller.collectPageFacts(screenshotRole);
       return {
         ok: true as const,
         ...buildLiveCaptureSnapshot({

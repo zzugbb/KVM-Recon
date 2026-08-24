@@ -242,17 +242,25 @@ describe('buildOemProfileArtifacts', () => {
     expect(artifacts[0].content).toContain('- binary');
   });
 
-  it('does not generate an empty OEM profile for unknown KVM families', () => {
-    const artifacts = buildOemProfileArtifacts({
+  it('does not generate an empty OEM profile for unknown or not-h5 families', () => {
+    const unknown = buildOemProfileArtifacts({
       probe: baseProbe,
       network: emptyNetwork,
     });
-
-    expect(artifacts).toEqual([
-      {
-        path: 'artifacts/notes.md',
-        content: expect.stringContaining('未知协议族'),
+    const notH5 = buildOemProfileArtifacts({
+      probe: {
+        ...baseProbe,
+        familySignatures: {
+          primary: 'not-h5',
+          confidence: 0,
+          candidates: [],
+        },
       },
-    ]);
+      network: emptyNetwork,
+    });
+
+    expect(unknown[0]?.path).toBe('artifacts/notes.md');
+    expect(notH5[0]?.path).toBe('artifacts/notes.md');
+    expect(notH5[0]?.content).toContain('primary=not-h5');
   });
 });

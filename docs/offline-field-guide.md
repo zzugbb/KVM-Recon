@@ -26,9 +26,9 @@ npm run package:win
 4. 在弹出的采集窗口中访问 BMC。
 5. 现场人员按需手工登录。
 6. 点击“远程控制台 / HTML5 KVM”入口。若打开了新窗口，请把新窗口留在前台至少 10 秒。
-7. 主窗口「采集进度」中「KVM WebSocket」变为已采集后再导出。若一直为待现场操作，可能是 KVM 建在新窗口而当前版本尚未采集 popup 网络，请不要按 YES 离场，记录该现象并保留导出包。
-8. 在登录页、登录后页面、KVM 画面分别点击“采集当前页面”。截图会进入导出包的 `page/screenshots/`，本地路径不会写入报告。
-9. 停止采集并导出 Capture Pack。
+7. 主窗口「采集进度」中「KVM WebSocket」变为已采集后再导出。
+8. 选择截图角色（登录页 / 登录后 / KVM 入口 / viewer / 异常），在对应画面点击“采集当前页面”。截图会进入导出包的 `page/screenshots/`。
+9. 停止采集并导出。导出前会显示离场结论和脱敏摘要，确认后再选择保存位置。
 10. 打开 `report.html` 或 `report.md`，确认离场结论。
 
 ## 3. 离场判断
@@ -67,9 +67,6 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 
 ## 7. 当前版本限制
 
-- CDP 网络记录、截图和 storage 只作用于第一个采集窗口。HTML5 KVM 若在 popup / 新窗口中建立 WebSocket，进度里的 WebSocket 项可能一直缺失。
-- 截图没有自动区分登录页 / viewer；请在关键页面各点一次「采集当前页面」。
-- 无协议指纹时族名为 `unknown-h5`，尚未单独输出 `not-h5`。
 - macOS 安装包默认未签名；Windows 包需在联网构建机执行 `npm run package:win`。
-
-完整补齐顺序见仓库内 `docs/development-plan.md` 阶段 8；下一阶段开发从 popup 完整采集开始。
+- 真实 BMC 验收见 `docs/development-plan.md` 第 13 节，须在阶段 8 代码完成后单独进行。
+- 日志只记录作业号、主机、就绪状态等非敏感字段。

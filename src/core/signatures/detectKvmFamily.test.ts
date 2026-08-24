@@ -53,7 +53,7 @@ describe('detectKvmFamily', () => {
     ]);
   });
 
-  it('returns unknown-h5 when evidence is not enough', () => {
+  it('returns not-h5 when there is no HTML5 KVM path evidence', () => {
     const result = detectKvmFamily({
       redfish: {
         vendor: 'Unknown Vendor',
@@ -61,8 +61,19 @@ describe('detectKvmFamily', () => {
       paths: {},
     });
 
-    expect(result.primary).toBe('unknown-h5');
+    expect(result.primary).toBe('not-h5');
     expect(result.confidence).toBe(0);
+    expect(result.candidates).toEqual([]);
+  });
+
+  it('returns unknown-h5 when HTML5 paths exist but no known family matches', () => {
+    const result = detectKvmFamily({
+      paths: {
+        randomtag: true,
+      },
+    });
+
+    expect(result.primary).toBe('unknown-h5');
     expect(result.candidates).toEqual([]);
   });
 });

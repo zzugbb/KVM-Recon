@@ -200,7 +200,7 @@ function unknownNotes(input: BuildOemProfileArtifactsInput): string {
 
 export function buildOemProfileArtifacts(input: BuildOemProfileArtifactsInput): CapturePackArtifact[] {
   const family = input.probe.familySignatures.primary;
-  if (family === 'unknown-h5') {
+  if (family === 'unknown-h5' || family === 'not-h5') {
     return [
       {
         path: 'artifacts/notes.md',

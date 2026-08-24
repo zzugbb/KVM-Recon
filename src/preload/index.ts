@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('kvmRecon', {
   getCaptureSnapshot(jobId: string) {
     return ipcRenderer.invoke('capture:snapshot', jobId);
   },
-  collectCapturePage(jobId: string) {
-    return ipcRenderer.invoke('capture:collectPage', jobId);
+  collectCapturePage(jobId: string, role?: string) {
+    return ipcRenderer.invoke('capture:collectPage', jobId, role);
   },
 });

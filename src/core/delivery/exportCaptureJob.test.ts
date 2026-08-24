@@ -44,6 +44,7 @@ describe('exportCaptureJob', () => {
       collectPageFacts: vi.fn(async () => {}),
       getPage: () => ({ jobId: 'job-export-001', events: [] }),
       getNetwork: () => ({ httpRequests: [], webSockets: [], webSocketFrames: [] }),
+      getChromiumAccess: () => ({ reachable: true, authorizationError: '' }),
       chooseSavePath: async fileName => `/tmp/${fileName}`,
       writeFile: async (path, bytes) => {
         written.push({ path, bytes });
@@ -60,6 +61,10 @@ describe('exportCaptureJob', () => {
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(await zip.file('report.html')!.async('string')).toContain('离场适配就绪：NO');
     expect(zip.file('probe/redfish.json')).not.toBeNull();
+    expect(JSON.parse(await zip.file('tls/certificate.json')!.async('string')).chromium).toEqual({
+      reachable: true,
+      authorizationError: '',
+    });
   });
 
   it('packs screenshot png bytes into page/screenshots/', async () => {
@@ -128,7 +133,7 @@ describe('exportCaptureJob', () => {
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(new Uint8Array(await zip.file('page/screenshots/viewer.png')!.async('uint8array'))).toEqual(png);
     expect(JSON.parse(await zip.file('page/screenshots.json')!.async('string'))).toEqual([
-      'page/screenshots/viewer.png',
+      { path: 'page/screenshots/viewer.png', role: 'unknown' },
     ]);
     expect(await zip.file('page/timeline.jsonl')!.async('string')).not.toContain('/tmp/kvm-recon/viewer.png');
   });
@@ -189,6 +194,7 @@ describe('exportCaptureJob', () => {
   it('blocks the default export when redaction check fails', async () => {
     const writeFile = vi.fn(async () => {});
     const chooseSavePath = vi.fn(async (fileName: string) => `/tmp/${fileName}`);
+    const confirmExport = vi.fn(async () => true);
 
     const result = await exportCaptureJob({
       job: {
@@ -246,6 +252,7 @@ describe('exportCaptureJob', () => {
         webSocketFrames: [],
       }),
       sensitiveValues: ['secret-password'],
+      confirmExport,
       chooseSavePath,
       writeFile,
       now: () => '2026-08-24T14:05:00.000+08:00',
@@ -257,6 +264,70 @@ describe('exportCaptureJob', () => {
         title: '脱敏检查未通过',
       },
     });
+    expect(confirmExport).not.toHaveBeenCalled();
+    expect(chooseSavePath).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('asks for confirmation after redaction passes and before choosing a save path', async () => {
+    const chooseSavePath = vi.fn(async (fileName: string) => `/tmp/${fileName}`);
+    const writeFile = vi.fn(async () => {});
+    const confirmExport = vi.fn(async () => false);
+
+    const result = await exportCaptureJob({
+      job: {
+        jobId: 'job-export-005',
+        startedAt: '2026-08-24T13:55:00.000+08:00',
+        target: {
+          host: '10.0.0.10',
+          port: 443,
+          scheme: 'https',
+        },
+        probe: {
+          basic: {
+            host: '10.0.0.10',
+            port: 443,
+            scheme: 'https',
+            vendor: '',
+            product: '',
+            firmwareVersion: '',
+          },
+          paths: {},
+          familySignatures: {
+            primary: 'not-h5',
+            confidence: 0,
+            candidates: [],
+          },
+          tls: {
+            reachable: true,
+            authorized: false,
+            authorizationError: '',
+            protocol: 'TLSv1.2',
+            cipher: null,
+            certificate: null,
+          },
+        },
+      },
+      collectPageFacts: vi.fn(async () => {}),
+      getPage: () => ({ jobId: 'job-export-005', events: [] }),
+      getNetwork: () => ({ httpRequests: [], webSockets: [], webSocketFrames: [] }),
+      getChromiumAccess: () => ({ reachable: true, authorizationError: '' }),
+      confirmExport,
+      chooseSavePath,
+      writeFile,
+      now: () => '2026-08-24T14:05:00.000+08:00',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      canceled: true,
+    });
+    expect(confirmExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readiness: 'NO',
+        redactionStatus: 'pass',
+      }),
+    );
     expect(chooseSavePath).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
   });

@@ -45,7 +45,12 @@ describe('browserCaptureCore', () => {
       localStorageKeys: ['LOCAL_USERNAME'],
       sessionStorageKeys: ['QSESSIONID'],
     });
-    timeline.recordScreenshot('page/screenshots/login.png');
+    timeline.recordScreenshot('page/screenshots/login.png', undefined, 'login');
+    timeline.recordClick({
+      selector: '#kvm',
+      text: 'HTML5 KVM',
+      tagName: 'button',
+    });
     timeline.recordSelectorCandidates([
       {
         role: 'kvm-entry',
@@ -61,7 +66,8 @@ describe('browserCaptureCore', () => {
         { type: 'hash-change', url: 'https://10.0.0.10/#/kvm' },
         { type: 'popup', url: 'https://10.0.0.10/kvm.html' },
         { type: 'storage-snapshot' },
-        { type: 'screenshot', path: 'page/screenshots/login.png' },
+        { type: 'screenshot', path: 'page/screenshots/login.png', role: 'login' },
+        { type: 'click', selector: '#kvm' },
         { type: 'selector-candidates' },
       ],
     });

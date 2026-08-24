@@ -38,6 +38,13 @@ export interface CaptureExportJob {
   operatorNote?: string;
 }
 
+export interface ExportConfirmSummary {
+  readiness: CaptureReadiness;
+  redactionStatus: 'pass' | 'fail';
+  redactedFields: number;
+  pendingActions: string[];
+}
+
 interface ExportCaptureJobInput {
   job: CaptureExportJob;
   collectPageFacts(label: string): Promise<void>;
@@ -48,6 +55,8 @@ interface ExportCaptureJobInput {
   now?: () => string;
   sensitiveValues?: string[];
   readScreenshotFile?(path: string): Promise<Uint8Array>;
+  confirmExport?(summary: ExportConfirmSummary): Promise<boolean>;
+  getChromiumAccess?(): { reachable: boolean; authorizationError: string };
 }
 
 export type ExportCaptureJobResult =
@@ -89,7 +98,13 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       endedAt: (input.now ?? (() => new Date().toISOString()))(),
       target: input.job.target,
       operatorNote: input.job.operatorNote,
-      probe: input.job.probe,
+      probe: {
+        ...input.job.probe,
+        tls: {
+          ...input.job.probe.tls,
+          ...(input.getChromiumAccess ? { chromium: input.getChromiumAccess() } : {}),
+        },
+      },
       page,
       network: input.getNetwork(),
       sensitiveValues: input.sensitiveValues,
@@ -101,6 +116,26 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
         error: formatCaptureError({
           code: 'REDACTION_FAILED',
           detail: assembled.pack.manifest.redaction.status,
+        }),
+      };
+    }
+    const confirmed = input.confirmExport
+      ? await input.confirmExport({
+          readiness: assembled.pack.manifest.readiness.status,
+          redactionStatus: assembled.pack.manifest.redaction.status,
+          redactedFields: assembled.pack.manifest.redaction.redactedFields,
+          pendingActions: assembled.pack.checklist.items
+            .filter(item => item.userAction)
+            .map(item => item.userAction),
+        })
+      : true;
+    if (!confirmed) {
+      return {
+        ok: false,
+        canceled: true,
+        error: formatCaptureError({
+          code: 'EXPORT_FAILED',
+          detail: '用户取消了导出。',
         }),
       };
     }

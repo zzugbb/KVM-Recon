@@ -27,7 +27,7 @@
       "status": "missing",
       "severity": "warning",
       "evidence": [],
-      "userAction": "请打开 HTML5 KVM 后等待画面区域稳定，再点击“采集当前页面”。当前截图来自首个采集窗口；若画面只在新窗口，可能拍不到 viewer。"
+      "userAction": "请打开 HTML5 KVM 后把画面窗口留在前台，选择截图角色并点击“采集当前页面”。"
     }
   ]
 }

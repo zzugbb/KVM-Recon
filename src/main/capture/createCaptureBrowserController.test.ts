@@ -55,6 +55,9 @@ describe('createCaptureBrowserController', () => {
               sourcePath: `/tmp/${label}.png`,
             };
           },
+          async drainClicks() {
+            return [];
+          },
         };
       },
     };
@@ -107,5 +110,114 @@ describe('createCaptureBrowserController', () => {
       url: 'https://10.0.0.10/api/kvm/token',
       tags: ['kvm-token'],
     });
+    expect(controller.timeline().events.find(event => event.type === 'screenshot')).toMatchObject({
+      role: 'login',
+      path: 'page/screenshots/login.png',
+    });
+  });
+
+  it('records popup WebSocket facts after the first window loses focus', async () => {
+    const popupListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const popupCdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') popupListeners.push(listener);
+      },
+    };
+    let focused: 'main' | 'popup' = 'main';
+    let mainAlive = true;
+
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger({
+          async attach() {},
+          async sendCommand() {},
+          on() {},
+        });
+        return {
+          async loadURL(url) {
+            nextOptions.onNavigation(url);
+            nextOptions.onPopup({
+              url: `${url}kvm.html`,
+              disposition: 'new-window',
+            });
+            await nextOptions.onNetworkDebugger(popupCdp);
+            focused = 'popup';
+            mainAlive = false;
+          },
+          async collectStorageKeys() {
+            if (focused === 'main' && !mainAlive) {
+              throw new Error('main window closed');
+            }
+            return {
+              localStorageKeys: focused === 'popup' ? ['VIEWER'] : ['LOCAL_USERNAME'],
+              sessionStorageKeys: [],
+            };
+          },
+          async collectSelectorCandidates() {
+            return [
+              {
+                role: 'viewer' as const,
+                selector: 'canvas',
+                confidence: 0.7,
+              },
+            ];
+          },
+          async captureScreenshot(label) {
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return focused === 'popup'
+              ? [{ selector: 'canvas', text: 'viewer', tagName: 'canvas' }]
+              : [];
+          },
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-popup',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of popupListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-popup',
+        url: 'wss://10.0.0.10/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-popup',
+        timestamp: 1,
+        response: {
+          opcode: 2,
+          payloadData: Buffer.from([0x17, 0x00, 0x00, 0x01]).toString('base64'),
+        },
+      });
+    }
+    await controller.collectPageFacts('viewer');
+
+    expect(controller.network().webSockets[0]).toMatchObject({
+      url: 'wss://10.0.0.10/kvm',
+      tags: ['kvm-video'],
+    });
+    expect(controller.network().webSocketFrames[0]?.socketId).toBe('ws-popup');
+    expect(controller.timeline().events.map(event => event.type)).toContain('popup');
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'click',
+        selector: 'canvas',
+      }),
+    );
+    expect(JSON.stringify(controller.timeline())).not.toMatch(/\/Users\//);
   });
 });

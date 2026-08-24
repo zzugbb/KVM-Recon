@@ -43,6 +43,10 @@ export interface TlsProbeResult {
     validTo: string;
     selfSigned: boolean;
   } | null;
+  chromium?: {
+    reachable: boolean;
+    authorizationError: string;
+  };
 }
 
 interface ProbeTlsInfoInput {

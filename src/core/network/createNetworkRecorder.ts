@@ -91,6 +91,7 @@ export interface WebSocketFrameRecord {
   bytes: number;
   headHex: string;
   sampled: boolean;
+  magic?: string;
 }
 
 interface NetworkRecorderSnapshot {
@@ -166,6 +167,12 @@ function payloadToBytes(payload: string | Uint8Array): Uint8Array {
   return payload;
 }
 
+function detectFrameMagic(payload: string | Uint8Array): string | undefined {
+  const text = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
+  if (text.includes('AMI_IVTP_CONNECTION_ALLOWED')) return 'AMI_IVTP_CONNECTION_ALLOWED';
+  return undefined;
+}
+
 function toHex(bytes: Uint8Array, take: number) {
   return Array.from(bytes.slice(0, take))
     .map(byte => byte.toString(16).padStart(2, '0'))
@@ -231,6 +238,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       }
 
       const bytes = payloadToBytes(input.payload);
+      const magic = detectFrameMagic(input.payload);
       webSocketFrames.push({
         socketId: input.socketId,
         timestamp: input.timestamp,
@@ -239,6 +247,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         bytes: bytes.length,
         headHex: toHex(bytes, options.frameHeadBytes),
         sampled: true,
+        ...(magic ? { magic } : {}),
       });
     },
     toJSON(): NetworkRecorderSnapshot {

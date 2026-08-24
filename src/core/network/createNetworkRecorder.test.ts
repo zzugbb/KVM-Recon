@@ -91,20 +91,40 @@ describe('createNetworkRecorder', () => {
       tags: ['kvm-video'],
     });
     expect(JSON.stringify(snapshot.webSockets[0])).not.toContain('abc123');
-    expect(snapshot.webSocketFrames).toEqual([
-      expect.objectContaining({
-        socketId: 'ws-1',
-        direction: 'down',
-        bytes: 6,
-        headHex: '17000001',
-        sampled: true,
-      }),
-      expect.objectContaining({
-        socketId: 'ws-1',
-        bytes: 5,
-        headHex: '19aabbcc',
-        sampled: true,
-      }),
-    ]);
+    expect(snapshot.webSocketFrames[0]).toMatchObject({
+      socketId: 'ws-1',
+      direction: 'down',
+      bytes: 6,
+      headHex: '17000001',
+      sampled: true,
+    });
+    expect(snapshot.webSocketFrames[1]).toMatchObject({
+      bytes: 5,
+      headHex: '19aabbcc',
+      sampled: true,
+    });
+  });
+
+  it('records printable WebSocket handshake magic without storing the full stream', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url: 'wss://10.0.0.10/kvm',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.100+08:00',
+      direction: 'down',
+      opcode: 'text',
+      payload: 'AMI_IVTP_CONNECTION_ALLOWED',
+    });
+
+    expect(recorder.toJSON().webSocketFrames[0]).toMatchObject({
+      magic: 'AMI_IVTP_CONNECTION_ALLOWED',
+      opcode: 'text',
+    });
   });
 });

@@ -20,7 +20,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
 
-阶段 8 才要求补齐的字段：时间线 click、storage 写入前后变化、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium/Node 分记。
+阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 文件仍以 TypeScript 类型为权威。
 
 ## 2. 目录结构
 
@@ -194,30 +194,30 @@ HTTP 资料必须脱敏：
 - hash 路由变化。
 - popup/new window。
 - 截图时间点（包内相对路径）。
-- 点击事件摘要（阶段 8.2）。
+- 点击事件摘要（选择器或短文案，不含敏感值）。
 
 `page/storage.json`：
 
 - localStorage/sessionStorage key 列表。
 - 不导出敏感值原文。
-- 写入前后变化（阶段 8.2）。
+- 写入前后 key 增减（`localStorageAdded` / `Removed` 等）。
 
 `page/selectors.json`：
 
 - 登录按钮候选。
 - KVM 菜单候选。
 - HTML5 KVM 按钮候选。
-- viewer 容器候选（阶段 8.4 补齐）。
+- viewer 容器候选。
 
 `page/screenshots.json`：
 
-- 包内相对路径列表，例如 `page/screenshots/live-1.png`。
+- 包内相对路径与角色，例如 `{ "path": "page/screenshots/viewer.png", "role": "viewer" }`。
+- 角色：`login` / `home` / `kvm-entry` / `viewer` / `error` / `unknown`。
 - 不得包含采集机绝对路径。
 
 `page/screenshots/`：
 
-- 现场「采集当前页面」与导出时截图的 PNG。
-- 角色分类（登录页、登录后首页、KVM 入口、viewer、异常画面）见阶段 8.2。
+- 现场按角色采集的 PNG。
 
 ## 7. TLS 资料
 
@@ -231,7 +231,7 @@ HTTP 资料必须脱敏：
 - cipher。
 - Node probe 是否可访问。
 - 失败原因。
-- Chromium 是否可访问（阶段 8.3；当前以采集窗口能否打开目标主机为准，未单独写入该文件）。
+- Chromium 是否可访问（`chromium.reachable` / `chromium.authorizationError`）。
 
 ## 8. 离场验收清单
 
