@@ -12,5 +12,7 @@ describe('App', () => {
     expect(html).toContain('离场适配就绪：NO');
     expect(html).toContain('新建采集作业');
     expect(html).toContain('停止采集并导出');
+    expect(html).toContain('作业备注');
+    expect(html).toContain('当前阶段：新建采集');
   });
 });

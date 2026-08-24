@@ -44,6 +44,7 @@ export interface AssembleCapturePackForExportInput {
 export interface AssembledCapturePack {
   pack: CapturePackDraft;
   fileName: string;
+  canExportSafePack: boolean;
 }
 
 function countRedactedFields(network: NetworkSnapshot): number {
@@ -114,6 +115,7 @@ export function assembleCapturePackForExport(
 
   return {
     pack,
+    canExportSafePack: redaction.canExportSafePack,
     fileName: buildCapturePackFileName({
       startedAt: input.startedAt,
       targetHost: input.target.host,

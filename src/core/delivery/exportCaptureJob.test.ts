@@ -113,4 +113,79 @@ describe('exportCaptureJob', () => {
       },
     });
   });
+
+  it('blocks the default export when redaction check fails', async () => {
+    const writeFile = vi.fn(async () => {});
+    const chooseSavePath = vi.fn(async (fileName: string) => `/tmp/${fileName}`);
+
+    const result = await exportCaptureJob({
+      job: {
+        jobId: 'job-export-003',
+        startedAt: '2026-08-24T13:55:00.000+08:00',
+        target: {
+          host: '10.0.0.10',
+          port: 443,
+          scheme: 'https',
+        },
+        probe: {
+          basic: {
+            host: '10.0.0.10',
+            port: 443,
+            scheme: 'https',
+            vendor: '',
+            product: '',
+            firmwareVersion: '',
+          },
+          paths: {},
+          familySignatures: {
+            primary: 'unknown-h5',
+            confidence: 0,
+            candidates: [],
+          },
+          tls: {
+            reachable: false,
+            authorized: false,
+            authorizationError: '',
+            protocol: '',
+            cipher: null,
+            certificate: null,
+          },
+        },
+      },
+      collectPageFacts: vi.fn(async () => {}),
+      getPage: () => ({ jobId: 'job-export-003', events: [] }),
+      getNetwork: () => ({
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-08-24T12:00:00.000+08:00',
+            method: 'POST',
+            url: 'https://10.0.0.10/api/session',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: { Password: 'secret-password' },
+            responseHeaders: {},
+            requestBodySummary: { bytes: 20, redactedFields: [] },
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            tags: ['login'],
+          },
+        ],
+        webSockets: [],
+        webSocketFrames: [],
+      }),
+      sensitiveValues: ['secret-password'],
+      chooseSavePath,
+      writeFile,
+      now: () => '2026-08-24T14:05:00.000+08:00',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        title: '脱敏检查未通过',
+      },
+    });
+    expect(chooseSavePath).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
 });

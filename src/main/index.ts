@@ -19,8 +19,20 @@ interface CaptureSession extends CaptureExportJob {
 const captureSessions = new Map<string, CaptureSession>();
 
 function registerCaptureHandlers() {
-  ipcMain.handle('capture:start', async (_event, target: CaptureTarget) => {
+  ipcMain.handle(
+    'capture:start',
+    async (
+      _event,
+      payload: CaptureTarget & {
+        operatorNote?: string;
+      },
+    ) => {
     try {
+      const target: CaptureTarget = {
+        host: payload.host,
+        port: payload.port,
+        scheme: payload.scheme,
+      };
       const jobId = `job-${Date.now()}`;
       const startedAt = new Date().toISOString();
       const screenshotDir = join(app.getPath('userData'), 'captures', jobId, 'screenshots');
@@ -39,6 +51,7 @@ function registerCaptureHandlers() {
         startedAt,
         target,
         probe,
+        operatorNote: payload.operatorNote,
         controller,
       });
 

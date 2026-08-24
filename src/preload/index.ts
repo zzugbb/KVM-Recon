@@ -4,6 +4,7 @@ interface StartCaptureTarget {
   host: string;
   port: number;
   scheme: 'http' | 'https';
+  operatorNote?: string;
 }
 
 contextBridge.exposeInMainWorld('kvmRecon', {

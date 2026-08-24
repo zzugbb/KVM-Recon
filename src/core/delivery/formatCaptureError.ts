@@ -3,6 +3,7 @@ export type CaptureErrorCode =
   | 'PERMISSION_LIMITED'
   | 'CERTIFICATE_BLOCKED'
   | 'EXPORT_FAILED'
+  | 'REDACTION_FAILED'
   | 'UNKNOWN';
 
 interface FormatCaptureErrorInput {
@@ -85,6 +86,15 @@ export function formatCaptureError(input: FormatCaptureErrorInput): FormattedCap
       title: 'Capture Pack 导出失败',
       impact: '当前资料尚未形成可带离现场的 zip 包。',
       action: '请确认磁盘空间充足、导出目录可写，然后重新执行“停止采集并导出”。',
+      detail,
+    };
+  }
+
+  if (input.code === 'REDACTION_FAILED') {
+    return {
+      title: '脱敏检查未通过',
+      impact: '导出包中仍可能包含明文密码、Token 或 Cookie，不能作为默认可带离现场的资料。',
+      action: '请不要离场导出。重新采集并确认登录表单与接口响应均已脱敏后，再执行“停止采集并导出”。',
       detail,
     };
   }

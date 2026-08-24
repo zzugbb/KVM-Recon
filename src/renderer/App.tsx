@@ -9,6 +9,8 @@ interface FormattedCaptureError {
   detail: string;
 }
 
+type CapturePhase = 'idle' | 'capturing' | 'exported';
+
 const previewPack = createEmptyCapturePack({
   jobId: 'preview-empty-job',
   startedAt: '2026-08-24T10:00:00.000+08:00',
@@ -19,13 +21,22 @@ const previewPack = createEmptyCapturePack({
   },
 });
 
+function phaseLabel(phase: CapturePhase) {
+  if (phase === 'capturing') return '当前阶段：采集中';
+  if (phase === 'exported') return '当前阶段：导出结果';
+  return '当前阶段：新建采集';
+}
+
 export function App() {
   const [host, setHost] = useState('10.0.0.10');
   const [port, setPort] = useState('443');
+  const [operatorNote, setOperatorNote] = useState('');
+  const [phase, setPhase] = useState<CapturePhase>('idle');
   const [jobId, setJobId] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState<FormattedCaptureError | null>(null);
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
+  const [statusHint, setStatusHint] = useState(previewPack.checklist.items[0]?.userAction || '');
 
   async function startCapture() {
     const numericPort = Number(port) || 443;
@@ -39,13 +50,16 @@ export function App() {
       host,
       port: numericPort,
       scheme: 'https',
+      operatorNote,
     });
     if (!result.ok) {
+      setPhase('idle');
       setError(result.error);
       setMessage('');
       return;
     }
     setJobId(result.jobId);
+    setPhase('capturing');
     setMessage(`采集作业已启动：${result.jobId}`);
   }
 
@@ -75,7 +89,9 @@ export function App() {
       setMessage('');
       return;
     }
+    setPhase('exported');
     setReadiness(result.readiness);
+    setStatusHint(`已导出 ${result.fileName}，请打开 report.html 确认离场结论。`);
     setMessage(`已导出：${result.fileName}`);
   }
 
@@ -89,6 +105,7 @@ export function App() {
           在机房内采集登录、HTML5 KVM 入口、HTTP/WebSocket、页面截图和离场验收资料，
           导出脱敏 Capture Pack 供后续兼容性分析。
         </p>
+        <p className="phase-label">{phaseLabel(phase)}</p>
         <div className="target-form">
           <label>
             BMC 地址
@@ -97,6 +114,14 @@ export function App() {
           <label>
             端口
             <input value={port} onChange={event => setPort(event.target.value)} />
+          </label>
+          <label className="note-field">
+            作业备注
+            <input
+              value={operatorNote}
+              onChange={event => setOperatorNote(event.target.value)}
+              placeholder="可选，不填写账号或密码"
+            />
           </label>
         </div>
         <div className="actions">
@@ -122,7 +147,7 @@ export function App() {
         <div>
           <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
-        <p>{previewPack.checklist.items[0]?.userAction}</p>
+        <p>{statusHint}</p>
       </section>
     </main>
   );

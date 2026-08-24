@@ -43,6 +43,7 @@ interface ExportCaptureJobInput {
   chooseSavePath(fileName: string): Promise<string | null>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   now?: () => string;
+  sensitiveValues?: string[];
 }
 
 export type ExportCaptureJobResult =
@@ -70,7 +71,17 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       probe: input.job.probe,
       page: input.getPage(),
       network: input.getNetwork(),
+      sensitiveValues: input.sensitiveValues,
     });
+    if (!assembled.canExportSafePack) {
+      return {
+        ok: false,
+        error: formatCaptureError({
+          code: 'REDACTION_FAILED',
+          detail: assembled.pack.manifest.redaction.status,
+        }),
+      };
+    }
     const filePath = await input.chooseSavePath(assembled.fileName);
     if (!filePath) {
       return {
