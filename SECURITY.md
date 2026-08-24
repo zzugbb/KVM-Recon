@@ -12,7 +12,7 @@ KVM-Recon 在机房内访问 BMC 管理口，导出的 Capture Pack 可能包含
 
 ## 报告漏洞
 
-请使用仓库的 [GitHub Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new) 私下报告。维护者需在 GitHub 仓库 Settings → Code security 中打开 private vulnerability reporting，该链接才能用。不要在公开 Issue 里贴：
+请使用仓库的 [GitHub Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new) 私下报告。不要在公开 Issue 里贴：
 
 - BMC 账号、密码、Cookie、Token
 - 未脱敏的 Capture Pack 或 HAR

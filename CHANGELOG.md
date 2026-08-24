@@ -6,7 +6,8 @@
 
 - GitHub Actions：CI（typecheck / 测试 / 构建 / Electron 启动烟测）、tag 发布 Windows 与 macOS 安装包
 - 开源治理：CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、Issue/PR 模板、Dependabot
-- Dependabot 将 GitHub Actions 更新合并为一组 PR；README 说明尚无 Release 时从源码构建
+- Dependabot 将 GitHub Actions 更新合并为一组 PR
+- 试构建 workflow 命名为 Build installers
 
 ## [0.1.0] - 2026-08-24
 

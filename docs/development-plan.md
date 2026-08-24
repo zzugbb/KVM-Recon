@@ -516,9 +516,9 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - MIT `LICENSE`，以及 `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`CHANGELOG.md`、Issue/PR 模板、Dependabot、CODEOWNERS。
 - CI：`typecheck`、单测、本地 mock BMC 探测/导出闭环、构建、Electron 主窗口启动烟测。
-- `Package` workflow：手动构建未签名 macOS / Windows 产物为 Artifact。
-- `Release` workflow：推送 `v*` 标签后发布到 GitHub Releases，并附 `SHA256SUMS.txt`。
-- 说明：`docs/releasing.md`；README 增加徽章、下载与安全入口。
+- **Build installers** workflow：手动构建未签名 macOS / Windows 安装包（Actions Artifact）。
+- **Release** workflow：推送 `v*` 标签后把安装包发到 GitHub Releases，并附 `SHA256SUMS.txt`。
+- 说明：`docs/releasing.md`、`docs/README.md`。
 
 不做：
 

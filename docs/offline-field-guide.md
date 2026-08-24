@@ -4,21 +4,11 @@
 
 ## 1. 安装包
 
-优先从本仓库 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 下载对应系统的安装包，并核对 Release 中的 `SHA256SUMS.txt`。当前构建**未代码签名**：macOS 可能需要在「隐私与安全性」中允许打开，Windows 可能出现 SmartScreen 提示。
+优先从本仓库 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 下载对应系统的安装包，并核对 `SHA256SUMS.txt`。当前构建**未代码签名**：macOS 可能需要在「隐私与安全性」中允许打开，Windows 可能出现 SmartScreen 提示。
 
-维护者也可以在联网环境本机构建，或手动运行 GitHub Actions 的 Package workflow：
+若组织内部提供拷贝的安装包，使用该拷贝即可。维护者构建步骤见 `docs/releasing.md`。
 
-```bash
-npm run package:mac
-npm run package:win
-```
-
-产物输出到 `release/` 目录：
-
-- macOS：`KVM-Recon-<version>-<arch>.dmg` 或 zip。
-- Windows：`KVM-Recon Setup <version>.exe` 或 zip。
-
-详细发版步骤见 `docs/releasing.md`。现场机器不需要公网。若无法安装或启动，请确认当前用户是否有应用安装、解压和写入导出目录的权限。
+现场机器不需要公网。若无法安装或启动，请确认当前用户是否有应用安装、解压和写入导出目录的权限。
 
 ## 2. 现场采集步骤
 

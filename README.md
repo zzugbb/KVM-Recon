@@ -19,9 +19,9 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 ## 下载
 
-安装包在维护者推送 `v*` 标签后由 GitHub Actions 生成，发布到 [Releases](https://github.com/zzugbb/KVM-Recon/releases)。若尚无 Release，请按下面「开发」从源码构建，或按 `docs/releasing.md` 打一次标签。
+从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。
 
-当前构建**未代码签名、未公证**。请只从本仓库 Releases 下载，并核对 `SHA256SUMS.txt`。现场步骤见 `docs/offline-field-guide.md`。
+当前构建**未代码签名、未公证**。现场步骤见 `docs/offline-field-guide.md`。
 
 ## 现场流程
 
@@ -48,18 +48,20 @@ npm run dev
 
 - `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环
 - `npm run test:e2e`：启动 Electron 主窗口，加载成功后退出（需先 build）
-- `npm run package:mac` / `npm run package:win`：本机构建；CI 在 tag `v*` 时发布到 Releases
+- `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段计划、采集侧收口、真机闸门与项目边界
-- `docs/mvp-architecture.md`：技术架构与模块边界
-- `docs/capture-pack-spec.md`：Capture Pack 目录与数据契约
-- `docs/offline-field-guide.md`：离线安装与现场采集
-- `docs/releasing.md`：GitHub Actions 打包与 Release
-- `schema/`：Capture Pack JSON Schema
+索引见 `docs/README.md`。
+
+- `docs/offline-field-guide.md`：现场安装与采集
+- `docs/capture-pack-spec.md`：Capture Pack 契约
+- `docs/releasing.md`：构建与发布安装包
+- `docs/development-plan.md`：阶段计划与项目边界
+- `docs/mvp-architecture.md`：技术架构
+- `schema/`：JSON Schema
 - `CHANGELOG.md`：版本记录
-- `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `SECURITY.md` / `LICENSE`：GitHub 仓库页顶栏会自动列出，给贡献者和安全报告用；现场采集请看上面的「下载」和「现场流程」
+- `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`
 
 ## 安全与边界
 
