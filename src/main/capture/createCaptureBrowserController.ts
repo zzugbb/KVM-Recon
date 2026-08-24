@@ -5,6 +5,8 @@ import {
   shouldAllowCertificateError,
   type SelectorCandidate,
 } from '../../core/browser/browserCaptureCore';
+import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
+import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface CaptureBrowserAdapterOptions {
   partition: string;
@@ -13,6 +15,7 @@ export interface CaptureBrowserAdapterOptions {
   onNavigation(url: string): void;
   onHashChange(url: string): void;
   onPopup(input: { url: string; disposition: string }): void;
+  onNetworkDebugger(cdp: CdpDebuggerLike): Promise<void>;
 }
 
 export interface CaptureBrowserWindowHandle {
@@ -41,6 +44,7 @@ function buildPartition(jobId: string) {
 
 export function createCaptureBrowserController(input: CreateCaptureBrowserControllerInput) {
   const timeline = createBrowserTimeline(input.jobId);
+  const networkRecorder = createNetworkRecorder({ frameHeadBytes: 32 });
   let windowHandle: CaptureBrowserWindowHandle | null = null;
 
   return {
@@ -56,6 +60,11 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         onNavigation: url => timeline.recordNavigation(url),
         onHashChange: url => timeline.recordHashChange(url),
         onPopup: popup => timeline.recordPopup(popup),
+        onNetworkDebugger: cdp =>
+          attachCdpNetworkCapture({
+            cdp,
+            recorder: networkRecorder,
+          }),
       });
 
       await windowHandle.loadURL(buildBmcUrl(input.target));
@@ -71,6 +80,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     },
     timeline() {
       return timeline.toJSON();
+    },
+    network() {
+      return networkRecorder.toJSON();
     },
   };
 }

@@ -11,6 +11,11 @@ declare global {
       }): Promise<{
         jobId: string;
         timeline: unknown;
+        network: unknown;
+        networkArtifacts: Array<{
+          path: string;
+          content: string;
+        }>;
       }>;
     };
   }

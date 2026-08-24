@@ -63,9 +63,15 @@ export interface CaptureChecklist {
   items: ChecklistItem[];
 }
 
+export interface CapturePackArtifact {
+  path: string;
+  content: string | Uint8Array;
+}
+
 export interface CapturePackDraft {
   manifest: CaptureManifest;
   checklist: CaptureChecklist;
   reportMarkdown: string;
   files: string[];
+  artifacts?: CapturePackArtifact[];
 }

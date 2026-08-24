@@ -5,15 +5,25 @@ import {
   type CaptureBrowserAdapter,
   type CaptureBrowserAdapterOptions,
 } from './createCaptureBrowserController';
+import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 describe('createCaptureBrowserController', () => {
   it('opens the BMC URL in an isolated session and records browser facts', async () => {
     let capturedOptions: CaptureBrowserAdapterOptions | undefined;
     const loadedUrls: string[] = [];
+    const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') cdpListeners.push(listener);
+      },
+    };
 
     const adapter: CaptureBrowserAdapter = {
       async createWindow(nextOptions) {
         capturedOptions = nextOptions;
+        await nextOptions.onNetworkDebugger(cdp);
         return {
           async loadURL(url) {
             loadedUrls.push(url);
@@ -58,6 +68,17 @@ describe('createCaptureBrowserController', () => {
 
     await controller.start();
     await controller.collectPageFacts('login');
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.requestWillBeSent', {
+        requestId: 'req-1',
+        type: 'XHR',
+        request: {
+          method: 'GET',
+          url: 'https://10.0.0.10/api/kvm/token',
+          headers: {},
+        },
+      });
+    }
 
     expect(capturedOptions).toBeDefined();
     if (!capturedOptions) {
@@ -78,5 +99,10 @@ describe('createCaptureBrowserController', () => {
       'screenshot',
       'selector-candidates',
     ]);
+    expect(controller.network().httpRequests[0]).toMatchObject({
+      id: 'req-1',
+      url: 'https://10.0.0.10/api/kvm/token',
+      tags: ['kvm-token'],
+    });
   });
 });

@@ -32,4 +32,34 @@ describe('buildCapturePackZip', () => {
       'report.md',
     ]);
   });
+
+  it('serializes extra capture artifacts into their pack paths', async () => {
+    const pack = createEmptyCapturePack({
+      jobId: 'job-zip-002',
+      startedAt: '2026-08-24T10:00:00.000+08:00',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+    });
+
+    const zipBuffer = await buildCapturePackZip({
+      ...pack,
+      artifacts: [
+        {
+          path: 'http/requests.jsonl',
+          content: '{"id":"req-1"}',
+        },
+        {
+          path: 'ws/frames.jsonl',
+          content: '{"socketId":"ws-1","headHex":"17000001"}',
+        },
+      ],
+    });
+    const zip = await JSZip.loadAsync(zipBuffer);
+
+    expect(await zip.file('http/requests.jsonl')!.async('string')).toBe('{"id":"req-1"}');
+    expect(await zip.file('ws/frames.jsonl')!.async('string')).toContain('"headHex":"17000001"');
+  });
 });

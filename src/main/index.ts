@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 
 import type { CaptureTarget } from '../core/capture-pack/types';
+import { buildNetworkArtifacts } from '../core/network/buildNetworkArtifacts';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
 
@@ -25,6 +26,8 @@ function registerCaptureHandlers() {
     return {
       jobId,
       timeline: controller.timeline(),
+      network: controller.network(),
+      networkArtifacts: buildNetworkArtifacts(controller.network()),
     };
   });
 }

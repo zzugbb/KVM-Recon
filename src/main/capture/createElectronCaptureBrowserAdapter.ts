@@ -7,6 +7,7 @@ import type {
   CaptureBrowserAdapterOptions,
   CaptureBrowserWindowHandle,
 } from './createCaptureBrowserController';
+import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 interface CreateElectronCaptureBrowserAdapterOptions {
   screenshotDir: string;
@@ -83,6 +84,7 @@ export function createElectronCaptureBrowserAdapter(
           },
         };
       });
+      await options.onNetworkDebugger(window.webContents.debugger as unknown as CdpDebuggerLike);
 
       return {
         async loadURL(url) {
