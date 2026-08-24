@@ -72,6 +72,7 @@ export interface CapturePackDraft {
   manifest: CaptureManifest;
   checklist: CaptureChecklist;
   reportMarkdown: string;
+  reportHtml?: string;
   files: string[];
   artifacts?: CapturePackArtifact[];
 }

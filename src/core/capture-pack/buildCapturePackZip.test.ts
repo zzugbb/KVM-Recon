@@ -55,11 +55,18 @@ describe('buildCapturePackZip', () => {
           path: 'ws/frames.jsonl',
           content: '{"socketId":"ws-1","headHex":"17000001"}',
         },
+        {
+          path: 'artifacts/oem-profile.yaml',
+          content: 'kvmFamily: ami-megarac\nreviewRequired: true\n',
+        },
       ],
     });
     const zip = await JSZip.loadAsync(zipBuffer);
 
     expect(await zip.file('http/requests.jsonl')!.async('string')).toBe('{"id":"req-1"}');
     expect(await zip.file('ws/frames.jsonl')!.async('string')).toContain('"headHex":"17000001"');
+    expect(await zip.file('artifacts/oem-profile.yaml')!.async('string')).toContain(
+      'kvmFamily: ami-megarac',
+    );
   });
 });

@@ -8,6 +8,9 @@ export async function buildCapturePackZip(pack: CapturePackDraft): Promise<Uint8
   zip.file('manifest.json', JSON.stringify(pack.manifest, null, 2));
   zip.file('checklist.json', JSON.stringify(pack.checklist, null, 2));
   zip.file('report.md', pack.reportMarkdown);
+  if (pack.reportHtml) {
+    zip.file('report.html', pack.reportHtml);
+  }
   for (const artifact of pack.artifacts ?? []) {
     zip.file(artifact.path, artifact.content);
   }
