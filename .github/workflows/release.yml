@@ -4,9 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要把安装包挂到哪个已有 Release 标签（例如 v0.1.0）
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   release-mac:
@@ -21,11 +30,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Publish unsigned macOS packages
+      - name: Build unsigned macOS packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --mac --publish never
+      - name: Upload macOS assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --mac --publish always
+        run: |
+          shopt -s nullglob
+          files=(release/*.dmg release/*.zip release/*.yml release/*.blockmap)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "macOS 构建目录没有可上传的安装包"
+            ls -la release || true
+            exit 1
+          fi
+          gh release upload "$TAG_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 
   release-win:
     name: Windows GitHub Release
@@ -39,10 +59,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Publish unsigned Windows packages
+      - name: Build unsigned Windows packages
+        run: npx electron-builder --win --publish never
+      - name: Upload Windows assets
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --publish always
+        run: |
+          shopt -s nullglob
+          files=(release/*.exe release/*.zip release/*.yml release/*.blockmap)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Windows 构建目录没有可上传的安装包"
+            ls -la release || true
+            exit 1
+          fi
+          gh release upload "$TAG_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 
   checksums:
     name: Attach SHA256SUMS
@@ -54,7 +85,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p dist-rel
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir dist-rel
+          assets=0
+          for _ in 1 2 3 4 5 6; do
+            assets=$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')
+            if [ "$assets" -gt 0 ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "$assets" -eq 0 ]; then
+            echo "Release $TAG_NAME 上没有安装包附件。请确认 macOS/Windows 上传步骤已成功。"
+            gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY"
+            exit 1
+          fi
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir dist-rel --pattern '*' --clobber
           cd dist-rel
-          sha256sum $(find . -maxdepth 1 -type f ! -name SHA256SUMS.txt | sort) > SHA256SUMS.txt
-          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          rm -f SHA256SUMS.txt
+          sha256sum $(find . -maxdepth 1 -type f | sort) > SHA256SUMS.txt
+          gh release upload "$TAG_NAME" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber

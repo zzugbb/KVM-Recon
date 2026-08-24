@@ -4,13 +4,11 @@
 
 ## [Unreleased]
 
-- GitHub Actions：CI（typecheck / 测试 / 构建 / Electron 启动烟测）、tag 发布 Windows 与 macOS 安装包
-- 开源治理：CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、Issue/PR 模板、Dependabot
-- Dependabot 将 GitHub Actions 更新合并为一组 PR
-- 试构建 workflow 命名为 Build installers
+- 修复已创建的 GitHub Release 无法挂上安装包、SHA256SUMS 步骤报 `no assets to download` 的问题
 
 ## [0.1.0] - 2026-08-24
 
 - 离线采集客户端：探测、手工登录采集、HTTP/WS、脱敏导出 Capture Pack
 - 暂停/继续、多作业、独立 JSON Schema、本地打开/对比 Capture Pack、现场铭牌备注
 - 登录后 Cookie 复验（值不落盘）、HTTP/WS `windowRole`
+- GitHub Actions CI 与安装包发布 workflow
