@@ -22,8 +22,21 @@ function redactValue(value: unknown): string {
   return `<redacted:sha256:${hash}:len:${text.length}>`;
 }
 
+function redactCookieHeader(value: string): string {
+  return value.replace(/([^;=\s]+)=([^;]*)/g, (full, name, cookieValue) => {
+    if (/^(path|domain|expires|max-age|samesite)$/i.test(name)) return full;
+    return `${name}=${redactValue(cookieValue)}`;
+  });
+}
+
 function redactAny(value: JsonLike, parentKey = ''): RedactionResult<JsonLike> {
   if (SENSITIVE_KEY_RE.test(parentKey)) {
+    if (/^(cookie|set-cookie)$/i.test(parentKey) && typeof value === 'string') {
+      return {
+        data: redactCookieHeader(value),
+        redactedFields: 1,
+      };
+    }
     return {
       data: redactValue(value),
       redactedFields: 1,
@@ -63,6 +76,22 @@ export function redactSensitiveData<T extends JsonLike>(data: T): RedactionResul
     data: result.data as T,
     redactedFields: result.redactedFields,
   };
+}
+
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    let changed = false;
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (SENSITIVE_KEY_RE.test(key)) {
+        parsed.searchParams.set(key, redactValue(value));
+        changed = true;
+      }
+    }
+    return changed ? parsed.toString() : url;
+  } catch {
+    return url;
+  }
 }
 
 export function assertNoSensitivePlaintext(

@@ -47,9 +47,13 @@ describe('createNetworkRecorder', () => {
       requestBodySummary: {
         bytes: 49,
         redactedFields: ['Password'],
+        jsonKeys: ['UserName', 'Password'],
       },
     });
     expect(JSON.stringify(records[0])).not.toContain('secret-password');
+    expect(JSON.stringify(records[0])).not.toContain('abc123');
+    expect(records[0].responseHeaders['set-cookie']).toContain('QSESSIONID=');
+    expect(records[0].responseBodySummary.jsonKeys).toEqual(['CSRFToken']);
     expect(records[1].tags).toEqual(['kvm-token']);
   });
 
@@ -132,6 +136,33 @@ describe('createNetworkRecorder', () => {
       closedAt: '2026-08-24T12:00:25.000+08:00',
       binaryFrameCount: 1,
     });
+  });
+
+  it('keeps cookie names and JSON keys while redacting values and URL secrets', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    recorder.recordHttpRequest({
+      id: 'req-1',
+      timestamp: '2026-08-24T12:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/api/kvm/token?token=secret-token',
+      resourceType: 'xhr',
+      requestHeaders: { Cookie: 'QSESSIONID=abc123; theme=dark' },
+    });
+    recorder.recordHttpResponse({
+      id: 'req-1',
+      status: 200,
+      responseHeaders: { 'set-cookie': 'QSESSIONID=abc123; Path=/; HttpOnly' },
+      responseBody: '{"token":"kvm-token","mode":"html5"}',
+    });
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request?.url).toContain('https://10.0.0.10/api/kvm/token');
+    expect(request?.url).not.toContain('secret-token');
+    expect(request?.requestHeaders.Cookie).toContain('QSESSIONID=');
+    expect(request?.requestHeaders.Cookie).toContain('theme=');
+    expect(JSON.stringify(request)).not.toContain('abc123');
+    expect(request?.responseHeaders['set-cookie']).toContain('Path=/');
+    expect(request?.responseBodySummary.jsonKeys).toEqual(['token', 'mode']);
   });
 
   it('records printable WebSocket handshake magic without storing the full stream', () => {

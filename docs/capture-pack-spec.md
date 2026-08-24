@@ -9,7 +9,7 @@ Capture Pack 是 KVM-Recon 的核心导出物。它需要让工程师在离开�
 - 资料是否足够支撑下游 KVM 网关适配？
 - 缺失资料有哪些，现场人员需要补做什么？
 
-Capture Pack 必须可离线打开、可脱敏审查、可长期归档。
+Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机房联网后，工程师或 AI 应能仅凭本包分析协议；KVM-Recon 本身不写 Adapter。
 
 权威实现契约是 TypeScript 类型与导出代码（`src/core/capture-pack/`、`buildProbeArtifacts`、`buildBrowserArtifacts`、`buildNetworkArtifacts`）。独立 JSON Schema 文件见开发计划阶段 8.5。
 
@@ -19,6 +19,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。
 - `page/screenshots.json`：包内截图相对路径索引。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
+- 每个包都有 `artifacts/handover.md`：说明出机房后如何把资料交给工程师或 AI。
 
 阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 文件仍以 TypeScript 类型为权威。
 
@@ -52,6 +53,7 @@ capture-pack/
   artifacts/
     oem-profile.yaml
     notes.md
+    handover.md
 ```
 
 ## 3. manifest.json
@@ -125,7 +127,8 @@ capture-pack/
   "requestBodySummary": {
     "contentType": "application/json",
     "bytes": 128,
-    "redactedFields": ["Password"]
+    "redactedFields": ["Password"],
+    "jsonKeys": ["UserName", "Password"]
   },
   "responseBodySummary": {
     "contentType": "application/json",
@@ -140,6 +143,9 @@ HTTP 资料必须脱敏：
 
 - 密码字段不落盘。
 - Token、Cookie、CSRF、SessionId 只保留掩码、长度和 hash。
+- Cookie / Set-Cookie **保留 cookie 名**，只脱敏值，便于离场后识别 `QSESSIONID` 等字段。
+- JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
+- URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
 
 ## 5. WebSocket 资料

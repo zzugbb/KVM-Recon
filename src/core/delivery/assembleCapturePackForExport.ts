@@ -14,6 +14,7 @@ import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCaptur
 import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
 import { validateRedactionForExport } from '../redaction/validateRedactionForExport';
 import { buildCapturePackFileName } from './buildCapturePackFileName';
+import { buildHandoverArtifact } from './buildHandoverArtifact';
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -113,7 +114,18 @@ export function assembleCapturePackForExport(
       },
     }),
   );
-  pack.artifacts = artifacts;
+  pack.artifacts = [
+    ...artifacts,
+    buildHandoverArtifact({
+      kvmFamily: pack.manifest.family.primary,
+      readiness: pack.manifest.readiness.status,
+      operatorNote: input.operatorNote,
+      httpRequestCount: input.network.httpRequests.length,
+      webSocketCount: input.network.webSockets.length,
+      screenshotCount: input.page.events.filter(event => event.type === 'screenshot').length,
+      hasOemProfile: artifacts.some(item => item.path === 'artifacts/oem-profile.yaml'),
+    }),
+  ];
 
   return {
     pack,

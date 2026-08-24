@@ -1,4 +1,4 @@
-import { redactSensitiveData } from '../redaction/redactSensitiveData';
+import { redactSensitiveData, redactUrl } from '../redaction/redactSensitiveData';
 
 type HeaderMap = Record<string, string>;
 type HttpTag = 'login' | 'kvm-token' | 'kvm-entry';
@@ -42,10 +42,12 @@ export interface HttpRequestRecord {
   requestBodySummary: {
     bytes: number;
     redactedFields: string[];
+    jsonKeys?: string[];
   };
   responseBodySummary: {
     bytes: number;
     redactedFields: string[];
+    jsonKeys?: string[];
   };
   tags: HttpTag[];
 }
@@ -134,7 +136,16 @@ function summarizeBody(body = '') {
   return {
     bytes: body.length,
     redactedFields,
+    jsonKeys: collectJsonKeys(parsed),
   };
+}
+
+function collectJsonKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value)) {
+    return [...new Set(value.flatMap(item => collectJsonKeys(item)))];
+  }
+  return [...new Set(Object.keys(value).concat(...Object.values(value).flatMap(collectJsonKeys)))];
 }
 
 function parseBody(body: string): unknown {
@@ -196,7 +207,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         id: input.id,
         timestamp: input.timestamp,
         method: input.method,
-        url: input.url,
+        url: redactUrl(input.url),
         resourceType: input.resourceType,
         status: null,
         requestHeaders: redactHeaders(input.requestHeaders),
@@ -222,7 +233,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       webSockets.set(input.id, {
         id: input.id,
         createdAt: input.timestamp,
-        url: input.url,
+        url: redactUrl(input.url),
         subProtocols: input.subProtocols,
         requestHeaders: redactHeaders(input.requestHeaders),
         binaryFrameCount: 0,

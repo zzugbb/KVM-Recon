@@ -30,7 +30,7 @@ npm run package:win
 8. 选择截图角色（登录页 / 登录后 / KVM 入口 / viewer / 异常），在对应画面点击“采集当前页面”。截图会进入导出包的 `page/screenshots/`。
 9. 导出前可点“关闭采集窗口”：窗口关掉后作业数据仍保留，可继续导出。也可直接点“停止采集并导出”。
 10. 导出前会显示离场结论和脱敏摘要，确认后再选择保存位置。导出成功后采集窗口会关闭。
-11. 打开 `report.html` 或 `report.md`，确认离场结论。
+11. 打开 `report.html` 或 `report.md`，确认离场结论。出机房后把 zip 交给工程师或 AI，并阅读 `artifacts/handover.md`。本工具不写 Adapter。
 
 ## 3. 离场判断
 
@@ -72,4 +72,4 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 - 真实 BMC 验收见 `docs/development-plan.md` 第 13 节，当前按安排延后，不阻塞阶段 9。
 - 日志只记录作业号、主机、就绪状态等非敏感字段。
 - 同一时刻只保留一份可导出作业。关闭采集窗口后仍可导出；再点“新建采集作业”会丢掉未导出的上一份。
-- 不做自动登录、MITM、在线分析或自动写 Adapter。后续版本见开发计划第 17 节。
+- 本工具不写 Adapter、不调用公网分析。出机房后把 Capture Pack 交给工程师或 AI，见包内 `artifacts/handover.md`。

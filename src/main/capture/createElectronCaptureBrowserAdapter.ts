@@ -116,6 +116,9 @@ export function createElectronCaptureBrowserAdapter(
           if (foreground === targetWindow) {
             foreground = [...windows].find(windowAlive) || null;
           }
+          if (![...windows].some(windowAlive)) {
+            options.onAllWindowsClosed();
+          }
         });
         targetWindow.webContents.on('did-navigate', (_event, url) => {
           options.onNavigation(url);

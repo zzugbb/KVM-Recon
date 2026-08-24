@@ -142,6 +142,7 @@ describe('assembleCapturePackForExport', () => {
         'ws/sockets.json',
         'page/timeline.jsonl',
         'artifacts/oem-profile.yaml',
+        'artifacts/handover.md',
       ]),
     );
   });

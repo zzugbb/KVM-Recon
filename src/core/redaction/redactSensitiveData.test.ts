@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertNoSensitivePlaintext,
   redactSensitiveData,
+  redactUrl,
 } from './redactSensitiveData';
 
 describe('redactSensitiveData', () => {
@@ -29,11 +30,20 @@ describe('redactSensitiveData', () => {
 
     expect(result.redactedFields).toBe(6);
     expect(result.data.requestHeaders.Accept).toBe('application/json');
+    expect(result.data.requestHeaders.Cookie).toContain('QSESSIONID=');
+    expect(result.data.requestHeaders.Cookie).toContain('theme=');
     expect(result.data.requestBody.UserName).toBe('Administrator');
     expect(JSON.stringify(result.data)).not.toContain('secret-password');
     expect(JSON.stringify(result.data)).not.toContain('token-123');
     expect(JSON.stringify(result.data)).not.toContain('csrf-123');
+    expect(JSON.stringify(result.data)).not.toContain('abc123');
     expect(JSON.stringify(result.data)).toContain('<redacted:sha256:');
+  });
+
+  it('redacts sensitive URL query values while keeping parameter names', () => {
+    expect(redactUrl('https://bmc.example/kvm?token=secret-token&view=html5')).toContain('view=html5');
+    expect(redactUrl('https://bmc.example/kvm?token=secret-token&view=html5')).not.toContain('secret-token');
+    expect(redactUrl('https://bmc.example/kvm')).toBe('https://bmc.example/kvm');
   });
 
   it('reports unsafe plaintext when known sensitive values remain', () => {

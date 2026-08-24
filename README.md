@@ -10,12 +10,12 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 - KVM-Recon 不直接提供用户远程控制台，不替代下游平台的 KVM 网关链路。
 - KVM-Recon 不依赖公网，不在机房内调用外部分析服务。
 - 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
-- 导出的 Capture Pack 用于后续判断是新增 OEM Profile、修正已知协议族兼容层，还是需要新增 KVM Family Adapter。
+- 导出的 Capture Pack 供离开机房、联网之后给工程师或 AI 做兼容分析；本工具不写 Adapter。
 
 ## 核心原则
 
 - 主键使用 `kvmFamily`，不是厂商 Logo 或型号字符串。
-- 已知协议族生成或辅助生成 OEM Profile；未知协议族只导出资料包，不生成空壳 Adapter。
+- 已知协议族可附带 OEM Profile **草稿**（需离场审核）；未知协议族只导出资料包。本工具不生成 Adapter。
 - 不保存明文密码到导出包。
 - 不保存完整 KVM 视频码流，只保存 WebSocket 元数据和首包特征。
 - 采集结果最终服务于 `ami-megarac`、`openbmc-h5`、`huawei-ibmc` 等 KVM 网关兼容开发。
@@ -29,18 +29,20 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
 6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。主窗口进度会自动收录点击摘要。
 7. 可先关闭采集窗口再导出，或直接停止采集并导出。工具执行脱敏与离场验收检查。
-8. 导出 Capture Pack，离开机房后交给工程师或离线分析流程进行适配。
+8. 导出 Capture Pack。出机房联网后，把 zip 交给工程师或 AI 做适配；阅读包内 `artifacts/handover.md`。
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段开发计划、MVP 完成度、阶段 9 产品化补齐、真机验收闸门（延后）与 MVP 外后续版本。
+- `docs/development-plan.md`：分阶段开发计划、完成度、真机验收闸门（延后）与项目边界。本工具不写 Adapter。
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
 - `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
 
 ## 当前进度
 
-阶段 0–9 的代码与单测已闭环：MVP 核心（阶段 0–8）加上采集生命周期、进度轮询收点击、WebSocket `closedAt`（阶段 9）。尚未做真实 BMC 验收，本轮不打 Windows 安装包。真机步骤见 `docs/development-plan.md` 第 13 节（延后）。MVP 之外的暂停采集、多作业、登录后复验 probe、自动登录等见第 17 节，尚未实现。
+阶段 0–10 的代码与单测已闭环：离线采集 MVP、作业生命周期，以及出机房后可用的资料质量（Cookie 名、JSON 字段名、交接说明）。尚未做真实 BMC 验收，本轮不打 Windows 安装包。真机步骤见 `docs/development-plan.md` 第 13 节（延后）。
+
+本项目不会做自动写 Adapter、机房内在线分析、MITM 或自动登录。出机房后的分析不在本仓库。
 
 ## 打包与交付
 
@@ -63,7 +65,7 @@ KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
 
 - 导出包不包含明文密码和完整视频流。
 - 能标记 `kvmFamily` 候选、采集完整度和缺失项。
-- 已知族可生成 OEM Profile 草稿；未知族只出 Capture Pack 与备注。
+- 已知族可生成 OEM Profile 草稿（需离场审核）；未知族只出 Capture Pack 与备注。本工具不写 Adapter。
 
 现场成功标准（真机闸门）：
 

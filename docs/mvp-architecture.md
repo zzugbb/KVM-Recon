@@ -26,7 +26,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 - 创建隔离浏览器 profile。
 - 为采集窗口设置受控证书策略。
-- 管理采集作业开始、关闭窗口、导出。暂停采集与多作业并行不在当前版本，见开发计划第 17 节。
+- 管理采集作业开始、关闭窗口、导出。同一时刻一份作业。暂停采集与多作业并行不是本项目目标。
 - 不在本地持久化明文密码。
 
 ### 3.2 Capture Browser
@@ -59,7 +59,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 ### 3.4 Probe Engine
 
-Node.js 本地探测引擎，不依赖浏览器登录状态时先跑基础探测。登录后带着 Cookie/Token 做已知族复验不在当前 MVP，见开发计划非目标。
+Node.js 本地探测引擎，不依赖浏览器登录状态时先跑基础探测。登录后带着 Cookie/Token 复验不属于本采集工具；出机房后的分析由工程师或 AI 基于 Capture Pack 完成。
 
 MVP 探测项：
 
@@ -138,16 +138,15 @@ KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发：
 - AMI 差异进入 OEM Profile，而不是新建品牌 Adapter。
 - 华为差异用于修正 `huawei-ibmc` 反代、KvmService、SetKvmKey、WebCrypto 垫片。
 - OpenBMC 差异用于完善 `openbmc-h5` 登录、WS 子协议和 viewer 参数。
-- 未知族只输出 Capture Pack，由工程师判断是新 Profile 还是新 Adapter。
+- 未知族只输出 Capture Pack，由出机房后的工程师或 AI 判断是新 Profile 还是新 Adapter。本工具不写 Adapter。
 
-## 5. MVP 非目标
+## 5. 项目非目标
 
 - 不做生产远程控制台。
-- 不做统一视频解码。
-- 不采集完整视频流。
-- 不在机房内调用外部分析服务。
+- 不做统一视频解码，不采集完整视频流。
+- 不在机房内调用外部分析服务或 AI。
 - 不实现浏览器插件逻辑。
-- 不为未知族自动生成 Adapter 空壳。
+- 不根据 Capture Pack 自动编写下游网关 Adapter。写 Adapter 是出机房联网之后的事。
 
 ## 6. 关键风险与降级路径
 

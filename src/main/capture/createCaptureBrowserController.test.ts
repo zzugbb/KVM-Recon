@@ -285,4 +285,49 @@ describe('createCaptureBrowserController', () => {
       webSockets: [],
     });
   });
+
+  it('clears the window handle when the operator closes all capture windows', async () => {
+    let capturedOptions: CaptureBrowserAdapterOptions | undefined;
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        capturedOptions = nextOptions;
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-closed',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    expect(controller.windowsOpen()).toBe(true);
+    capturedOptions?.onAllWindowsClosed();
+    expect(controller.windowsOpen()).toBe(false);
+    await controller.collectPageFacts('viewer');
+    expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');
+  });
 });

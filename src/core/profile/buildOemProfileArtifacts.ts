@@ -50,16 +50,17 @@ function headerNames(requests: HttpRequestRecord[]): string[] {
 }
 
 function cookieNames(requests: HttpRequestRecord[]): string[] {
-  const cookieCandidates = requests.flatMap(request => {
+  const names = requests.flatMap(request => {
     const headers = { ...request.requestHeaders, ...request.responseHeaders };
     return Object.entries(headers)
       .filter(([name]) => /cookie/i.test(name))
-      .flatMap(([, value]) => {
-        const first = value.split(/[=;]/)[0]?.trim();
-        return first ? [first] : [];
-      });
+      .flatMap(([, value]) =>
+        [...value.matchAll(/([^;=\s]+)=/g)]
+          .map(match => match[1])
+          .filter(name => !/^(path|domain|expires|max-age|samesite)$/i.test(name || '')),
+      );
   });
-  return unique(cookieCandidates);
+  return unique(names.filter((name): name is string => Boolean(name)));
 }
 
 function redactedFieldNames(requests: HttpRequestRecord[]): string[] {
@@ -189,12 +190,13 @@ function unknownNotes(input: BuildOemProfileArtifactsInput): string {
   return [
     '# OEM Profile 分析备注',
     '',
-    '当前采集结果属于未知协议族，工具不会生成空壳 Adapter/Profile。',
+    '当前采集结果属于未知协议族。KVM-Recon 只负责离线采集，不会生成 Adapter 或空壳 Profile。',
     '',
     `primary=${input.probe.familySignatures.primary}`,
     `confidence=${input.probe.familySignatures.confidence}`,
     '',
-    '建议：补充登录链路、KVM 入口、HTTP 关键 API、WebSocket 帧元数据和截图后再进行人工分析。',
+    '出机房联网后，请将本 Capture Pack 交给工程师或 AI，结合 probe、http、ws、page、tls 做协议分析。',
+    '若资料不足，按 report.html / checklist.json 提示回现场补采，不要在机房内调用外部分析服务。',
   ].join('\n');
 }
 

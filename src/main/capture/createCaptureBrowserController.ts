@@ -25,6 +25,7 @@ export interface CaptureBrowserAdapterOptions {
   onPopup(input: { url: string; disposition: string }): void;
   onNetworkDebugger(cdp: CdpDebuggerLike): Promise<void>;
   onChromiumAccess(info: ChromiumAccessInfo): void;
+  onAllWindowsClosed(): void;
 }
 
 export interface CaptureBrowserWindowHandle {
@@ -101,6 +102,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
           }),
         onChromiumAccess: info => {
           chromiumAccess = info;
+        },
+        onAllWindowsClosed: () => {
+          windowHandle = null;
         },
       });
 
