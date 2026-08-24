@@ -213,7 +213,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       evidence: wsIds,
       userAction: wsIds.length
         ? ''
-        : '请重新开始采集，登录 BMC，点击 HTML5 KVM，等待至少 10 秒，直到出现 WS 下行帧后再导出。',
+        : '请登录 BMC 并打开 HTML5 KVM，等待至少 10 秒直到出现 WS 下行帧。若 KVM 在新窗口打开而进度仍缺失，当前版本尚未采集 popup 网络，请保留窗口并导出后查看报告，不要按 YES 离场。',
     }),
     item({
       id: 'page.viewer.screenshot',
@@ -223,7 +223,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       evidence: screenshots,
       userAction: screenshots.length
         ? ''
-        : '请打开 HTML5 KVM 后等待画面区域稳定，再采集 viewer 页面截图。',
+        : '请打开 HTML5 KVM 后等待画面区域稳定，再点击“采集当前页面”。当前截图来自首个采集窗口；若画面只在新窗口，可能拍不到 viewer。',
     }),
     item({
       id: 'tls.certificate',

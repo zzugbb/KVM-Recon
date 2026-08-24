@@ -77,6 +77,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         throw new Error('Capture browser has not started');
       }
 
+      // 阶段 8.1：storage/截图/选择器只来自首个采集窗口。popup viewer 需改为对前台 webContents 采集。
       timeline.recordStorageSnapshot(await windowHandle.collectStorageKeys());
       const screenshot = await windowHandle.captureScreenshot(label);
       timeline.recordScreenshot(screenshot.packPath, screenshot.sourcePath);

@@ -99,6 +99,7 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
 
   const primary = candidates[0];
   if (!primary) {
+    // 阶段 8.3：无指纹时目前输出 unknown-h5；not-h5 需能区分“无 H5 KVM 迹象”与“有 H5 但未命中已知族”。
     return {
       primary: 'unknown-h5',
       confidence: 0,

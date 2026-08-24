@@ -72,6 +72,8 @@ export function createElectronCaptureBrowserAdapter(
           url: details.url,
           disposition: details.disposition,
         });
+        // 阶段 8.1：popup 目前只记录 URL 并允许同 partition 打开，未挂 CDP。
+        // KVM viewer 若在新窗口建连，HTTP/WS 不会进入当前作业，直到为 popup webContents 调用 onNetworkDebugger。
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {

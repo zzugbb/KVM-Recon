@@ -17,7 +17,7 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 - 主键使用 `kvmFamily`，不是厂商 Logo 或型号字符串。
 - 已知协议族生成或辅助生成 OEM Profile；未知协议族只导出资料包，不生成空壳 Adapter。
 - 不保存明文密码到导出包。
-- 不保存完整 KVM 视频码流，只保存 WebSocket 元数据、首包特征和必要魔数。
+- 不保存完整 KVM 视频码流，只保存 WebSocket 元数据和首包特征。
 - 采集结果最终服务于 `ami-megarac`、`openbmc-h5`、`huawei-ibmc` 等 KVM 网关兼容开发。
 
 ## 目标用户流程
@@ -26,17 +26,21 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 2. 输入目标 BMC 地址、端口和作业备注。
 3. 开始采集，工具执行基础探测与 TLS/指纹采集。
 4. 内嵌浏览器打开 BMC，现场人员按需手工登录。
-5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。
+5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，见 `docs/offline-field-guide.md` 当前版本限制。
 6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。
 7. 停止采集，工具执行脱敏与离场验收检查。
 8. 导出 Capture Pack，离开机房后交给工程师或离线分析流程进行适配。
 
 ## 文档
 
+- `docs/development-plan.md`：分阶段开发计划、当前完成度、阶段 8 MVP 补齐与真机闸门。**下一阶段从 8.1（popup 完整采集）开始。**
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
-- `docs/development-plan.md`：分阶段开发计划与验收标准。
 - `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
+
+## 当前进度
+
+阶段 0–7 的 MVP 代码与单测已闭环，可本地构建并导出脱敏 Capture Pack。尚未做真实 BMC 验收，Windows 安装包未在本机打出。已知限制：HTML5 KVM 若在新窗口建立 WebSocket，当前可能采不到该连接。补齐项与开发顺序见 `docs/development-plan.md` 第 12–13 节。
 
 ## 打包与交付
 
@@ -55,8 +59,14 @@ KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
 
 ## MVP 成功标准
 
-- 在无公网环境中完成一次 BMC 登录到 HTML5 KVM 打开的采集。
+代码与单测已覆盖（模拟数据）：
+
 - 导出包不包含明文密码和完整视频流。
-- 能明确标记 `kvmFamily` 候选、采集完整度和缺失项。
+- 能标记 `kvmFamily` 候选、采集完整度和缺失项。
+- 已知族可生成 OEM Profile 草稿；未知族只出 Capture Pack 与备注。
+
+现场成功标准（真机闸门，须先完成阶段 8.1）：
+
+- 在无公网环境中完成一次 BMC 登录到 HTML5 KVM 打开的采集。
 - 对已知 AMI/华为/OpenBMC 族输出可用于后续网关适配的关键事实资料。
-- 对未知族输出可带离现场的 Capture Pack，并明确下一步需要人工分析的项目。
+- 对未知族或非 H5 输出可带离现场的 Capture Pack，并明确下一步需要人工分析的项目。

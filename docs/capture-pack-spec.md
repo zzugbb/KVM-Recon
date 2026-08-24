@@ -11,6 +11,17 @@ Capture Pack 是 KVM-Recon 的核心导出物。它需要让工程师在离开�
 
 Capture Pack 必须可离线打开、可脱敏审查、可长期归档。
 
+权威实现契约是 TypeScript 类型与导出代码（`src/core/capture-pack/`、`buildProbeArtifacts`、`buildBrowserArtifacts`、`buildNetworkArtifacts`）。独立 JSON Schema 文件见开发计划阶段 8.5。
+
+当前已导出但易被忽略的文件：
+
+- `probe/path-evidence.json`：各指纹路径是否可达。
+- `page/screenshots.json`：包内截图相对路径索引。
+- `page/screenshots/`：PNG 文件。
+- 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
+
+阶段 8 才要求补齐的字段：时间线 click、storage 写入前后变化、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium/Node 分记。
+
 ## 2. 目录结构
 
 ```text
@@ -19,6 +30,7 @@ capture-pack/
   probe/
     bmc-basic.json
     family-signatures.json
+    path-evidence.json
     redfish.json
   http/
     requests.jsonl
@@ -30,6 +42,7 @@ capture-pack/
     timeline.jsonl
     storage.json
     selectors.json
+    screenshots.json
     screenshots/
   tls/
     certificate.json
@@ -159,10 +172,11 @@ HTTP 资料必须脱敏：
   "opcode": "binary",
   "bytes": 64,
   "headHex": "1700000000000000",
-  "magic": "AMI_IVTP_CONNECTION_ALLOWED",
   "sampled": true
 }
 ```
+
+`magic` 为可选识别结果（例如可打印的握手字符串）。当前导出以 `headHex`、长度和方向为准；填写 `magic` 见开发计划阶段 8.3。
 
 限制：
 
@@ -178,31 +192,32 @@ HTTP 资料必须脱敏：
 
 - 页面加载。
 - hash 路由变化。
-- 点击事件摘要。
 - popup/new window。
-- viewer 页面加载。
-- 截图时间点。
+- 截图时间点（包内相对路径）。
+- 点击事件摘要（阶段 8.2）。
 
 `page/storage.json`：
 
 - localStorage/sessionStorage key 列表。
-- 敏感值脱敏。
-- 记录写入前后变化。
+- 不导出敏感值原文。
+- 写入前后变化（阶段 8.2）。
 
 `page/selectors.json`：
 
 - 登录按钮候选。
 - KVM 菜单候选。
 - HTML5 KVM 按钮候选。
-- viewer 容器候选。
+- viewer 容器候选（阶段 8.4 补齐）。
+
+`page/screenshots.json`：
+
+- 包内相对路径列表，例如 `page/screenshots/live-1.png`。
+- 不得包含采集机绝对路径。
 
 `page/screenshots/`：
 
-- 登录页。
-- 登录后首页。
-- KVM 菜单或远程控制台入口。
-- viewer 页面。
-- 黑屏、报错或有画面状态。
+- 现场「采集当前页面」与导出时截图的 PNG。
+- 角色分类（登录页、登录后首页、KVM 入口、viewer、异常画面）见阶段 8.2。
 
 ## 7. TLS 资料
 
@@ -214,9 +229,9 @@ HTTP 资料必须脱敏：
 - 是否自签。
 - TLS 协议版本。
 - cipher。
-- Chromium 是否可访问。
 - Node probe 是否可访问。
 - 失败原因。
+- Chromium 是否可访问（阶段 8.3；当前以采集窗口能否打开目标主机为准，未单独写入该文件）。
 
 ## 8. 离场验收清单
 
