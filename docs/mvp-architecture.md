@@ -26,7 +26,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 - 创建隔离浏览器 profile。
 - 为采集窗口设置受控证书策略。
-- 管理采集作业开始、停止、导出。暂停采集与多作业并行不在阶段 8。
+- 管理采集作业开始、关闭窗口、导出。暂停采集与多作业并行不在当前版本，见开发计划第 17 节。
 - 不在本地持久化明文密码。
 
 ### 3.2 Capture Browser
@@ -40,7 +40,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 - 记录页面导航、storage key、截图、选择器候选。
 - 保留用户真实操作路径，避免工具自动操作破坏 BMC 会话状态。
 
-当前限制：popup 与首个窗口共用同一作业的时间线、网络记录器和前台截图/storage。新窗口会挂 CDP。
+当前能力：popup 与首个窗口共用同一作业的时间线、网络记录器和前台截图/storage。新窗口会挂 CDP。导出成功或现场选择「关闭采集窗口」后关闭全部采集窗口，作业数据仍可导出。
 
 ### 3.3 CDP Recorder
 
@@ -51,11 +51,11 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 - HTTP 请求和响应摘要。
 - HAR 或结构化请求列表。
 - Cookie、CSRF、Token 等敏感字段脱敏后的 Header/摘要。
-- WebSocket 创建事件、URL、子协议。
+- WebSocket 创建事件、URL、子协议、关闭时间 `closedAt`。
 - WebSocket frame 方向、时间戳、长度、前 N 字节 hex、是否二进制。
 - 页面截图、导航时间线、popup URL、选择器候选。
 
-注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。Cookie 写入来源、storage 变更流、点击摘要见阶段 8。
+注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。点击摘要在采集进度轮询中写入时间线；Cookie 写入来源仍不采集。
 
 ### 3.4 Probe Engine
 

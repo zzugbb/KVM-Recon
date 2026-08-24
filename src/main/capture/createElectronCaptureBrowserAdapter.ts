@@ -215,6 +215,21 @@ export function createElectronCaptureBrowserAdapter(
             return [];
           }
         },
+        async close() {
+          for (const targetWindow of [...windows]) {
+            try {
+              if (!targetWindow.isDestroyed()) {
+                targetWindow.close();
+              }
+            } catch (error) {
+              // 捕获关闭单个采集窗口失败：窗口可能已销毁
+              // 策略：继续关闭其余窗口，避免作业句柄泄漏
+              void error;
+            }
+          }
+          windows.clear();
+          foreground = null;
+        },
       };
     },
   };

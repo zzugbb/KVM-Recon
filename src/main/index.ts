@@ -22,6 +22,30 @@ interface CaptureSession extends CaptureExportJob {
 
 const captureSessions = new Map<string, CaptureSession>();
 
+async function stopExistingCaptureSessions() {
+  const previous = [...captureSessions.values()];
+  for (const session of previous) {
+    try {
+      await session.controller.stop();
+    } catch (error) {
+      // 捕获上一作业关窗失败：用户可能已手动关闭采集窗口
+      // 策略：仍替换作业，避免新采集被旧窗口占用
+      void error;
+    }
+  }
+}
+
+function sessionSnapshot(session: CaptureSession) {
+  return {
+    windowsOpen: session.controller.windowsOpen(),
+    ...buildLiveCaptureSnapshot({
+      probe: session.probe,
+      page: session.controller.timeline(),
+      network: session.controller.network(),
+    }),
+  };
+}
+
 function registerCaptureHandlers() {
   ipcMain.handle(
     'capture:start',
@@ -33,7 +57,7 @@ function registerCaptureHandlers() {
     ) => {
     try {
       const target: CaptureTarget = {
-        host: payload.host,
+        host: String(payload.host || '').trim(),
         port: payload.port,
         scheme: payload.scheme,
       };
@@ -50,15 +74,18 @@ function registerCaptureHandlers() {
       });
 
       await controller.start();
+      await stopExistingCaptureSessions();
+      captureSessions.clear();
       logger.info('capture-start', { jobId, host: target.host, port: target.port });
-      captureSessions.set(jobId, {
+      const session: CaptureSession = {
         jobId,
         startedAt,
         target,
         probe,
         operatorNote: payload.operatorNote,
         controller,
-      });
+      };
+      captureSessions.set(jobId, session);
 
       return {
         ok: true as const,
@@ -66,11 +93,7 @@ function registerCaptureHandlers() {
         family: probe.familySignatures,
         timeline: controller.timeline(),
         network: controller.network(),
-        snapshot: buildLiveCaptureSnapshot({
-          probe,
-          page: controller.timeline(),
-          network: controller.network(),
-        }),
+        snapshot: sessionSnapshot(session),
       };
     } catch (error) {
       // 捕获采集启动失败：BMC 不可达、证书策略、权限不足或窗口创建失败
@@ -98,7 +121,7 @@ function registerCaptureHandlers() {
     }
 
     const parentWindow = BrowserWindow.fromWebContents(event.sender);
-    return exportCaptureJob({
+    const result = await exportCaptureJob({
       job: session,
       collectPageFacts: label => session.controller.collectPageFacts(label),
       getPage: () => session.controller.timeline(),
@@ -149,6 +172,49 @@ function registerCaptureHandlers() {
       },
       writeFile,
     });
+    if (result.ok) {
+      try {
+        await session.controller.stop();
+      } catch (error) {
+        // 捕获导出后关窗失败：窗口可能已被用户手动关掉
+        // 策略：导出已成功，忽略关窗错误，避免把成功结果改成失败
+        void error;
+      }
+    }
+    return result;
+  });
+
+  ipcMain.handle('capture:stop', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) {
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: 'EXPORT_FAILED',
+          detail: '没有正在进行的采集作业。',
+        }),
+      };
+    }
+
+    try {
+      await session.controller.ingestLiveEvents();
+      await session.controller.stop();
+      logger.info('capture-stop', { jobId });
+      return {
+        ok: true as const,
+        ...sessionSnapshot(session),
+      };
+    } catch (error) {
+      // 捕获停止采集失败：窗口可能已关闭，作业数据仍应可导出
+      // 策略：返回当前快照与可读错误，避免现场无法继续导出
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: classifyCaptureError(error),
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      };
+    }
   });
 
   ipcMain.handle('capture:snapshot', async (_event, jobId: string) => {
@@ -163,13 +229,10 @@ function registerCaptureHandlers() {
       };
     }
 
+    await session.controller.ingestLiveEvents();
     return {
       ok: true as const,
-      ...buildLiveCaptureSnapshot({
-        probe: session.probe,
-        page: session.controller.timeline(),
-        network: session.controller.network(),
-      }),
+      ...sessionSnapshot(session),
     };
   });
 
@@ -186,16 +249,21 @@ function registerCaptureHandlers() {
     }
 
     try {
+      if (!session.controller.windowsOpen()) {
+        return {
+          ok: false as const,
+          error: formatCaptureError({
+            code: 'UNKNOWN',
+            detail: '采集窗口已关闭，无法补采当前页面。可直接导出已采集资料。',
+          }),
+        };
+      }
       const screenshotRole = typeof role === 'string' && role ? role : 'live';
       logger.info('collect-page', { jobId, role: screenshotRole });
       await session.controller.collectPageFacts(screenshotRole);
       return {
         ok: true as const,
-        ...buildLiveCaptureSnapshot({
-          probe: session.probe,
-          page: session.controller.timeline(),
-          network: session.controller.network(),
-        }),
+        ...sessionSnapshot(session),
       };
     } catch (error) {
       // 捕获页面补采失败：采集窗口可能已关闭或截图目录不可写

@@ -24,6 +24,7 @@ interface LiveCaptureSnapshot {
     evidence: string[];
     userAction: string;
   }>;
+  windowsOpen?: boolean;
 }
 
 type StartCaptureResult =
@@ -56,6 +57,7 @@ type ExportCaptureResult =
 type SnapshotResult =
   | ({
       ok: true;
+      windowsOpen: boolean;
     } & LiveCaptureSnapshot)
   | {
       ok: false;
@@ -70,6 +72,7 @@ declare global {
       exportCapture(jobId: string): Promise<ExportCaptureResult>;
       getCaptureSnapshot(jobId: string): Promise<SnapshotResult>;
       collectCapturePage(jobId: string, role?: string): Promise<SnapshotResult>;
+      stopCapture(jobId: string): Promise<SnapshotResult>;
     };
   }
 }

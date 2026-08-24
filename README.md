@@ -26,21 +26,21 @@ KVM-Recon 是一个面向机房现场的离线客户端工具，用于采集“�
 2. 输入目标 BMC 地址、端口和作业备注。
 3. 开始采集，工具执行基础探测与 TLS/指纹采集。
 4. 内嵌浏览器打开 BMC，现场人员按需手工登录。
-5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，见 `docs/offline-field-guide.md` 当前版本限制。
-6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。
-7. 停止采集，工具执行脱敏与离场验收检查。
+5. 现场人员点击 HTML5 KVM 入口，等待 viewer 页面和 WebSocket 建立。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
+6. 工具记录 HTTP、WebSocket、页面、截图、storage、TLS、指纹和 checklist。主窗口进度会自动收录点击摘要。
+7. 可先关闭采集窗口再导出，或直接停止采集并导出。工具执行脱敏与离场验收检查。
 8. 导出 Capture Pack，离开机房后交给工程师或离线分析流程进行适配。
 
 ## 文档
 
-- `docs/development-plan.md`：分阶段开发计划、完成度与真机验收闸门。阶段 8 已完成，下一阶段是真机验收。
+- `docs/development-plan.md`：分阶段开发计划、MVP 完成度、阶段 9 产品化补齐、真机验收闸门（延后）与 MVP 外后续版本。
 - `docs/mvp-architecture.md`：MVP 技术架构与模块边界。
 - `docs/capture-pack-spec.md`：Capture Pack 目录、数据契约与离场验收清单。
 - `docs/offline-field-guide.md`：离线安装、现场采集、导出命名和错误提示。
 
 ## 当前进度
 
-阶段 0–8 的 MVP 代码与单测已闭环，含 popup 窗口采集、截图角色、`not-h5`、导出确认和安全日志。尚未做真实 BMC 验收，Windows 安装包未在本机打出。真机步骤见 `docs/development-plan.md` 第 13 节。
+阶段 0–9 的代码与单测已闭环：MVP 核心（阶段 0–8）加上采集生命周期、进度轮询收点击、WebSocket `closedAt`（阶段 9）。尚未做真实 BMC 验收，本轮不打 Windows 安装包。真机步骤见 `docs/development-plan.md` 第 13 节（延后）。MVP 之外的暂停采集、多作业、登录后复验 probe、自动登录等见第 17 节，尚未实现。
 
 ## 打包与交付
 

@@ -72,9 +72,15 @@ interface WebSocketFrameInput {
   payload: string | Uint8Array;
 }
 
+interface WebSocketClosedInput {
+  id: string;
+  timestamp: string;
+}
+
 export interface WebSocketRecord {
   id: string;
   createdAt: string;
+  closedAt?: string;
   url: string;
   subProtocols: string[];
   requestHeaders: HeaderMap;
@@ -229,6 +235,11 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       if (!socket) return;
       socket.subProtocols = input.subProtocols;
       socket.requestHeaders = redactHeaders(input.requestHeaders);
+    },
+    recordWebSocketClosed(input: WebSocketClosedInput) {
+      const socket = webSockets.get(input.id);
+      if (!socket) return;
+      socket.closedAt = input.timestamp;
     },
     recordWebSocketFrame(input: WebSocketFrameInput) {
       const socket = webSockets.get(input.socketId);

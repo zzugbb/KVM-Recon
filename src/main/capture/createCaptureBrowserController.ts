@@ -39,6 +39,7 @@ export interface CaptureBrowserWindowHandle {
     sourcePath: string;
   }>;
   drainClicks(): Promise<ClickSummary[]>;
+  close(): Promise<void>;
 }
 
 export interface CaptureBrowserAdapter {
@@ -53,6 +54,20 @@ interface CreateCaptureBrowserControllerInput {
 
 function buildPartition(jobId: string) {
   return `persist:kvm-recon-${jobId}`;
+}
+
+async function recordClicks(
+  windowHandle: CaptureBrowserWindowHandle,
+  timeline: ReturnType<typeof createBrowserTimeline>,
+) {
+  const clicks = await windowHandle.drainClicks();
+  for (const click of clicks) {
+    timeline.recordClick({
+      selector: click.selector,
+      text: click.text.slice(0, 80),
+      tagName: click.tagName,
+    });
+  }
 }
 
 export function createCaptureBrowserController(input: CreateCaptureBrowserControllerInput) {
@@ -91,40 +106,67 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
 
       await windowHandle.loadURL(buildBmcUrl(input.target));
     },
+    windowsOpen() {
+      return windowHandle !== null;
+    },
+    async ingestLiveEvents() {
+      if (!windowHandle) return;
+      try {
+        await recordClicks(windowHandle, timeline);
+      } catch (error) {
+        // 捕获进度轮询时读取点击失败：窗口可能已关闭或页面正在导航
+        // 策略：跳过本次点击，不影响 HTTP/WS 持续记录和后续导出
+        void error;
+      }
+    },
     async collectPageFacts(label: string) {
-      if (!windowHandle) {
-        throw new Error('Capture browser has not started');
-      }
+      if (!windowHandle) return;
 
-      const clicks = await windowHandle.drainClicks();
-      for (const click of clicks) {
-        timeline.recordClick({
-          selector: click.selector,
-          text: click.text.slice(0, 80),
-          tagName: click.tagName,
+      try {
+        await recordClicks(windowHandle, timeline);
+        const storage = await windowHandle.collectStorageKeys();
+        const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
+        const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);
+        previousLocalStorage = storage.localStorageKeys;
+        previousSessionStorage = storage.sessionStorageKeys;
+        timeline.recordStorageSnapshot({
+          localStorageKeys: storage.localStorageKeys,
+          sessionStorageKeys: storage.sessionStorageKeys,
+          localStorageAdded: localDiff.added,
+          localStorageRemoved: localDiff.removed,
+          sessionStorageAdded: sessionDiff.added,
+          sessionStorageRemoved: sessionDiff.removed,
         });
+        const screenshot = await windowHandle.captureScreenshot(label);
+        timeline.recordScreenshot(
+          screenshot.packPath,
+          screenshot.sourcePath,
+          screenshotRoleFromLabel(label),
+        );
+        timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
+      } catch (error) {
+        // 捕获页面事实采集失败：窗口可能已被用户关掉或截图目录不可写
+        // 策略：跳过本次截图/storage，保留已有时间线与网络记录，便于关窗后仍能导出
+        void error;
       }
-
-      const storage = await windowHandle.collectStorageKeys();
-      const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
-      const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);
-      previousLocalStorage = storage.localStorageKeys;
-      previousSessionStorage = storage.sessionStorageKeys;
-      timeline.recordStorageSnapshot({
-        localStorageKeys: storage.localStorageKeys,
-        sessionStorageKeys: storage.sessionStorageKeys,
-        localStorageAdded: localDiff.added,
-        localStorageRemoved: localDiff.removed,
-        sessionStorageAdded: sessionDiff.added,
-        sessionStorageRemoved: sessionDiff.removed,
-      });
-      const screenshot = await windowHandle.captureScreenshot(label);
-      timeline.recordScreenshot(
-        screenshot.packPath,
-        screenshot.sourcePath,
-        screenshotRoleFromLabel(label),
-      );
-      timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
+    },
+    async stop() {
+      if (!windowHandle) return;
+      try {
+        await recordClicks(windowHandle, timeline);
+      } catch (error) {
+        // 捕获关窗前读取点击失败：页面可能已卸载
+        // 策略：仍关闭窗口，避免采集窗口残留
+        void error;
+      }
+      try {
+        await windowHandle.close();
+      } catch (error) {
+        // 捕获关闭采集窗口失败：窗口可能已被用户手动关掉
+        // 策略：仍释放句柄，保留已采集数据供导出
+        void error;
+      }
+      windowHandle = null;
     },
     timeline() {
       return timeline.toJSON();

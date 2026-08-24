@@ -105,6 +105,35 @@ describe('createNetworkRecorder', () => {
     });
   });
 
+  it('records WebSocket closedAt without dropping earlier frame metadata', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url: 'wss://10.0.0.10/kvm',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array([0x17, 0x00, 0x00, 0x01]),
+    });
+    recorder.recordWebSocketClosed({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:25.000+08:00',
+    });
+
+    expect(recorder.toJSON().webSockets[0]).toMatchObject({
+      id: 'ws-1',
+      createdAt: '2026-08-24T12:00:02.000+08:00',
+      closedAt: '2026-08-24T12:00:25.000+08:00',
+      binaryFrameCount: 1,
+    });
+  });
+
   it('records printable WebSocket handshake magic without storing the full stream', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
     recorder.recordWebSocketCreated({

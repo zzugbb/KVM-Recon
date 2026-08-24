@@ -2,6 +2,7 @@
   {
     "id": "ws-1",
     "createdAt": "2026-08-24T13:55:03.000+08:00",
+    "closedAt": "2026-08-24T13:55:25.000+08:00",
     "url": "wss://10.0.0.10/kvm",
     "subProtocols": ["binary"],
     "requestHeaders": {},

@@ -53,10 +53,18 @@ export function App() {
   const [statusHint, setStatusHint] = useState(previewPack.checklist.items[0]?.userAction || '');
   const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
   const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
+  const [windowsOpen, setWindowsOpen] = useState(false);
 
-  function applySnapshot(snapshot: { readiness: CaptureReadiness; items: ChecklistItem[] }) {
+  function applySnapshot(snapshot: {
+    readiness: CaptureReadiness;
+    items: ChecklistItem[];
+    windowsOpen?: boolean;
+  }) {
     setReadiness(snapshot.readiness);
     setProgressItems(snapshot.items);
+    if (typeof snapshot.windowsOpen === 'boolean') {
+      setWindowsOpen(snapshot.windowsOpen);
+    }
     const pending = snapshot.items.find(item => item.status !== 'pass' && item.status !== 'not_applicable');
     setStatusHint(pending?.userAction || '关键资料已采集，可导出后查看报告。');
   }
@@ -79,6 +87,15 @@ export function App() {
   async function startCapture() {
     const numericPort = Number(port) || 443;
     setError(null);
+    if (!host.trim()) {
+      setError({
+        title: '未填写 BMC 地址',
+        impact: '无法开始采集。',
+        action: '请输入目标 BMC 的 IP 或主机名后再新建采集作业。',
+        detail: '',
+      });
+      return;
+    }
     if (!window.kvmRecon?.startCapture) {
       setMessage('当前运行环境不支持采集窗口。');
       return;
@@ -98,8 +115,30 @@ export function App() {
     }
     setJobId(result.jobId);
     setPhase('capturing');
+    setWindowsOpen(true);
     applySnapshot(result.snapshot);
     setMessage(`采集作业已启动：${result.jobId}`);
+  }
+
+  async function stopCaptureWindows() {
+    setError(null);
+    if (!jobId || !window.kvmRecon?.stopCapture) {
+      setError({
+        title: '尚未开始采集',
+        impact: '当前没有可关闭的采集窗口。',
+        action: '请先点击“新建采集作业”，打开 BMC 后再关闭采集窗口。',
+        detail: '',
+      });
+      return;
+    }
+    const result = await window.kvmRecon.stopCapture(jobId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    applySnapshot(result);
+    setWindowsOpen(false);
+    setMessage('采集窗口已关闭，作业数据仍保留，可继续导出 Capture Pack。');
   }
 
   async function collectCurrentPage() {
@@ -149,6 +188,7 @@ export function App() {
       return;
     }
     setPhase('exported');
+    setWindowsOpen(false);
     setReadiness(result.readiness);
     setStatusHint(`已导出 ${result.fileName}，请打开 report.html 确认离场结论。`);
     setMessage(`已导出：${result.fileName}`);
@@ -180,7 +220,7 @@ export function App() {
             <select
               value={screenshotRole}
               onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
-              disabled={phase !== 'capturing'}
+              disabled={phase !== 'capturing' || !windowsOpen}
             >
               <option value="login">登录页</option>
               <option value="home">登录后首页</option>
@@ -199,16 +239,24 @@ export function App() {
           </label>
         </div>
         <div className="actions">
-          <button type="button" onClick={startCapture} disabled={phase === 'capturing'}>
+          <button type="button" onClick={startCapture} disabled={phase === 'capturing' && windowsOpen}>
             新建采集作业
           </button>
           <button
             type="button"
             className="secondary"
             onClick={collectCurrentPage}
-            disabled={phase !== 'capturing'}
+            disabled={phase !== 'capturing' || !windowsOpen}
           >
             采集当前页面
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={stopCaptureWindows}
+            disabled={phase !== 'capturing' || !windowsOpen}
+          >
+            关闭采集窗口
           </button>
           <button
             type="button"

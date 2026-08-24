@@ -58,6 +58,7 @@ describe('createCaptureBrowserController', () => {
           async drainClicks() {
             return [];
           },
+          async close() {},
         };
       },
     };
@@ -175,6 +176,7 @@ describe('createCaptureBrowserController', () => {
               ? [{ selector: 'canvas', text: 'viewer', tagName: 'canvas' }]
               : [];
           },
+          async close() {},
         };
       },
     };
@@ -219,5 +221,68 @@ describe('createCaptureBrowserController', () => {
       }),
     );
     expect(JSON.stringify(controller.timeline())).not.toMatch(/\/Users\//);
+  });
+
+  it('records live clicks without taking a screenshot and keeps facts after stop', async () => {
+    let closed = false;
+    let pendingClicks = [{ selector: '#kvm', text: 'HTML5 KVM', tagName: 'button' }];
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow() {
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            const items = pendingClicks;
+            pendingClicks = [];
+            return items;
+          },
+          async close() {
+            closed = true;
+          },
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-stop',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    expect(controller.windowsOpen()).toBe(true);
+    await controller.ingestLiveEvents();
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'click',
+        selector: '#kvm',
+      }),
+    );
+    expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');
+
+    await controller.stop();
+    expect(closed).toBe(true);
+    expect(controller.windowsOpen()).toBe(false);
+    await controller.collectPageFacts('viewer');
+    expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');
+    expect(controller.network()).toMatchObject({
+      httpRequests: [],
+      webSockets: [],
+    });
   });
 });

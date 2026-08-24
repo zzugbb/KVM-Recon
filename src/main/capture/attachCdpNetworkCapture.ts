@@ -142,6 +142,14 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       return;
     }
 
+    if (method === 'Network.webSocketClosed') {
+      input.recorder.recordWebSocketClosed({
+        id: stringValue(params.requestId),
+        timestamp: now(),
+      });
+      return;
+    }
+
     if (method === 'Network.webSocketFrameReceived' || method === 'Network.webSocketFrameSent') {
       const response = isRecord(params.response) ? params.response : {};
       const opcode = opcodeName(numberValue(response.opcode));

@@ -76,6 +76,9 @@ describe('attachCdpNetworkCapture', () => {
         payloadData: 'FwAAAe/+',
       },
     });
+    emit('Network.webSocketClosed', {
+      requestId: 'ws-1',
+    });
 
     await Promise.resolve();
     await Promise.resolve();
@@ -99,6 +102,7 @@ describe('attachCdpNetworkCapture', () => {
       url: 'wss://bmc.example/kvm',
       subProtocols: ['binary'],
       tags: ['kvm-video'],
+      closedAt: '2026-08-24T12:00:00.000+08:00',
     });
     expect(JSON.stringify(snapshot.webSockets[0])).not.toContain('abc123');
     expect(snapshot.webSocketFrames[0]).toMatchObject({
