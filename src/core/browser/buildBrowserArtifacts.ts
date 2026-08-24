@@ -1,4 +1,5 @@
 import type { SelectorCandidate } from './browserCaptureCore';
+import { toPackScreenshotPath } from './collectScreenshotArtifacts';
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -29,12 +30,23 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
   const selectors = (latestSelectorEvent?.candidates || []) as SelectorCandidate[];
   const screenshots = screenshotEvents
     .map(event => event.path)
-    .filter((path): path is string => typeof path === 'string');
+    .filter((path): path is string => typeof path === 'string')
+    .map(path => toPackScreenshotPath(path));
 
   return [
     {
       path: 'page/timeline.jsonl',
-      content: timeline.events.map(event => JSON.stringify(event)).join('\n') + '\n',
+      content:
+        timeline.events
+          .map(event => {
+            if (event.type !== 'screenshot') return JSON.stringify(event);
+            const { sourcePath: _sourcePath, ...rest } = event;
+            return JSON.stringify({
+              ...rest,
+              path: typeof rest.path === 'string' ? toPackScreenshotPath(rest.path) : rest.path,
+            });
+          })
+          .join('\n') + '\n',
     },
     {
       path: 'page/storage.json',

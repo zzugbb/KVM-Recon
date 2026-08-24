@@ -1,0 +1,15 @@
+{
+  "primary": "ami-megarac",
+  "confidence": 0.9,
+  "candidates": [
+    {
+      "kvmFamily": "ami-megarac",
+      "confidence": 0.9,
+      "evidence": [
+        "/api/randomtag",
+        "/api/session",
+        "/api/kvm/token"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { buildBrowserArtifacts } from '../browser/buildBrowserArtifacts';
 import { createEmptyCapturePack } from '../capture-pack/createEmptyCapturePack';
-import type { CapturePackDraft, CaptureTarget } from '../capture-pack/types';
+import type { CapturePackArtifact, CapturePackDraft, CaptureTarget } from '../capture-pack/types';
 import type {
   HttpRequestRecord,
   WebSocketFrameRecord,
@@ -39,6 +39,7 @@ export interface AssembleCapturePackForExportInput {
   page: BrowserTimelineJson;
   network: NetworkSnapshot;
   sensitiveValues?: string[];
+  screenshotArtifacts?: CapturePackArtifact[];
 }
 
 export interface AssembledCapturePack {
@@ -77,6 +78,7 @@ export function assembleCapturePackForExport(
   const artifacts = [
     ...buildProbeArtifacts(input.probe),
     ...buildBrowserArtifacts(input.page),
+    ...(input.screenshotArtifacts ?? []),
     ...buildNetworkArtifacts(input.network),
     ...buildOemProfileArtifacts({
       probe: input.probe,

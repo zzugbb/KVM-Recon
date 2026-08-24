@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+
+import { collectScreenshotArtifacts } from '../browser/collectScreenshotArtifacts';
 import { buildCapturePackZip } from '../capture-pack/buildCapturePackZip';
 import type { CaptureReadiness, CaptureTarget } from '../capture-pack/types';
 import type {
@@ -44,6 +47,7 @@ interface ExportCaptureJobInput {
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   now?: () => string;
   sensitiveValues?: string[];
+  readScreenshotFile?(path: string): Promise<Uint8Array>;
 }
 
 export type ExportCaptureJobResult =
@@ -62,6 +66,23 @@ export type ExportCaptureJobResult =
 export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<ExportCaptureJobResult> {
   try {
     await input.collectPageFacts('viewer');
+    const page = input.getPage();
+    const screenshotArtifacts = await collectScreenshotArtifacts({
+      page,
+      readFile: async path => {
+        try {
+          const bytes = await (input.readScreenshotFile
+            ? input.readScreenshotFile(path)
+            : readFile(path));
+          return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        } catch (error) {
+          // 捕获截图文件缺失：采集目录可能被清理或路径不可读
+          // 策略：跳过该文件，继续导出其余脱敏资料，避免整包失败
+          void error;
+          return null;
+        }
+      },
+    });
     const assembled = assembleCapturePackForExport({
       jobId: input.job.jobId,
       startedAt: input.job.startedAt,
@@ -69,9 +90,10 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       target: input.job.target,
       operatorNote: input.job.operatorNote,
       probe: input.job.probe,
-      page: input.getPage(),
+      page,
       network: input.getNetwork(),
       sensitiveValues: input.sensitiveValues,
+      screenshotArtifacts,
     });
     if (!assembled.canExportSafePack) {
       return {

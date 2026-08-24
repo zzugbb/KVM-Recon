@@ -14,6 +14,18 @@ interface StartCaptureTarget {
   operatorNote?: string;
 }
 
+interface LiveCaptureSnapshot {
+  readiness: 'YES' | 'PARTIAL' | 'NO';
+  items: Array<{
+    id: string;
+    title: string;
+    status: 'pass' | 'fail' | 'unknown' | 'missing' | 'not_applicable' | 'needs_user_action';
+    severity: 'blocking' | 'warning' | 'info';
+    evidence: string[];
+    userAction: string;
+  }>;
+}
+
 type StartCaptureResult =
   | {
       ok: true;
@@ -21,6 +33,7 @@ type StartCaptureResult =
       family: unknown;
       timeline: unknown;
       network: unknown;
+      snapshot: LiveCaptureSnapshot;
     }
   | {
       ok: false;
@@ -40,12 +53,23 @@ type ExportCaptureResult =
       error: FormattedCaptureError;
     };
 
+type SnapshotResult =
+  | ({
+      ok: true;
+    } & LiveCaptureSnapshot)
+  | {
+      ok: false;
+      error: FormattedCaptureError;
+    };
+
 declare global {
   interface Window {
     kvmRecon?: {
       appName: string;
       startCapture(target: StartCaptureTarget): Promise<StartCaptureResult>;
       exportCapture(jobId: string): Promise<ExportCaptureResult>;
+      getCaptureSnapshot(jobId: string): Promise<SnapshotResult>;
+      collectCapturePage(jobId: string): Promise<SnapshotResult>;
     };
   }
 }

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import type { CaptureReadiness, ChecklistItem } from '../core/capture-pack/types';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
+import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 
 interface FormattedCaptureError {
   title: string;
@@ -21,10 +23,21 @@ const previewPack = createEmptyCapturePack({
   },
 });
 
+const emptySnapshot = buildLiveCaptureSnapshot({});
+
 function phaseLabel(phase: CapturePhase) {
   if (phase === 'capturing') return '当前阶段：采集中';
   if (phase === 'exported') return '当前阶段：导出结果';
   return '当前阶段：新建采集';
+}
+
+function statusText(status: string) {
+  if (status === 'pass') return '已采集';
+  if (status === 'needs_user_action') return '待现场操作';
+  if (status === 'missing') return '缺失';
+  if (status === 'unknown') return '未知';
+  if (status === 'not_applicable') return '不适用';
+  return status;
 }
 
 export function App() {
@@ -37,6 +50,29 @@ export function App() {
   const [error, setError] = useState<FormattedCaptureError | null>(null);
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
   const [statusHint, setStatusHint] = useState(previewPack.checklist.items[0]?.userAction || '');
+  const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
+
+  function applySnapshot(snapshot: { readiness: CaptureReadiness; items: ChecklistItem[] }) {
+    setReadiness(snapshot.readiness);
+    setProgressItems(snapshot.items);
+    const pending = snapshot.items.find(item => item.status !== 'pass' && item.status !== 'not_applicable');
+    setStatusHint(pending?.userAction || '关键资料已采集，可导出后查看报告。');
+  }
+
+  async function refreshSnapshot(nextJobId = jobId) {
+    if (!nextJobId || !window.kvmRecon?.getCaptureSnapshot) return;
+    const result = await window.kvmRecon.getCaptureSnapshot(nextJobId);
+    if (result.ok) applySnapshot(result);
+  }
+
+  useEffect(() => {
+    if (phase !== 'capturing' || !jobId) return undefined;
+    void refreshSnapshot(jobId);
+    const timer = window.setInterval(() => {
+      void refreshSnapshot(jobId);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [phase, jobId]);
 
   async function startCapture() {
     const numericPort = Number(port) || 443;
@@ -60,7 +96,28 @@ export function App() {
     }
     setJobId(result.jobId);
     setPhase('capturing');
+    applySnapshot(result.snapshot);
     setMessage(`采集作业已启动：${result.jobId}`);
+  }
+
+  async function collectCurrentPage() {
+    setError(null);
+    if (!jobId || !window.kvmRecon?.collectCapturePage) {
+      setError({
+        title: '尚未开始采集',
+        impact: '当前没有可补采的页面。',
+        action: '请先点击“新建采集作业”，打开 BMC 后再采集当前页面。',
+        detail: '',
+      });
+      return;
+    }
+    const result = await window.kvmRecon.collectCapturePage(jobId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    applySnapshot(result);
+    setMessage('已采集当前页面截图、storage 和选择器。');
   }
 
   async function exportCapture() {
@@ -93,6 +150,7 @@ export function App() {
     setReadiness(result.readiness);
     setStatusHint(`已导出 ${result.fileName}，请打开 report.html 确认离场结论。`);
     setMessage(`已导出：${result.fileName}`);
+    await refreshSnapshot(jobId);
   }
 
   return (
@@ -125,10 +183,23 @@ export function App() {
           </label>
         </div>
         <div className="actions">
-          <button type="button" onClick={startCapture}>
+          <button type="button" onClick={startCapture} disabled={phase === 'capturing'}>
             新建采集作业
           </button>
-          <button type="button" className="secondary" onClick={exportCapture}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={collectCurrentPage}
+            disabled={phase !== 'capturing'}
+          >
+            采集当前页面
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={exportCapture}
+            disabled={phase !== 'capturing'}
+          >
             停止采集并导出
           </button>
         </div>
@@ -148,6 +219,20 @@ export function App() {
           <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
         <p>{statusHint}</p>
+        <div className="progress-list" aria-label="Capture progress">
+          <h2>采集进度</h2>
+          <ul>
+            {progressItems.map(item => (
+              <li key={item.id}>
+                <div>
+                  <span>{item.title}</span>
+                  {item.userAction ? <p>{item.userAction}</p> : null}
+                </div>
+                <strong>{statusText(item.status)}</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
     </main>
   );

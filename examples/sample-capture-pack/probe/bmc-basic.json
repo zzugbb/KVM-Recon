@@ -1,0 +1,8 @@
+{
+  "host": "10.0.0.10",
+  "port": 443,
+  "scheme": "https",
+  "vendor": "AMI",
+  "product": "MegaRAC",
+  "firmwareVersion": "1.0.0"
+}

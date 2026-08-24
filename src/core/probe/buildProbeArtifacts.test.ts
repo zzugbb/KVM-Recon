@@ -29,6 +29,19 @@ describe('buildProbeArtifacts', () => {
           },
         ],
       },
+      redfish: {
+        path: '/redfish/v1',
+        status: 200,
+        reachable: true,
+        vendor: 'OpenBMC',
+        product: 'BMC',
+        firmwareVersion: '1.0.0',
+        rootFields: {
+          Vendor: 'OpenBMC',
+          Product: 'BMC',
+          FirmwareVersion: '1.0.0',
+        },
+      },
       tls: {
         reachable: true,
         authorized: false,
@@ -48,8 +61,12 @@ describe('buildProbeArtifacts', () => {
       'probe/bmc-basic.json',
       'probe/family-signatures.json',
       'probe/path-evidence.json',
+      'probe/redfish.json',
       'tls/certificate.json',
     ]);
+    expect(JSON.parse(artifacts.find(artifact => artifact.path === 'probe/redfish.json')!.content)).toEqual(
+      result.redfish,
+    );
     expect(JSON.parse(artifacts[0].content)).toEqual(result.basic);
     expect(
       JSON.parse(

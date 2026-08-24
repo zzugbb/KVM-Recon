@@ -23,6 +23,17 @@ export interface ProbeBmcBasicsResult {
   basic: BmcBasicInfo;
   paths: NonNullable<ProbeSignatureInput['paths']>;
   familySignatures: ReturnType<typeof detectKvmFamily>;
+  redfish?: ProbeRedfishSummary;
+}
+
+export interface ProbeRedfishSummary {
+  path: '/redfish/v1';
+  status: number;
+  reachable: boolean;
+  vendor: string;
+  product: string;
+  firmwareVersion: string;
+  rootFields: Record<string, string | number | boolean>;
 }
 
 interface ProbeBmcBasicsInput {
@@ -64,6 +75,17 @@ async function safeGet(httpClient: ProbeHttpClient, path: string): Promise<Probe
   }
 }
 
+function primitiveRootFields(data: unknown): Record<string, string | number | boolean> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const fields: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
 export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeBmcBasicsResult> {
   const redfish = await safeGet(input.httpClient, '/redfish/v1');
   const paths: NonNullable<ProbeSignatureInput['paths']> = {};
@@ -103,5 +125,14 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
     },
     paths,
     familySignatures,
+    redfish: {
+      path: '/redfish/v1',
+      status: redfish.status,
+      reachable: isReachableStatus(redfish.status),
+      vendor,
+      product,
+      firmwareVersion,
+      rootFields: primitiveRootFields(redfish.data),
+    },
   };
 }

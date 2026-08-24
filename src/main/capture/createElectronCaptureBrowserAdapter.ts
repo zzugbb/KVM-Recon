@@ -108,7 +108,10 @@ export function createElectronCaptureBrowserAdapter(
           const filePath = join(adapterOptions.screenshotDir, fileName);
           const image = await window.webContents.capturePage();
           await writeFile(filePath, image.toPNG());
-          return filePath;
+          return {
+            packPath: `page/screenshots/${fileName}`,
+            sourcePath: filePath,
+          };
         },
       };
     },

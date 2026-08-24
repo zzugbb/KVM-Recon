@@ -40,6 +40,19 @@ describe('probeBmcBasics', () => {
       product: 'iBMC',
       firmwareVersion: '1.0.0',
     });
+    expect(result.redfish).toEqual({
+      path: '/redfish/v1',
+      status: 200,
+      reachable: true,
+      vendor: 'Huawei',
+      product: 'iBMC',
+      firmwareVersion: '1.0.0',
+      rootFields: {
+        Vendor: 'Huawei',
+        Product: 'iBMC',
+        FirmwareVersion: '1.0.0',
+      },
+    });
     expect(result.paths.kvmService).toBe(true);
     expect(result.paths.setKvmKey).toBe(true);
     expect(result.familySignatures.primary).toBe('huawei-ibmc');

@@ -21,6 +21,7 @@ type BrowserTimelineEvent =
   | {
       type: 'screenshot';
       path: string;
+      sourcePath?: string;
       timestamp: string;
     }
   | {
@@ -104,10 +105,11 @@ export function createBrowserTimeline(jobId: string) {
         timestamp: nowIso(),
       });
     },
-    recordScreenshot(path: string) {
+    recordScreenshot(path: string, sourcePath?: string) {
       events.push({
         type: 'screenshot',
         path,
+        ...(sourcePath ? { sourcePath } : {}),
         timestamp: nowIso(),
       });
     },

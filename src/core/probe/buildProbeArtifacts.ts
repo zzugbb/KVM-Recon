@@ -24,6 +24,20 @@ export function buildProbeArtifacts(result: ProbeBmcTargetResult): ProbeArtifact
       content: stringify(result.familySignatures),
     },
     {
+      path: 'probe/redfish.json',
+      content: stringify(
+        result.redfish || {
+          path: '/redfish/v1',
+          status: 0,
+          reachable: false,
+          vendor: '',
+          product: '',
+          firmwareVersion: '',
+          rootFields: {},
+        },
+      ),
+    },
+    {
       path: 'tls/certificate.json',
       content: stringify(result.tls),
     },

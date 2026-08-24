@@ -59,6 +59,78 @@ describe('exportCaptureJob', () => {
     expect(written[0]?.path).toBe('/tmp/KVM-Recon_20260824-135500_10-0-0-10_unknown-h5_NO.zip');
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(await zip.file('report.html')!.async('string')).toContain('离场适配就绪：NO');
+    expect(zip.file('probe/redfish.json')).not.toBeNull();
+  });
+
+  it('packs screenshot png bytes into page/screenshots/', async () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const written: Array<{ path: string; bytes: Uint8Array }> = [];
+
+    const result = await exportCaptureJob({
+      job: {
+        jobId: 'job-export-004',
+        startedAt: '2026-08-24T13:55:00.000+08:00',
+        target: {
+          host: '10.0.0.10',
+          port: 443,
+          scheme: 'https',
+        },
+        probe: {
+          basic: {
+            host: '10.0.0.10',
+            port: 443,
+            scheme: 'https',
+            vendor: '',
+            product: '',
+            firmwareVersion: '',
+          },
+          paths: {},
+          familySignatures: {
+            primary: 'unknown-h5',
+            confidence: 0,
+            candidates: [],
+          },
+          tls: {
+            reachable: false,
+            authorized: false,
+            authorizationError: '',
+            protocol: '',
+            cipher: null,
+            certificate: null,
+          },
+        },
+      },
+      collectPageFacts: vi.fn(async () => {}),
+      getPage: () => ({
+        jobId: 'job-export-004',
+        events: [
+          {
+            type: 'screenshot',
+            path: 'page/screenshots/viewer.png',
+            sourcePath: '/tmp/kvm-recon/viewer.png',
+            timestamp: '2026-08-24T12:00:04.000+08:00',
+          },
+        ],
+      }),
+      getNetwork: () => ({ httpRequests: [], webSockets: [], webSocketFrames: [] }),
+      readScreenshotFile: async path => {
+        expect(path).toBe('/tmp/kvm-recon/viewer.png');
+        return png;
+      },
+      chooseSavePath: async fileName => `/tmp/${fileName}`,
+      writeFile: async (path, bytes) => {
+        written.push({ path, bytes });
+      },
+      now: () => '2026-08-24T14:05:00.000+08:00',
+    });
+
+    expect(result.ok).toBe(true);
+    const zip = await JSZip.loadAsync(written[0]!.bytes);
+    expect(new Uint8Array(await zip.file('page/screenshots/viewer.png')!.async('uint8array'))).toEqual(png);
+    expect(JSON.parse(await zip.file('page/screenshots.json')!.async('string'))).toEqual([
+      'page/screenshots/viewer.png',
+    ]);
+    expect(await zip.file('page/timeline.jsonl')!.async('string')).not.toContain('/tmp/kvm-recon/viewer.png');
   });
 
   it('returns a permission-limited field error when the zip cannot be written', async () => {

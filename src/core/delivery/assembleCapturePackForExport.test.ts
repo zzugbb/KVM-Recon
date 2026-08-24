@@ -137,11 +137,40 @@ describe('assembleCapturePackForExport', () => {
     expect(result.pack.artifacts?.map(item => item.path)).toEqual(
       expect.arrayContaining([
         'probe/bmc-basic.json',
+        'probe/redfish.json',
         'http/requests.jsonl',
         'ws/sockets.json',
         'page/timeline.jsonl',
         'artifacts/oem-profile.yaml',
       ]),
     );
+  });
+
+  it('keeps screenshot png bytes under page/screenshots/', () => {
+    const png = Uint8Array.from([137, 80, 78, 71]);
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-001',
+      startedAt: '2026-08-24T13:55:00.000+08:00',
+      endedAt: '2026-08-24T14:05:00.000+08:00',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      screenshotArtifacts: [
+        {
+          path: 'page/screenshots/viewer.png',
+          content: png,
+        },
+      ],
+    });
+
+    expect(result.pack.artifacts).toContainEqual({
+      path: 'page/screenshots/viewer.png',
+      content: png,
+    });
   });
 });

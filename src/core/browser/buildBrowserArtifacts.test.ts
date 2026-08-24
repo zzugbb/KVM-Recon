@@ -11,7 +11,7 @@ describe('buildBrowserArtifacts', () => {
       localStorageKeys: ['LOCAL_USERNAME'],
       sessionStorageKeys: ['QSESSIONID'],
     });
-    timeline.recordScreenshot('/tmp/kvm-recon/login.png');
+    timeline.recordScreenshot('/tmp/kvm-recon/login.png', '/tmp/kvm-recon/login.png');
     timeline.recordSelectorCandidates([
       {
         role: 'kvm-entry',
@@ -36,7 +36,10 @@ describe('buildBrowserArtifacts', () => {
       sessionStorageKeys: ['QSESSIONID'],
     });
     expect(JSON.parse(artifacts.find(artifact => artifact.path === 'page/screenshots.json')!.content)).toEqual([
-      '/tmp/kvm-recon/login.png',
+      'page/screenshots/login.png',
     ]);
+    expect(artifacts.find(artifact => artifact.path === 'page/timeline.jsonl')!.content).not.toContain(
+      '/tmp/kvm-recon/login.png',
+    );
   });
 });

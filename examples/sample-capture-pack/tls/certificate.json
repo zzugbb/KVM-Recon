@@ -1,0 +1,22 @@
+{
+  "reachable": true,
+  "authorized": false,
+  "authorizationError": "SELF_SIGNED_CERT_IN_CHAIN",
+  "protocol": "TLSv1.2",
+  "cipher": {
+    "name": "AES128-GCM-SHA256",
+    "version": "TLSv1.2"
+  },
+  "certificate": {
+    "subject": {
+      "CN": "bmc.local"
+    },
+    "issuer": {
+      "CN": "bmc.local"
+    },
+    "subjectaltname": "",
+    "validFrom": "Aug 24 00:00:00 2026 GMT",
+    "validTo": "Aug 24 00:00:00 2027 GMT",
+    "selfSigned": true
+  }
+}

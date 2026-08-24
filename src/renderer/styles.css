@@ -27,9 +27,9 @@ button {
   font-weight: 600;
 }
 
-button.secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 input {
@@ -160,4 +160,34 @@ h1 {
 
 .status-label {
   color: #7c2d12;
+}
+
+.progress-list {
+  margin-top: 16px;
+}
+
+.progress-list h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.progress-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #fed7aa;
+  font-size: 13px;
+}
+
+.progress-list li p {
+  margin: 4px 0 0;
+  font-weight: 400;
+  line-height: 1.5;
 }

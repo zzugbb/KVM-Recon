@@ -27,8 +27,9 @@ npm run package:win
 5. 现场人员按需手工登录。
 6. 点击“远程控制台 / HTML5 KVM”入口。
 7. 等待至少 10 秒，确保 viewer 页面和 WebSocket 帧被捕获。
-8. 停止采集并导出 Capture Pack。
-9. 打开 `report.html` 或 `report.md`，确认离场结论。
+8. 需要截图时点击“采集当前页面”。截图会进入导出包的 `page/screenshots/`，本地路径不会写入报告。
+9. 停止采集并导出 Capture Pack。
+10. 打开 `report.html` 或 `report.md`，确认离场结论。
 
 ## 3. 离场判断
 

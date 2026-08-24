@@ -25,7 +25,10 @@ export interface CaptureBrowserWindowHandle {
     sessionStorageKeys: string[];
   }>;
   collectSelectorCandidates(): Promise<SelectorCandidate[]>;
-  captureScreenshot(label: string): Promise<string>;
+  captureScreenshot(label: string): Promise<{
+    packPath: string;
+    sourcePath: string;
+  }>;
 }
 
 export interface CaptureBrowserAdapter {
@@ -75,7 +78,8 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
       }
 
       timeline.recordStorageSnapshot(await windowHandle.collectStorageKeys());
-      timeline.recordScreenshot(await windowHandle.captureScreenshot(label));
+      const screenshot = await windowHandle.captureScreenshot(label);
+      timeline.recordScreenshot(screenshot.packPath, screenshot.sourcePath);
       timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
     },
     timeline() {

@@ -8,6 +8,7 @@ import {
   classifyCaptureError,
   formatCaptureError,
 } from '../core/delivery/formatCaptureError';
+import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 import { probeBmcTarget } from '../core/probe/probeBmcTarget';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
@@ -61,6 +62,11 @@ function registerCaptureHandlers() {
         family: probe.familySignatures,
         timeline: controller.timeline(),
         network: controller.network(),
+        snapshot: buildLiveCaptureSnapshot({
+          probe,
+          page: controller.timeline(),
+          network: controller.network(),
+        }),
       };
     } catch (error) {
       // 捕获采集启动失败：BMC 不可达、证书策略、权限不足或窗口创建失败
@@ -106,6 +112,63 @@ function registerCaptureHandlers() {
       },
       writeFile,
     });
+  });
+
+  ipcMain.handle('capture:snapshot', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) {
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: 'EXPORT_FAILED',
+          detail: '没有正在进行的采集作业。',
+        }),
+      };
+    }
+
+    return {
+      ok: true as const,
+      ...buildLiveCaptureSnapshot({
+        probe: session.probe,
+        page: session.controller.timeline(),
+        network: session.controller.network(),
+      }),
+    };
+  });
+
+  ipcMain.handle('capture:collectPage', async (_event, jobId: string) => {
+    const session = captureSessions.get(jobId);
+    if (!session) {
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: 'EXPORT_FAILED',
+          detail: '没有正在进行的采集作业。',
+        }),
+      };
+    }
+
+    try {
+      await session.controller.collectPageFacts('live');
+      return {
+        ok: true as const,
+        ...buildLiveCaptureSnapshot({
+          probe: session.probe,
+          page: session.controller.timeline(),
+          network: session.controller.network(),
+        }),
+      };
+    } catch (error) {
+      // 捕获页面补采失败：采集窗口可能已关闭或截图目录不可写
+      // 策略：返回现场可读错误，保留当前作业，便于重试补采
+      return {
+        ok: false as const,
+        error: formatCaptureError({
+          code: classifyCaptureError(error),
+          detail: error instanceof Error ? error.message : String(error),
+        }),
+      };
+    }
   });
 }
 

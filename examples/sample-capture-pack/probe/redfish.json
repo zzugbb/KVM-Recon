@@ -1,0 +1,13 @@
+{
+  "path": "/redfish/v1",
+  "status": 200,
+  "reachable": true,
+  "vendor": "AMI",
+  "product": "MegaRAC",
+  "firmwareVersion": "1.0.0",
+  "rootFields": {
+    "Vendor": "AMI",
+    "Product": "MegaRAC",
+    "FirmwareVersion": "1.0.0"
+  }
+}

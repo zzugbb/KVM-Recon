@@ -50,7 +50,10 @@ describe('createCaptureBrowserController', () => {
             ];
           },
           async captureScreenshot(label) {
-            return `page/screenshots/${label}.png`;
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
           },
         };
       },
