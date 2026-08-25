@@ -29,6 +29,14 @@ const previewPack = createEmptyCapturePack({
 
 const emptySnapshot = buildLiveCaptureSnapshot({});
 
+const PRELOAD_MISSING_ERROR: FormattedCaptureError = {
+  title: '采集接口未加载',
+  impact: '主界面预加载脚本没有生效，采集、导出、打开和对比 Capture Pack 都不可用。',
+  action:
+    '请使用 GitHub Releases 安装包启动本应用，不要用浏览器打开页面。若已是安装包（含 v0.2.0），请改用修复预加载脚本后的新版本。这与有没有 Capture Pack 无关。',
+  detail: '',
+};
+
 function phaseLabel(phase: CapturePhase) {
   if (phase === 'capturing') return '当前阶段：采集中';
   if (phase === 'exported') return '当前阶段：导出结果';
@@ -156,7 +164,7 @@ export function App() {
       return;
     }
     if (!window.kvmRecon?.startCapture) {
-      setMessage('当前运行环境不支持采集窗口。');
+      setError(PRELOAD_MISSING_ERROR);
       return;
     }
 
@@ -296,7 +304,7 @@ export function App() {
   async function exportCapture() {
     setError(null);
     if (!window.kvmRecon?.exportCapture) {
-      setMessage('当前运行环境不支持导出 Capture Pack。');
+      setError(PRELOAD_MISSING_ERROR);
       return;
     }
     if (!jobId) {
@@ -331,7 +339,7 @@ export function App() {
   async function openCapturePack() {
     setError(null);
     if (!window.kvmRecon?.chooseCapturePack || !window.kvmRecon.summarizeCapturePack) {
-      setMessage('当前运行环境不支持打开 Capture Pack。');
+      setError(PRELOAD_MISSING_ERROR);
       return;
     }
     const chosen = await window.kvmRecon.chooseCapturePack();
@@ -353,7 +361,7 @@ export function App() {
   async function compareOpenedPacks() {
     setError(null);
     if (!window.kvmRecon?.chooseCapturePack || !window.kvmRecon.compareCapturePacks) {
-      setMessage('当前运行环境不支持对比 Capture Pack。');
+      setError(PRELOAD_MISSING_ERROR);
       return;
     }
     const left = await window.kvmRecon.chooseCapturePack();
@@ -391,60 +399,67 @@ export function App() {
         </p>
         <p className="phase-label">{phaseLabel(phase)}</p>
         <div className="target-form">
-          <label>
-            BMC 地址
-            <input value={host} onChange={event => setHost(event.target.value)} />
-          </label>
-          <label>
-            端口
-            <input value={port} onChange={event => setPort(event.target.value)} />
-          </label>
-          <label>
-            截图角色
-            <select
-              value={screenshotRole}
-              onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
-              disabled={phase !== 'capturing' || !windowsOpen}
-            >
-              <option value="login">登录页</option>
-              <option value="home">登录后首页</option>
-              <option value="kvm-entry">KVM 入口</option>
-              <option value="viewer">viewer</option>
-              <option value="error">异常画面</option>
-            </select>
-          </label>
-          <label>
-            现场厂商
-            <input
-              value={vendor}
-              onChange={event => setVendor(event.target.value)}
-              placeholder="铭牌，不作为 kvmFamily"
-            />
-          </label>
-          <label>
-            现场型号
-            <input
-              value={product}
-              onChange={event => setProduct(event.target.value)}
-              placeholder="可选"
-            />
-          </label>
-          <label>
-            现场固件
-            <input
-              value={firmware}
-              onChange={event => setFirmware(event.target.value)}
-              placeholder="可选"
-            />
-          </label>
-          <label>
-            机柜位置
-            <input
-              value={location}
-              onChange={event => setLocation(event.target.value)}
-              placeholder="可选"
-            />
-          </label>
+          <div className="field-row field-row-primary">
+            <label>
+              BMC 地址
+              <input value={host} onChange={event => setHost(event.target.value)} />
+            </label>
+            <label>
+              端口
+              <input value={port} onChange={event => setPort(event.target.value)} />
+            </label>
+            <label>
+              截图角色
+              <select
+                value={screenshotRole}
+                onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
+                disabled={phase !== 'capturing' || !windowsOpen}
+              >
+                <option value="login">登录页</option>
+                <option value="home">登录后首页</option>
+                <option value="kvm-entry">KVM 入口</option>
+                <option value="viewer">viewer</option>
+                <option value="error">异常画面</option>
+              </select>
+            </label>
+          </div>
+          <div className="field-row field-row-pair">
+            <label>
+              现场厂商
+              <input
+                value={vendor}
+                onChange={event => setVendor(event.target.value)}
+                placeholder="铭牌，不作为 kvmFamily"
+              />
+            </label>
+            <label>
+              现场型号
+              <input
+                value={product}
+                onChange={event => setProduct(event.target.value)}
+                placeholder="可选"
+                title={product}
+              />
+            </label>
+          </div>
+          <div className="field-row field-row-pair">
+            <label>
+              现场固件
+              <input
+                value={firmware}
+                onChange={event => setFirmware(event.target.value)}
+                placeholder="可选"
+              />
+            </label>
+            <label>
+              机柜位置
+              <input
+                value={location}
+                onChange={event => setLocation(event.target.value)}
+                placeholder="可选"
+              />
+            </label>
+          </div>
           <label className="note-field">
             作业备注
             <input

@@ -535,11 +535,21 @@ function createMainWindow() {
     title: 'KVM-Recon',
     show: !isE2eSmokeLaunch(),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    // 捕获预加载失败：安装包把 CJS preload 当成 ESM 加载，或签名后路径失效
+    // 策略：打日志便于现场排查；界面会因缺少 window.kvmRecon 给出可读提示
+    logger.info('preload-error', {
+      preloadPath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    console.error('preload-error', preloadPath, error);
   });
 
   if (isE2eSmokeLaunch()) {

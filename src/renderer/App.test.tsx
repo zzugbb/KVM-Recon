@@ -16,6 +16,7 @@ describe('App', () => {
     expect(html).toContain('现场厂商');
     expect(html).toContain('现场型号');
     expect(html).toContain('机柜位置');
+    expect(html).toContain('field-row-pair');
     expect(html).toContain('截图角色');
     expect(html).toContain('当前阶段：新建采集');
     expect(html).toContain('采集进度');

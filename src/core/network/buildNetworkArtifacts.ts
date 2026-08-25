@@ -21,7 +21,7 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
       version: '1.2',
       creator: {
         name: 'KVM-Recon',
-        version: '0.1.0',
+        version: '0.2.1',
       },
       entries: httpRequests.map(request => ({
         startedDateTime: request.timestamp,

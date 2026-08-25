@@ -91,14 +91,27 @@ h1 {
 
 .target-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 100px minmax(140px, 0.8fr);
   gap: 12px;
-  max-width: 720px;
+  width: 100%;
   margin-top: 16px;
 }
 
+.field-row {
+  display: grid;
+  gap: 12px;
+}
+
+.field-row-primary {
+  grid-template-columns: minmax(220px, 1.6fr) 100px minmax(160px, 0.9fr);
+}
+
+.field-row-pair {
+  grid-template-columns: 1fr 1fr;
+}
+
 .note-field {
-  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
 }
 
 .phase-label {

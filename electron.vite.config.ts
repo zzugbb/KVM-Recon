@@ -19,8 +19,12 @@ export default defineConfig({
       outDir: resolve(rootDir, 'dist/preload'),
       rollupOptions: {
         output: {
+          // package.json 是 "type": "module"，.js 会被当成 ESM；
+          // 沙箱预加载必须是 CJS，用 .cjs 才能在安装包里挂上 window.kvmRecon
           format: 'cjs',
-          entryFileNames: 'index.js',
+          entryFileNames: '[name].cjs',
+          chunkFileNames: '[name].cjs',
+          inlineDynamicImports: true,
         },
       },
     },

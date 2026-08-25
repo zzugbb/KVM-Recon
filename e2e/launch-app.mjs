@@ -10,7 +10,7 @@ const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const electronBinary = require('electron');
 const mainEntry = join(rootDir, 'dist/main/index.js');
-const preloadEntry = join(rootDir, 'dist/preload/index.js');
+const preloadEntry = join(rootDir, 'dist/preload/index.cjs');
 const rendererEntry = join(rootDir, 'dist/renderer/index.html');
 
 if (!existsSync(mainEntry) || !existsSync(preloadEntry) || !existsSync(rendererEntry)) {

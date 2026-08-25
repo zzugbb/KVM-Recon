@@ -17,7 +17,7 @@ interface CreateEmptyCapturePackInput {
   };
 }
 
-const TOOL_VERSION = '0.1.0';
+const TOOL_VERSION = '0.2.1';
 
 export function createEmptyCapturePack(input: CreateEmptyCapturePackInput): CapturePackDraft {
   const checklist: CaptureChecklist = {
