@@ -22,4 +22,4 @@ KVM-Recon 在机房内访问 BMC 管理口，导出的 Capture Pack 可能包含
 
 ## 发布产物
 
-GitHub Releases 中的 macOS / Windows 安装包默认**未代码签名、未公证**。下载后请核对 Release 页面的 checksum，并只从本仓库的 Releases 获取安装包。
+GitHub Releases 中的 macOS / Windows 安装包未使用 Apple / 微软付费开发者证书。macOS 为 ad-hoc 签名，下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。Windows 无 Authenticode 签名，SmartScreen 若拦截，选择「更多信息 → 仍要运行」。详见 `docs/offline-field-guide.md`。下载后请核对 checksum，并只从本仓库 Releases 获取安装包。

@@ -1,9 +1,17 @@
 # Changelog
 
-本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+本文件记录用户可见变更，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+
+- **日常开发**：把尚未随安装包发出的改动写在 `[Unreleased]`。
+- **发布新版本**：把 `[Unreleased]` 里的条目移到新版本标题下（如 `[0.1.1] - YYYY-MM-DD`），同步 `package.json` 的 `version`，再打 `v*` 标签。GitHub Release 说明可从该版本章节复制。
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-25
+
+- 使用项目图标替换 Electron 默认图标（macOS / Windows）
+- macOS：ad-hoc 签名，Gatekeeper 提示「无法验证开发者」而非「已损坏」；在「隐私与安全性」中允许
+- Windows：安装包无 Authenticode 签名；SmartScreen 可能提示未知发布者，选择「更多信息 → 仍要运行」
 - 修复已创建的 GitHub Release 无法挂上安装包、SHA256SUMS 步骤报 `no assets to download` 的问题
 
 ## [0.1.0] - 2026-08-24

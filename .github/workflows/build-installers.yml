@@ -5,7 +5,7 @@ on:
 
 jobs:
   package-mac:
-    name: macOS unsigned
+    name: macOS ad-hoc
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -17,8 +17,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: electron-builder macOS
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --mac --publish never
       - uses: actions/upload-artifact@v7
         with:

@@ -21,7 +21,12 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。
 
-当前构建**未代码签名、未公证**。现场步骤见 `docs/offline-field-guide.md`。
+当前构建**未使用 Apple / 微软付费开发者证书**：
+
+- **macOS**：ad-hoc 签名。从浏览器下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。
+- **Windows**：无 Authenticode 签名。SmartScreen 若提示已保护你的电脑或未知发布者，点「更多信息 → 仍要运行」。
+
+逐步说明见 `docs/offline-field-guide.md`。
 
 ## 现场流程
 
@@ -60,7 +65,7 @@ npm run dev
 - `docs/development-plan.md`：阶段计划与项目边界
 - `docs/mvp-architecture.md`：技术架构
 - `schema/`：JSON Schema
-- `CHANGELOG.md`：版本记录
+- `CHANGELOG.md`：版本记录；发新版时把 `[Unreleased]` 收成版本号
 - `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`
 
 ## 安全与边界

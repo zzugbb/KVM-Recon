@@ -40,7 +40,8 @@ npm run test:e2e
 2. 新增逻辑请补单测；错误处理需注释捕获场景、策略与影响。
 3. 不要提交 `.env`、证书、私钥、未脱敏 Capture Pack、本机 `release/` 安装包。
 4. 描述里说明：改了什么、为什么、如何验证（`npm test` / `npm run typecheck` / 是否跑过 `test:e2e`）。
-5. 使用仓库里的 PR 模板。
+5. 用户可见改动请写入 `CHANGELOG.md` 的 `[Unreleased]`。
+6. 使用仓库里的 PR 模板。
 
 ## Dependabot
 
@@ -48,4 +49,4 @@ npm run test:e2e
 
 ## 发布
 
-按 `docs/releasing.md` 打 `v*` 标签发布安装包。试构建可在 Actions 中运行 **Build installers**。
+按 `docs/releasing.md`：先把 `CHANGELOG.md` 的 `[Unreleased]` 收成新版本号并同步 `package.json` 的 `version`，再打 `v*` 标签。试构建可在 Actions 中运行 **Build installers**。

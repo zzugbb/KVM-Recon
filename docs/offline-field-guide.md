@@ -4,7 +4,20 @@
 
 ## 1. 安装包
 
-优先从本仓库 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 下载对应系统的安装包，并核对 `SHA256SUMS.txt`。当前构建**未代码签名**：macOS 可能需要在「隐私与安全性」中允许打开，Windows 可能出现 SmartScreen 提示。
+优先从本仓库 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 下载对应系统的安装包，并核对 `SHA256SUMS.txt`。当前构建**未使用 Apple / 微软付费开发者证书**。
+
+**macOS**（ad-hoc 签名，不是 Apple 公证）：从浏览器下载后可能提示无法验证开发者。不要移到废纸篓。
+
+1. 点「取消」或关闭提示。
+2. 打开「系统设置 → 隐私与安全性」。
+3. 在被拦应用旁点「仍要打开」或「允许」。
+
+**Windows**（无 Authenticode 签名）：SmartScreen 可能提示「Windows 已保护你的电脑」或未知发布者。不要直接关掉安装程序。
+
+1. 点「更多信息」。
+2. 点「仍要运行」。
+
+这与多数从 GitHub 下载、未购买平台公证/代码签名的开源软件相同。
 
 若组织内部提供拷贝的安装包，使用该拷贝即可。维护者构建步骤见 `docs/releasing.md`。
 
@@ -65,7 +78,7 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 
 采集侧功能已收口，见 `docs/development-plan.md` 第 22 节。现场按本文采集即可，不必等待后续采集功能。
 
-- macOS 安装包默认未签名；Windows 包需在联网构建机执行 `package:win`。当前不打 Windows 包、不做 macOS 签名。
+- macOS 安装包使用 ad-hoc 签名（不是 Apple 付费公证）；Windows 安装包无 Authenticode 签名。下载后的系统提示与处理步骤见第 1 节。两套安装包均由 GitHub Actions 构建。
 - 真实 BMC 验收见 `docs/development-plan.md` 第 13 节，按安排延后。
 - 日志只记录作业号、主机、就绪状态等非敏感字段。
 - 同一时刻最多保留 8 份作业。关闭采集窗口后仍可导出；关闭作业若尚未导出会先确认。可暂停记录且不关窗。

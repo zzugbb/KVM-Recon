@@ -1,6 +1,6 @@
 {
   "name": "kvm-recon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。",
   "main": "dist/main/index.js",
   "scripts": {
@@ -58,7 +58,8 @@
     "appId": "com.kvmrecon.desktop",
     "productName": "KVM-Recon",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
     "publish": {
       "provider": "github",
@@ -75,8 +76,13 @@
       "schema/**/*"
     ],
     "asar": true,
+    "afterPack": "scripts/afterPack.cjs",
     "mac": {
       "category": "public.app-category.utilities",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "icon": "resources/icon.png",
       "target": [
         {
           "target": "dmg",
@@ -95,6 +101,7 @@
       ]
     },
     "win": {
+      "icon": "resources/icon.png",
       "target": [
         {
           "target": "nsis",

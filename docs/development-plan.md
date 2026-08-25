@@ -28,8 +28,8 @@
 明确延后、不作为本阶段缺口：
 
 - 真实 BMC 验收（第 13 节闸门）。
-- 本机实际打 Windows 安装包。
-- macOS 代码签名。
+- 本机实际打 Windows 安装包（Windows 包由 GitHub Actions 构建）。
+- Apple/微软付费代码签名与公证（macOS ad-hoc、Windows 无 Authenticode，见第 24 节）。
 
 **产品边界止于导出脱敏 Capture Pack。** 自动写 Adapter、机房内在线分析、MITM、自动登录、完整视频解码不属于本项目，也不进入下一采集功能迭代。
 
@@ -189,13 +189,13 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 
 ## 11. 阶段 7：打包与现场交付
 
-状态：`代码完成`（安装包脚本）/ `待真机`（现场无公网安装与签名）
+状态：`代码完成`（安装包脚本与 GitHub Actions）/ `待真机`（现场无公网安装）
 
 目标：让非开发人员可安装、采集、导出。
 
 任务：
 
-- macOS 打包。`代码完成`（`package:mac` / `package:dir`）/ `待真机`（未签名）
+- macOS 打包。`代码完成`（`package:mac` / `package:dir`，ad-hoc 签名）/ `待真机`（现场安装）
 - Windows 打包。`代码完成`（脚本与 nsis/zip 配置）/ `待真机`
 - 增加离线使用说明。`代码完成`（`docs/offline-field-guide.md`）
 - 增加导出包命名规则。`代码完成`
@@ -456,7 +456,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 ## 22. 本阶段收口
 
-状态：`代码完成`（采集侧）/ 真机与安装包 `延后`
+状态：`代码完成`（采集侧）/ 真机与付费签名 `延后`
 
 2026-08-24 起，KVM-Recon **采集侧代码阶段结束**。仓库可作为离线采集工具的代码基线：能探测、采集、脱敏导出 Capture Pack，并在本机打开/对比资料包。
 
@@ -465,15 +465,15 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 - Electron + TypeScript 桌面客户端源码与单测。
 - Capture Pack 契约：`docs/capture-pack-spec.md`、`schema/`、`examples/sample-capture-pack/`。
 - 现场说明：`docs/offline-field-guide.md`。
-- 打包脚本：`package:mac` / `package:win`（本机未实打 Windows 包、未做 macOS 签名）。
+- 打包脚本：`package:mac` / `package:win`（两套安装包由 GitHub Actions 构建；macOS 为 ad-hoc 签名，Windows 无 Authenticode，付费证书延后）。
 
-本阶段之后默认不再开发新的采集功能。开源仓库治理、CI 与未签名安装包发布见第 24 节，不属于新的采集功能。
+本阶段之后默认不再开发新的采集功能。开源仓库治理、CI 与安装包发布见第 24 节，不属于新的采集功能。
 
 若要继续，只应是：
 
 1. 第 13 节真机验收（产品安排后再做）。
-2. 用 GitHub Actions `Release`（tag `v*`）或 `Package` 生成 Windows / macOS 安装包；本机交叉打 Windows 包仍非必须。
-3. 按发布需要补代码签名与公证（证书放在 GitHub Secrets，不进仓库）。
+2. 用 GitHub Actions `Release`（tag `v*`）或 **Build installers** 生成 Windows / macOS 安装包；本机交叉打 Windows 包仍非必须。
+3. 按发布需要补付费代码签名与公证（证书放在 GitHub Secrets，不进仓库）。macOS ad-hoc 已落地；Windows 仍无 Authenticode。
 4. 真机或现场反馈暴露的缺陷修复。
 
 不要把「写 Adapter、机房调 AI、MITM、自动登录、完整视频解码」当作本仓库后续迭代。
@@ -495,7 +495,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 | 原可做 | HTTP/WS `windowRole` | 已做 |
 | 原可做 | 未导出关闭确认、再次导出 | 已做 |
 | 原 V3 | 自动登录、MITM、机房内 AI、自动写 Adapter、完整视频解码 | **永不做** |
-| 延后 | 真机验收、本机交叉打 Windows 包、代码签名/公证 | 不是功能缺口；未签名包由 GitHub Actions 构建 |
+| 延后 | 真机验收、本机交叉打 Windows 包、Apple/微软付费签名与公证 | 不是功能缺口；安装包由 GitHub Actions 构建；macOS 为 ad-hoc，Windows 无 Authenticode |
 
 故意保持的约束（不是未完成优化）：
 
@@ -508,7 +508,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 ## 24. GitHub 开源治理与发布（非采集功能）
 
-状态：`代码完成` / 签名与真机 `延后`
+状态：`代码完成` / 付费签名与真机 `延后`
 
 目标：仓库按常见 GitHub 开源项目补齐治理文件和自动化，**不改变采集产品边界**。
 
@@ -516,14 +516,14 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - MIT `LICENSE`，以及 `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`CHANGELOG.md`、Issue/PR 模板、Dependabot、CODEOWNERS。
 - CI：`typecheck`、单测、本地 mock BMC 探测/导出闭环、构建、Electron 主窗口启动烟测。
-- **Build installers** workflow：手动构建未签名 macOS / Windows 安装包（Actions Artifact）。
-- **Release** workflow：推送 `v*` 标签后把安装包发到 GitHub Releases，并附 `SHA256SUMS.txt`。
+- **Build installers** workflow：手动构建 macOS / Windows 安装包（Actions Artifact）。macOS 为 ad-hoc 签名，Windows 无 Authenticode。
+- **Release** workflow：把安装包挂到已有 GitHub Release，并附 `SHA256SUMS.txt`。
 - 说明：`docs/releasing.md`、`docs/README.md`。
 
 不做：
 
 - 用 GitHub 在机房调 AI 或自动写 Adapter。
-- 把证书写入仓库。未签名是当前发布方式。
+- 把证书写入仓库。当前不使用付费 Developer ID / 公证，也不使用 Windows Authenticode。
 - 对真实 BMC 的在线 e2e（没有公开 BMC，也不做自动登录）。
 
 

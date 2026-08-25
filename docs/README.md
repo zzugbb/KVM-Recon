@@ -8,7 +8,7 @@
 | [mvp-architecture.md](mvp-architecture.md) | 开发者 | 模块划分 |
 | [development-plan.md](development-plan.md) | 开发者 | 阶段计划与项目边界 |
 | [releasing.md](releasing.md) | 维护者 | 构建与发布安装包 |
-| [CHANGELOG.md](../CHANGELOG.md) | 所有人 | 版本记录 |
+| [CHANGELOG.md](../CHANGELOG.md) | 所有人 / 发版时 | 版本变更记录；发版前把 Unreleased 收成新版本号 |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | 贡献者 | 贡献方式 |
 | [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | 社区 | 行为准则 |
 | [SECURITY.md](../SECURITY.md) | 安全报告人 | 漏洞报告 |
