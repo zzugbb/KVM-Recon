@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-25
+
 - 路径探测：HTML 200 不算命中（含 UTF-8 BOM）；2xx 需为 JSON 或短非 HTML 文本；401/403/405 仍算接口存在。`/kvm/video` 的匿名 GET 401 不算
 - 登录后复验为 false 的路径覆盖匿名结果，不再用 OR 合并把假阳性留下
 - 取消「有 AMI `/api` 就禁止 OpenBMC」；证书 `O=OpenBMC`、`/xyz/openbmc_project` 订阅、真实 `/kvm/video` WebSocket 参与打分

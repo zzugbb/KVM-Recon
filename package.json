@@ -1,6 +1,6 @@
 {
   "name": "kvm-recon",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。",
   "main": "dist/main/index.js",
   "scripts": {
