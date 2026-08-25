@@ -58,7 +58,11 @@ function isReachableStatus(status: number) {
 
 function isHtmlPayload(data: unknown): boolean {
   if (typeof data !== 'string') return false;
-  const head = data.trimStart().slice(0, 512).toLowerCase();
+  const head = data
+    .replace(/^\uFEFF/, '')
+    .trimStart()
+    .slice(0, 512)
+    .toLowerCase();
   return (
     head.startsWith('<!doctype') ||
     head.startsWith('<html') ||

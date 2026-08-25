@@ -69,14 +69,14 @@ describe('probeBmcBasics', () => {
         '/api/randomtag': { status: 200, data: { token: 'x' } },
         '/api/session': { status: 200, data: { ok: true } },
         '/api/kvm/token': { status: 401 },
-        '/kvm/video': { status: 401 },
+        '/kvm/video': { status: 200, data: { stream: true } },
       }),
     });
 
     expect(result.paths.apiRandomtag).toBe(true);
     expect(result.paths.apiSession).toBe(true);
     expect(result.paths.apiKvmToken).toBe(true);
-    expect(result.paths.kvmVideo).toBe(false);
+    expect(result.paths.kvmVideo).toBe(true);
     expect(result.familySignatures.primary).toBe('ami-megarac');
     expect(result.familySignatures.confidence).toBeLessThan(0.8);
   });
@@ -118,6 +118,27 @@ describe('probeBmcBasics', () => {
     expect(result.paths.apiSession).toBe(false);
     expect(result.paths.apiKvmToken).toBe(false);
     expect(result.paths.kvmService).toBe(true);
+    expect(result.familySignatures.primary).not.toBe('ami-megarac');
+  });
+
+  it('does not treat UTF-8 BOM HTML 200 as AMI /api evidence', async () => {
+    const html = `\uFEFF<!doctype html><html><head></head><body>app</body></html>`;
+    const result = await probeBmcBasics({
+      target: {
+        host: '10.0.0.14',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: createHttpClient({
+        '/api/session': { status: 200, data: html },
+        '/api/randomtag': { status: 200, data: html },
+        '/api/kvm/token': { status: 200, data: html },
+      }),
+    });
+
+    expect(result.paths.apiSession).toBe(false);
+    expect(result.paths.apiRandomtag).toBe(false);
+    expect(result.paths.apiKvmToken).toBe(false);
     expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
 });

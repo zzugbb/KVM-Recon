@@ -69,7 +69,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - OpenBMC H5 指纹：`/randomtag`、`/kvm/video`、`/redfish/v1/SessionService`。
 - 华为 iBMC 指纹：Redfish Session、`KvmService`、`SetKvmKey`。
 
-路径命中：HTML 不算；2xx 需为 JSON 或短非 HTML 文本（如 randomtag）；401/403/405 仍算接口存在。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。
+路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为 JSON 或短非 HTML 文本（如 randomtag）；401/403/405 仍算接口存在。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。
 
 探测实现以当前仓库的 Node probe 与登录后会话复验为准。不要把一次性手工调试脚本直接做进产品主流程。无头批量复验、从调试脚本抽公共库，都不是本项目目标。
 
