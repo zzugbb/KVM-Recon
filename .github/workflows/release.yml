@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 要把安装包挂到哪个已有 Release 标签（例如 v0.2.2）
+        description: 要把安装包挂到哪个已有 Release 标签（例如 v0.2.3）
         required: true
         type: string
 
