@@ -284,11 +284,11 @@ HTTP 资料必须脱敏：
     },
     {
       "id": "page.viewer.screenshot",
-      "title": "viewer 页面截图已采集",
+      "title": "KVM 画面截图",
       "status": "missing",
       "severity": "warning",
       "evidence": [],
-      "userAction": "请打开 HTML5 KVM 后把画面窗口留在前台，选择截图角色并点击“采集当前页面”。"
+      "userAction": "打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。"
     }
   ]
 }

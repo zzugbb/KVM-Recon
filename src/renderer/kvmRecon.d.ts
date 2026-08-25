@@ -79,6 +79,7 @@ interface LiveCaptureSnapshot {
   }>;
   windowsOpen?: boolean;
   paused?: boolean;
+  capturingScreenshot?: boolean;
   jobs?: CaptureJobSummary[];
 }
 

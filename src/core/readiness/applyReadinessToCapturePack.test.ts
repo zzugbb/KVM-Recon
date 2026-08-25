@@ -11,7 +11,7 @@ const partialChecklist: CaptureChecklist = {
   items: [
     {
       id: 'ws.kvm.established',
-      title: 'KVM WebSocket 已建立并捕获帧',
+      title: 'KVM WebSocket',
       status: 'pass',
       severity: 'blocking',
       evidence: ['ws-1'],
@@ -19,7 +19,7 @@ const partialChecklist: CaptureChecklist = {
     },
     {
       id: 'page.viewer.screenshot',
-      title: 'viewer 页面截图已采集',
+      title: 'KVM 画面截图',
       status: 'missing',
       severity: 'warning',
       evidence: [],

@@ -3,6 +3,7 @@ import https from 'node:https';
 
 import type { CaptureTarget } from '../capture-pack/types';
 import type { ProbeHttpClient, ProbeHttpResponse } from './probeBmcBasics';
+import { tlsServerName } from './tlsServerName';
 
 function parseResponseBody(buffer: Buffer, contentType: string): unknown {
   const text = buffer.toString('utf8');
@@ -45,6 +46,7 @@ export function createNodeProbeHttpClient(
               Accept: 'application/json,text/html,*/*',
               ...options.extraHeaders,
             },
+            servername: tlsServerName(target.host),
           },
           response => {
             const chunks: Buffer[] = [];

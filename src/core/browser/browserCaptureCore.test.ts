@@ -17,7 +17,7 @@ describe('browserCaptureCore', () => {
     ).toBe('https://10.0.0.10:443/');
   });
 
-  it('allows certificate errors only for the target host', () => {
+  it('allows certificate errors for the target host, and for follow-up names when the target is an IP', () => {
     expect(
       shouldAllowCertificateError({
         targetHost: '10.0.0.10',
@@ -27,7 +27,13 @@ describe('browserCaptureCore', () => {
     expect(
       shouldAllowCertificateError({
         targetHost: '10.0.0.10',
-        url: 'https://example.com/login.html',
+        url: 'https://ibmc.local/login.html',
+      }),
+    ).toBe(true);
+    expect(
+      shouldAllowCertificateError({
+        targetHost: 'bmc.example.com',
+        url: 'https://other.example.com/login.html',
       }),
     ).toBe(false);
   });

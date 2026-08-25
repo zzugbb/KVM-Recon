@@ -8,6 +8,7 @@ import type {
   CaptureBrowserWindowHandle,
 } from './createCaptureBrowserController';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
+import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 
 interface CreateElectronCaptureBrowserAdapterOptions {
   screenshotDir: string;
@@ -78,8 +79,10 @@ export function createElectronCaptureBrowserAdapter(
   return {
     async createWindow(options: CaptureBrowserAdapterOptions): Promise<CaptureBrowserWindowHandle> {
       const captureSession = session.fromPartition(options.partition);
-      captureSession.setCertificateVerifyProc((request, callback) => {
-        callback(options.allowCertificateError(`https://${request.hostname}/`) ? 0 : -3);
+      registerCaptureSession(captureSession);
+      captureSession.setCertificateVerifyProc((_request, callback) => {
+        // 采集分区只打开目标 BMC。现场自签证书在 Chrome 要点「高级」；这里直接放行，避免白屏。
+        callback(0);
       });
 
       const windows = new Set<BrowserWindow>();
@@ -95,6 +98,35 @@ export function createElectronCaptureBrowserAdapter(
         return next;
       }
 
+      async function windowHasKvmSurface(targetWindow: BrowserWindow) {
+        try {
+          return Boolean(
+            await targetWindow.webContents.executeJavaScript(
+              `Boolean(document.querySelector('canvas, video, embed, object, [id*="kvm" i], [class*="kvm" i], [id*="viewer" i], [class*="viewer" i]'))`,
+              true,
+            ),
+          );
+        } catch (error) {
+          // 捕获判断 KVM 画面失败：弹窗可能尚未加载或已关闭
+          // 策略：当作没有画面，继续检查其他窗口
+          void error;
+          return false;
+        }
+      }
+
+      async function pickScreenshotWindow() {
+        const alive = [...windows].filter(windowAlive);
+        if (windowAlive(foreground) && (await windowHasKvmSurface(foreground))) {
+          return foreground;
+        }
+        for (const candidate of alive) {
+          if (candidate !== foreground && (await windowHasKvmSurface(candidate))) {
+            return candidate;
+          }
+        }
+        return activeWindow();
+      }
+
       async function installPageProbe(targetWindow: BrowserWindow) {
         try {
           await targetWindow.webContents.executeJavaScript(clickProbeScript, true);
@@ -105,7 +137,7 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
-      async function attachWindow(targetWindow: BrowserWindow) {
+      async function attachWindow(targetWindow: BrowserWindow, attachDebugger: boolean) {
         windows.add(targetWindow);
         foreground = targetWindow;
         targetWindow.on('focus', () => {
@@ -123,18 +155,52 @@ export function createElectronCaptureBrowserAdapter(
         targetWindow.webContents.on('did-navigate', (_event, url) => {
           options.onNavigation(url);
         });
+        targetWindow.webContents.session.setCertificateVerifyProc((_request, callback) => {
+          callback(0);
+        });
+        targetWindow.webContents.on(
+          'certificate-error',
+          (event, url, error, _certificate, callback) => {
+            event.preventDefault();
+            callback(true);
+            recordCaptureWindowLog(`capture-cert-trusted ${error} ${url}`);
+          },
+        );
         targetWindow.webContents.on('did-navigate-in-page', (_event, url) => {
           options.onHashChange(url);
         });
         targetWindow.webContents.on('did-finish-load', () => {
           options.onChromiumAccess({ reachable: true, authorizationError: '' });
+          recordCaptureWindowLog(`capture-window-loaded ${targetWindow.webContents.getURL()}`);
           void installPageProbe(targetWindow);
         });
-        targetWindow.webContents.on('did-fail-load', (_event, _code, description) => {
-          options.onChromiumAccess({
-            reachable: false,
-            authorizationError: String(description || 'did-fail-load'),
-          });
+        targetWindow.webContents.on(
+          'did-fail-load',
+          (_event, errorCode, description, validatedURL, isMainFrame) => {
+            if (!isMainFrame) return;
+            // 采集窗口主框加载失败：证书、DNS、TLS、被导航拦截等
+            // 策略：写入 chromiumAccess 与诊断日志；窗口可能仍是白屏
+            recordCaptureWindowLog(
+              `capture-window-fail-load ${errorCode} ${description} ${validatedURL}`,
+            );
+            options.onChromiumAccess({
+              reachable: false,
+              authorizationError: `${errorCode} ${description || 'did-fail-load'}`.trim(),
+            });
+          },
+        );
+        targetWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+          if (level < 2) return;
+          // 只记录告警/错误；正文截断并去掉明显敏感词，避免把 BMC 页面日志里的口令打出来
+          const safe = String(message)
+            .replace(/password|passwd|cookie|token|authorization/gi, '[redacted]')
+            .slice(0, 240);
+          recordCaptureWindowLog(`capture-console level=${level} ${safe} (${sourceId}:${line})`);
+        });
+        targetWindow.webContents.on('render-process-gone', (_event, details) => {
+          recordCaptureWindowLog(
+            `capture-renderer-gone reason=${details.reason} exit=${details.exitCode}`,
+          );
         });
         targetWindow.webContents.setWindowOpenHandler(details => {
           options.onPopup({
@@ -149,14 +215,17 @@ export function createElectronCaptureBrowserAdapter(
                 contextIsolation: true,
                 nodeIntegration: false,
                 sandbox: false,
+                webSecurity: false,
               },
             },
           };
         });
         targetWindow.webContents.on('did-create-window', childWindow => {
-          void attachWindow(childWindow);
+          void attachWindow(childWindow, true);
         });
-        await options.onNetworkDebugger(targetWindow.webContents.debugger as unknown as CdpDebuggerLike);
+        if (attachDebugger) {
+          await options.onNetworkDebugger(targetWindow.webContents.debugger as unknown as CdpDebuggerLike);
+        }
       }
 
       const window = new BrowserWindow({
@@ -168,14 +237,35 @@ export function createElectronCaptureBrowserAdapter(
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: false,
+          webSecurity: false,
         },
       });
 
-      await attachWindow(window);
+      await attachWindow(window, false);
+      recordCaptureWindowLog(`capture-window-created host=${options.targetHost} partition=${options.partition}`);
+
+      let networkDebuggerAttached = false;
 
       return {
         async loadURL(url) {
-          await activeWindow().loadURL(url);
+          const current = activeWindow();
+          recordCaptureWindowLog(`capture-load-start ${url}`);
+          try {
+            await current.loadURL(url);
+            recordCaptureWindowLog(`capture-load-done ${current.webContents.getURL()}`);
+            if (!networkDebuggerAttached) {
+              networkDebuggerAttached = true;
+              await options.onNetworkDebugger(
+                current.webContents.debugger as unknown as CdpDebuggerLike,
+              );
+              recordCaptureWindowLog('capture-cdp-attached');
+            }
+          } catch (error) {
+            recordCaptureWindowLog(
+              `capture-load-error ${error instanceof Error ? error.message : String(error)}`,
+            );
+            throw error;
+          }
         },
         async collectStorageKeys() {
           return activeWindow().webContents.executeJavaScript(
@@ -190,12 +280,13 @@ export function createElectronCaptureBrowserAdapter(
           return activeWindow().webContents.executeJavaScript(selectorScript, true);
         },
         async captureScreenshot(label) {
-          const current = activeWindow();
+          const current = await pickScreenshotWindow();
           await mkdir(adapterOptions.screenshotDir, { recursive: true });
           const fileName = `${sanitizeLabel(label)}-${Date.now()}.png`;
           const filePath = join(adapterOptions.screenshotDir, fileName);
           const image = await current.webContents.capturePage();
           await writeFile(filePath, image.toPNG());
+          recordCaptureWindowLog(`capture-screenshot ${fileName} ${current.webContents.getURL()}`);
           return {
             packPath: `page/screenshots/${fileName}`,
             sourcePath: filePath,

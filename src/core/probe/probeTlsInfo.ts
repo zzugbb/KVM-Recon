@@ -1,6 +1,7 @@
 import tls from 'node:tls';
 
 import type { CaptureTarget } from '../capture-pack/types';
+import { tlsServerName } from './tlsServerName';
 
 interface CertificateParty {
   CN?: string | string[];
@@ -71,7 +72,7 @@ function createDefaultConnector(target: CaptureTarget): () => Promise<TlsConnect
       const socket = tls.connect({
         host: target.host,
         port: target.port,
-        servername: target.host,
+        servername: tlsServerName(target.host),
         rejectUnauthorized: false,
         timeout: 8000,
       });

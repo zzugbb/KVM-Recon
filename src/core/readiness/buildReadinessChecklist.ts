@@ -157,7 +157,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
   const items: ChecklistItem[] = [
     item({
       id: 'bmc.connection',
-      title: 'BMC 基础连接已采集',
+      title: 'BMC 基础连接',
       status: statusForEvidence(connectionEvidence, 'missing'),
       severity: 'blocking',
       evidence: connectionEvidence,
@@ -167,7 +167,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'bmc.fingerprint',
-      title: 'BMC 协议族指纹已识别',
+      title: 'BMC 协议族指纹',
       status: statusForEvidence(signatureEvidence, 'unknown'),
       severity: 'warning',
       evidence: signatureEvidence,
@@ -177,7 +177,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'login.chain',
-      title: '登录链路 HTTP 资料已采集',
+      title: '登录链路 HTTP 资料',
       status: statusForEvidence(loginIds, 'needs_user_action'),
       severity: 'blocking',
       evidence: loginIds,
@@ -187,7 +187,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'page.kvm.entry',
-      title: 'HTML5 KVM 入口已采集',
+      title: 'HTML5 KVM 入口',
       status: statusForEvidence(entryEvidence, 'needs_user_action'),
       severity: 'blocking',
       evidence: entryEvidence,
@@ -197,7 +197,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'http.key_api',
-      title: 'KVM 关键 HTTP API 已采集',
+      title: 'KVM 关键 HTTP API',
       status: statusForEvidence(httpIds, 'missing'),
       severity: 'warning',
       evidence: httpIds,
@@ -207,7 +207,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'ws.kvm.established',
-      title: 'KVM WebSocket 已建立并捕获帧',
+      title: 'KVM WebSocket',
       status: statusForEvidence(wsIds, 'needs_user_action'),
       severity: 'blocking',
       evidence: wsIds,
@@ -217,17 +217,17 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     }),
     item({
       id: 'page.viewer.screenshot',
-      title: 'viewer 页面截图已采集',
+      title: 'KVM 画面截图',
       status: statusForEvidence(screenshots, 'missing'),
       severity: 'warning',
       evidence: screenshots,
       userAction: screenshots.length
         ? ''
-        : '请打开 HTML5 KVM 后把画面窗口留在前台，选择截图角色并点击“采集当前页面”。',
+        : '打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。',
     }),
     item({
       id: 'tls.certificate',
-      title: 'TLS 证书信息已采集',
+      title: 'TLS 证书信息',
       status: tls.status,
       severity: 'info' as ChecklistSeverity,
       evidence: tls.evidence,

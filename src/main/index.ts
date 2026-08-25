@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -20,8 +20,13 @@ import { applyAuthenticatedProbe, probeBmcTarget } from '../core/probe/probeBmcT
 import { createNodeProbeHttpClient } from '../core/probe/createNodeProbeHttpClient';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
+import { getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
 
 const logger = createCaptureLogger();
+
+// 必须在 app ready 之前：现场 BMC 自签证书在 Chrome 要点「高级」，采集窗没有该页面，不忽略就会白屏。
+app.commandLine.appendSwitch('ignore-certificate-errors');
+app.commandLine.appendSwitch('allow-running-insecure-content');
 
 interface CaptureSession extends CaptureExportJob {
   controller: ReturnType<typeof createCaptureBrowserController>;
@@ -35,6 +40,7 @@ function sessionSnapshot(session: CaptureSession) {
   return {
     windowsOpen: session.controller.windowsOpen(),
     paused: session.controller.isPaused(),
+    capturingScreenshot: session.controller.isCapturingScreenshot(),
     ...buildLiveCaptureSnapshot({
       probe: session.probe,
       page: session.controller.timeline(),
@@ -522,6 +528,58 @@ function registerCaptureHandlers() {
   });
 }
 
+function installApplicationMenu() {
+  const isMac = process.platform === 'darwin';
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    {
+      label: '查看',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          label: '采集窗口诊断',
+          accelerator: isMac ? 'Alt+Command+I' : 'Ctrl+Shift+I',
+          click: () => {
+            void dialog.showMessageBox({
+              type: 'info',
+              title: '采集窗口诊断',
+              message: '采集窗口诊断（加载与证书日志）',
+              detail:
+                getCaptureWindowLogs() ||
+                [
+                  '当前进程还没有采集窗口日志，多半仍在用旧窗口。',
+                  '请退出菜单栏里所有 Electron / KVM-Recon（含 /Applications 安装包），只保留 npm run dev 新弹出的窗口后再新建作业。',
+                ].join('\n'),
+            });
+          },
+        },
+        {
+          label: '主窗口开发者工具',
+          click: () => {
+            const focused = BrowserWindow.getFocusedWindow();
+            const main = BrowserWindow.getAllWindows().find(
+              window => !window.getTitle().startsWith('KVM-Recon Capture'),
+            );
+            const target = main || focused;
+            target?.webContents.openDevTools({ mode: 'detach' });
+          },
+        },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function isE2eSmokeLaunch() {
   return process.env.KVM_RECON_E2E === '1' || process.argv.includes('--e2e-smoke');
 }
@@ -573,6 +631,18 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
+  app.on('certificate-error', (event, webContents, url, error, _certificate, callback) => {
+    if (isCaptureSession(webContents.session)) {
+      event.preventDefault();
+      callback(true);
+      recordCaptureWindowLog(`app-cert-trusted ${error} ${url}`);
+      return;
+    }
+    callback(false);
+  });
+  if (!isE2eSmokeLaunch()) {
+    installApplicationMenu();
+  }
   registerCaptureHandlers();
   createMainWindow();
 

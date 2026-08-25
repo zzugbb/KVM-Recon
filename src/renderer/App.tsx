@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { CaptureReadiness, ChecklistItem } from '../core/capture-pack/types';
 import type { CapturePackComparison, CapturePackSummary } from '../core/capture-pack/summarizeCapturePack';
@@ -7,6 +7,12 @@ import type { CaptureJobSummary } from '../core/delivery/captureJob';
 import { MAX_CAPTURE_JOBS } from '../core/delivery/captureJob';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
+import {
+  jobRowStatus,
+  nextStepText,
+  phaseLabel,
+  type CapturePhase,
+} from './captureStatus';
 
 interface FormattedCaptureError {
   title: string;
@@ -14,8 +20,6 @@ interface FormattedCaptureError {
   action: string;
   detail: string;
 }
-
-type CapturePhase = 'idle' | 'capturing' | 'exported';
 
 const previewPack = createEmptyCapturePack({
   jobId: 'preview-empty-job',
@@ -37,12 +41,6 @@ const PRELOAD_MISSING_ERROR: FormattedCaptureError = {
   detail: '',
 };
 
-function phaseLabel(phase: CapturePhase) {
-  if (phase === 'capturing') return '当前阶段：采集中';
-  if (phase === 'exported') return '当前阶段：导出结果';
-  return '当前阶段：新建采集';
-}
-
 function statusText(status: string) {
   if (status === 'pass') return '已采集';
   if (status === 'needs_user_action') return '待现场操作';
@@ -50,13 +48,6 @@ function statusText(status: string) {
   if (status === 'unknown') return '未知';
   if (status === 'not_applicable') return '不适用';
   return status;
-}
-
-function jobRowStatus(job: CaptureJobSummary) {
-  if (job.exported) return '已导出';
-  if (job.paused) return '已暂停';
-  if (job.windowsOpen) return '采集中';
-  return '窗口已关';
 }
 
 function formatSummaryValue(value: string | number | string[]) {
@@ -80,12 +71,14 @@ export function App() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState<FormattedCaptureError | null>(null);
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
-  const [statusHint, setStatusHint] = useState(previewPack.checklist.items[0]?.userAction || '');
   const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
   const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
   const [windowsOpen, setWindowsOpen] = useState(false);
+  const [capturingScreenshot, setCapturingScreenshot] = useState(false);
+  const snapshotBusy = useRef(false);
   const [packSummary, setPackSummary] = useState<CapturePackSummary | null>(null);
   const [packPath, setPackPath] = useState('');
+  const [exportFileName, setExportFileName] = useState('');
   const [packComparison, setPackComparison] = useState<CapturePackComparison | null>(null);
 
   function applyJobs(nextJobs?: CaptureJobSummary[]) {
@@ -99,6 +92,7 @@ export function App() {
     items: ChecklistItem[];
     windowsOpen?: boolean;
     paused?: boolean;
+    capturingScreenshot?: boolean;
     jobs?: CaptureJobSummary[];
   }) {
     setReadiness(snapshot.readiness);
@@ -109,9 +103,8 @@ export function App() {
     if (typeof snapshot.paused === 'boolean') {
       setPaused(snapshot.paused);
     }
+    setCapturingScreenshot(Boolean(snapshot.capturingScreenshot));
     applyJobs(snapshot.jobs);
-    const pending = snapshot.items.find(item => item.status !== 'pass' && item.status !== 'not_applicable');
-    setStatusHint(pending?.userAction || '关键资料已采集，可导出后查看报告。');
   }
 
   function applySelectedJob(nextJobId: string, nextJobs = jobs) {
@@ -121,12 +114,16 @@ export function App() {
       setPhase('idle');
       setWindowsOpen(false);
       setPaused(false);
+      setExportFileName('');
       return;
     }
     setPhase(selected.exported ? 'exported' : 'capturing');
     setWindowsOpen(selected.windowsOpen);
     setPaused(selected.paused);
     setReadiness(selected.readiness);
+    if (!selected.exported) {
+      setExportFileName('');
+    }
   }
 
   async function refreshSnapshot(nextJobId = jobId) {
@@ -143,12 +140,27 @@ export function App() {
 
   useEffect(() => {
     if (!jobId && jobs.length === 0) return undefined;
-    void refreshSnapshot(jobId);
+    let cancelled = false;
+
+    async function tick() {
+      if (snapshotBusy.current) return;
+      snapshotBusy.current = true;
+      try {
+        if (!cancelled) await refreshSnapshot(jobId);
+        if (!cancelled) await refreshJobs();
+      } finally {
+        snapshotBusy.current = false;
+      }
+    }
+
+    void tick();
     const timer = window.setInterval(() => {
-      void refreshSnapshot(jobId);
-      void refreshJobs();
+      void tick();
     }, 2000);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [jobId, jobs.length]);
 
   async function startCapture() {
@@ -189,7 +201,8 @@ export function App() {
     applyJobs(result.jobs);
     applySelectedJob(result.jobId, result.jobs);
     applySnapshot(result.snapshot);
-    setMessage(`采集作业已启动：${result.jobId}`);
+    setExportFileName('');
+    setMessage(`采集窗口已打开：${result.jobId}`);
   }
 
   async function stopCaptureWindows() {
@@ -252,6 +265,7 @@ export function App() {
     setPhase('idle');
     setWindowsOpen(false);
     setPaused(false);
+    setExportFileName('');
     applySnapshot(emptySnapshot);
     setMessage(`已关闭作业 ${targetJobId}`);
   }
@@ -287,7 +301,7 @@ export function App() {
       setError({
         title: '尚未开始采集',
         impact: '当前没有可补采的页面。',
-        action: '请先点击“新建采集作业”，打开 BMC 后再采集当前页面。',
+        action: '请先点击“新建采集作业”，打开 BMC 后再补拍画面。',
         detail: '',
       });
       return;
@@ -298,7 +312,7 @@ export function App() {
       return;
     }
     applySnapshot(result);
-    setMessage('已采集当前页面截图、storage 和选择器。');
+    setMessage('已采集当前画面。登录和 KVM 流量仍在自动记录，就绪后请导出。');
   }
 
   async function exportCapture() {
@@ -331,7 +345,7 @@ export function App() {
     setPhase('exported');
     setWindowsOpen(false);
     setReadiness(result.readiness);
-    setStatusHint(`已导出 ${result.fileName}，请打开 report.html 确认离场结论。`);
+    setExportFileName(result.fileName);
     setMessage(`已导出：${result.fileName}`);
     await refreshSnapshot(jobId);
   }
@@ -386,6 +400,15 @@ export function App() {
   }
 
   const selectedJob = jobs.find(job => job.jobId === jobId);
+  const nextStep = nextStepText({
+    phase,
+    readiness,
+    items: progressItems,
+    capturingScreenshot,
+    paused,
+    windowsOpen,
+    exportFileName,
+  });
 
   return (
     <main className="app-shell">
@@ -397,7 +420,7 @@ export function App() {
           在机房内采集登录、HTML5 KVM 入口、HTTP/WebSocket、页面截图和离场验收资料，
           导出脱敏 Capture Pack 供后续兼容性分析。
         </p>
-        <p className="phase-label">{phaseLabel(phase)}</p>
+        <p className="phase-label">{phaseLabel(phase, readiness, paused)}</p>
         <div className="target-form">
           <div className="field-row field-row-primary">
             <label>
@@ -407,20 +430,6 @@ export function App() {
             <label>
               端口
               <input value={port} onChange={event => setPort(event.target.value)} />
-            </label>
-            <label>
-              截图角色
-              <select
-                value={screenshotRole}
-                onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
-                disabled={phase !== 'capturing' || !windowsOpen}
-              >
-                <option value="login">登录页</option>
-                <option value="home">登录后首页</option>
-                <option value="kvm-entry">KVM 入口</option>
-                <option value="viewer">viewer</option>
-                <option value="error">异常画面</option>
-              </select>
             </label>
           </div>
           <div className="field-row field-row-pair">
@@ -470,16 +479,8 @@ export function App() {
           </label>
         </div>
         <div className="actions">
-          <button type="button" onClick={startCapture} disabled={jobs.length >= MAX_CAPTURE_JOBS}>
+          <button type="button" className={phase === 'idle' ? undefined : 'secondary'} onClick={startCapture} disabled={jobs.length >= MAX_CAPTURE_JOBS}>
             新建采集作业
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={collectCurrentPage}
-            disabled={phase !== 'capturing' || !windowsOpen}
-          >
-            采集当前页面
           </button>
           <button
             type="button"
@@ -507,11 +508,36 @@ export function App() {
           </button>
           <button
             type="button"
-            className="secondary"
+            className={readiness === 'YES' && phase !== 'exported' ? undefined : 'secondary'}
             onClick={exportCapture}
             disabled={!jobId}
           >
-            {phase === 'exported' ? '再次导出' : '停止采集并导出'}
+            {phase === 'exported' ? '再次导出' : readiness === 'YES' ? '导出 Capture Pack' : '停止采集并导出'}
+          </button>
+        </div>
+        <p className="next-step">{nextStep}</p>
+        <div className="actions-extra">
+          <span className="actions-extra-label">补拍画面（可选）</span>
+          <select
+            value={screenshotRole}
+            onChange={event => setScreenshotRole(event.target.value as ScreenshotRole)}
+            disabled={phase !== 'capturing' || !windowsOpen || capturingScreenshot}
+            aria-label="补拍画面类型"
+            title="只给手动补拍打标签，不影响自动采集"
+          >
+            <option value="viewer">KVM 画面</option>
+            <option value="login">登录页</option>
+            <option value="home">登录后首页</option>
+            <option value="kvm-entry">点 KVM 的菜单页</option>
+            <option value="error">异常画面</option>
+          </select>
+          <button
+            type="button"
+            className="secondary"
+            onClick={collectCurrentPage}
+            disabled={phase !== 'capturing' || !windowsOpen || capturingScreenshot}
+          >
+            {capturingScreenshot ? '正在截图…' : '采集当前画面'}
           </button>
         </div>
         {message ? <p className="message">{message}</p> : null}
@@ -529,7 +555,6 @@ export function App() {
         <div>
           <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
-        <p>{statusHint}</p>
         {selectedJob ? (
           <p>
             当前作业 {selectedJob.jobId} · {selectedJob.host}:{selectedJob.port} · {jobRowStatus(selectedJob)}
@@ -540,10 +565,7 @@ export function App() {
           <ul>
             {progressItems.map(item => (
               <li key={item.id}>
-                <div>
-                  <span>{item.title}</span>
-                  {item.userAction ? <p>{item.userAction}</p> : null}
-                </div>
+                <span>{item.title}</span>
                 <strong>{statusText(item.status)}</strong>
               </li>
             ))}
@@ -626,7 +648,7 @@ export function App() {
               <dd>{formatSummaryValue(packSummary.webSocketUrls)}</dd>
             </div>
             <div>
-              <dt>截图角色</dt>
+              <dt>画面标签</dt>
               <dd>{formatSummaryValue(packSummary.screenshotRoles)}</dd>
             </div>
             {packSummary.schemaErrors.length > 0 ? (

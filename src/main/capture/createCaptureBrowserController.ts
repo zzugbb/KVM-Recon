@@ -55,7 +55,7 @@ interface CreateCaptureBrowserControllerInput {
 }
 
 function buildPartition(jobId: string) {
-  return `persist:kvm-recon-${jobId}`;
+  return `kvm-recon-${jobId}`;
 }
 
 async function recordClicks(
@@ -85,6 +85,8 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
   let captureWindowsOpen = false;
   let debuggerCount = 0;
   let paused = false;
+  let pageFactsPending = 0;
+  let pageFactsChain: Promise<void> = Promise.resolve();
 
   function unlessPaused<Args extends unknown[]>(fn: (...args: Args) => void) {
     return (...args: Args) => {
@@ -92,6 +94,74 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         fn(...args);
       }
     };
+  }
+
+  function hasViewerScreenshot() {
+    return timeline.toJSON().events.some(event => event.type === 'screenshot' && event.role === 'viewer');
+  }
+
+  function hasKvmVideoFrames() {
+    return networkRecorder.toJSON().webSockets.some(
+      socket =>
+        socket.tags.includes('kvm-video') && socket.binaryFrameCount + socket.textFrameCount > 0,
+    );
+  }
+
+  async function collectPageFactsNow(label: string) {
+    if (!captureWindowsOpen || !windowHandle) return;
+    const role = screenshotRoleFromLabel(label);
+    if (role === 'viewer' && hasViewerScreenshot()) return;
+
+    try {
+      if (paused) {
+        await windowHandle.drainClicks();
+      } else {
+        await recordClicks(windowHandle, timeline);
+      }
+      const storage = await windowHandle.collectStorageKeys();
+      const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
+      const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);
+      previousLocalStorage = storage.localStorageKeys;
+      previousSessionStorage = storage.sessionStorageKeys;
+      timeline.recordStorageSnapshot({
+        localStorageKeys: storage.localStorageKeys,
+        sessionStorageKeys: storage.sessionStorageKeys,
+        localStorageAdded: localDiff.added,
+        localStorageRemoved: localDiff.removed,
+        sessionStorageAdded: sessionDiff.added,
+        sessionStorageRemoved: sessionDiff.removed,
+      });
+      const screenshot = await windowHandle.captureScreenshot(label);
+      timeline.recordScreenshot(
+        screenshot.packPath,
+        screenshot.sourcePath,
+        screenshotRoleFromLabel(label),
+      );
+      timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
+    } catch (error) {
+      // 捕获页面事实采集失败：窗口可能已被用户关掉或截图目录不可写
+      // 策略：跳过本次截图/storage，保留已有时间线与网络记录，便于关窗后仍能导出
+      void error;
+    }
+  }
+
+  function collectPageFacts(label: string) {
+    pageFactsPending += 1;
+    const run = pageFactsChain.then(() => collectPageFactsNow(label));
+    pageFactsChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run.finally(() => {
+      pageFactsPending -= 1;
+    });
+  }
+
+  function maybeAutoCaptureViewer() {
+    if (paused || !captureWindowsOpen || hasViewerScreenshot() || !hasKvmVideoFrames()) {
+      return;
+    }
+    void collectPageFacts('viewer');
   }
 
   return {
@@ -105,6 +175,12 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     },
     isPaused() {
       return paused;
+    },
+    isCapturingScreenshot() {
+      return pageFactsPending > 0;
+    },
+    async flushPageFacts() {
+      await pageFactsChain;
     },
     async start() {
       debuggerCount = 0;
@@ -147,47 +223,15 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
           return;
         }
         await recordClicks(windowHandle, timeline);
+        maybeAutoCaptureViewer();
       } catch (error) {
         // 捕获进度轮询时读取点击失败：窗口可能已关闭或页面正在导航
         // 策略：跳过本次点击，不影响 HTTP/WS 持续记录和后续导出
         void error;
       }
     },
-    async collectPageFacts(label: string) {
-      if (!captureWindowsOpen || !windowHandle) return;
+    collectPageFacts,
 
-      try {
-        if (paused) {
-          await windowHandle.drainClicks();
-        } else {
-          await recordClicks(windowHandle, timeline);
-        }
-        const storage = await windowHandle.collectStorageKeys();
-        const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
-        const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);
-        previousLocalStorage = storage.localStorageKeys;
-        previousSessionStorage = storage.sessionStorageKeys;
-        timeline.recordStorageSnapshot({
-          localStorageKeys: storage.localStorageKeys,
-          sessionStorageKeys: storage.sessionStorageKeys,
-          localStorageAdded: localDiff.added,
-          localStorageRemoved: localDiff.removed,
-          sessionStorageAdded: sessionDiff.added,
-          sessionStorageRemoved: sessionDiff.removed,
-        });
-        const screenshot = await windowHandle.captureScreenshot(label);
-        timeline.recordScreenshot(
-          screenshot.packPath,
-          screenshot.sourcePath,
-          screenshotRoleFromLabel(label),
-        );
-        timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
-      } catch (error) {
-        // 捕获页面事实采集失败：窗口可能已被用户关掉或截图目录不可写
-        // 策略：跳过本次截图/storage，保留已有时间线与网络记录，便于关窗后仍能导出
-        void error;
-      }
-    },
     async readSessionCookies() {
       if (!windowHandle) return [];
       try {

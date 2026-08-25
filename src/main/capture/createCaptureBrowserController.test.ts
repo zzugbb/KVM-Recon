@@ -95,11 +95,11 @@ describe('createCaptureBrowserController', () => {
       throw new Error('Capture browser adapter options missing');
     }
     expect(capturedOptions).toMatchObject({
-      partition: 'persist:kvm-recon-job-001',
+      partition: 'kvm-recon-job-001',
       targetHost: '10.0.0.10',
     });
     expect(capturedOptions.allowCertificateError('https://10.0.0.10/login.html')).toBe(true);
-    expect(capturedOptions.allowCertificateError('https://example.com/login.html')).toBe(false);
+    expect(capturedOptions.allowCertificateError('https://ibmc.local/login.html')).toBe(true);
     expect(loadedUrls).toEqual(['https://10.0.0.10:443/']);
     expect(controller.timeline().events.map(event => event.type)).toEqual([
       'navigation',
@@ -295,6 +295,155 @@ describe('createCaptureBrowserController', () => {
       httpRequests: [],
       webSockets: [],
     });
+  });
+
+  it('auto-captures a viewer screenshot after KVM WebSocket frames arrive', async () => {
+    const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') cdpListeners.push(listener);
+      },
+    };
+    const screenshotLabels: string[] = [];
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger(cdp);
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            screenshotLabels.push(label);
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-auto-shot',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-1',
+        url: 'wss://10.0.0.10/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-1',
+        response: {
+          opcode: 2,
+          payloadData: 'AAAA',
+        },
+      });
+    }
+    await controller.ingestLiveEvents();
+    await controller.flushPageFacts();
+    expect(screenshotLabels).toEqual(['viewer']);
+    await controller.ingestLiveEvents();
+    await controller.flushPageFacts();
+    expect(screenshotLabels).toEqual(['viewer']);
+  });
+
+  it('does not capture a second viewer screenshot when polls overlap or export runs again', async () => {
+    const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') cdpListeners.push(listener);
+      },
+    };
+    const screenshotLabels: string[] = [];
+    let releaseCapture: (() => void) | undefined;
+    const holdCapture = new Promise<void>(resolve => {
+      releaseCapture = resolve;
+    });
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger(cdp);
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            screenshotLabels.push(label);
+            await holdCapture;
+            return {
+              packPath: `page/screenshots/${label}-${screenshotLabels.length}.png`,
+              sourcePath: `/tmp/${label}-${screenshotLabels.length}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-overlap-shot',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-1',
+        url: 'wss://10.0.0.10/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-1',
+        response: {
+          opcode: 2,
+          payloadData: 'AAAA',
+        },
+      });
+    }
+    const firstPoll = controller.ingestLiveEvents();
+    const secondPoll = controller.ingestLiveEvents();
+    await Promise.all([firstPoll, secondPoll]);
+    expect(controller.isCapturingScreenshot()).toBe(true);
+    releaseCapture?.();
+    await controller.flushPageFacts();
+    await controller.collectPageFacts('viewer');
+    expect(screenshotLabels).toEqual(['viewer']);
   });
 
   it('clears live windows but can still read session cookies after the operator closes them', async () => {

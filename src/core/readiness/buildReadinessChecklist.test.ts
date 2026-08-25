@@ -150,10 +150,12 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.items).toContainEqual(
       expect.objectContaining({
         id: 'page.viewer.screenshot',
+        title: 'KVM 画面截图',
         status: 'missing',
         severity: 'warning',
       }),
     );
+    expect(checklist.items.find(item => item.id === 'page.viewer.screenshot')?.title).not.toContain('已采集');
   });
 
   it('returns YES when key facts are complete and redaction passed', () => {
