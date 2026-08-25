@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-redfish.schema.json",
+  "title": "KVM-Recon Redfish root probe",
+  "type": "object",
+  "required": ["path", "status", "reachable", "vendor", "product", "firmwareVersion", "rootFields"],
+  "properties": {
+    "path": { "const": "/redfish/v1" },
+    "status": { "type": "integer" },
+    "reachable": { "type": "boolean" },
+    "vendor": { "type": "string" },
+    "product": { "type": "string" },
+    "firmwareVersion": { "type": "string" },
+    "rootFields": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    }
+  }
+}

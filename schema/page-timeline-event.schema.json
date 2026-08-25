@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/page-timeline-event.schema.json",
+  "title": "KVM-Recon page timeline event",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["type", "url", "timestamp"],
+      "properties": {
+        "type": { "enum": ["navigation", "hash-change"] },
+        "url": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "url", "disposition", "timestamp"],
+      "properties": {
+        "type": { "const": "popup" },
+        "url": { "type": "string" },
+        "disposition": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "timestamp"],
+      "properties": {
+        "type": { "const": "storage-snapshot" },
+        "localStorageKeys": { "type": "array", "items": { "type": "string" } },
+        "sessionStorageKeys": { "type": "array", "items": { "type": "string" } },
+        "localStorageAdded": { "type": "array", "items": { "type": "string" } },
+        "localStorageRemoved": { "type": "array", "items": { "type": "string" } },
+        "sessionStorageAdded": { "type": "array", "items": { "type": "string" } },
+        "sessionStorageRemoved": { "type": "array", "items": { "type": "string" } },
+        "timestamp": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "path", "role", "timestamp"],
+      "properties": {
+        "type": { "const": "screenshot" },
+        "path": { "type": "string" },
+        "sourcePath": { "type": "string" },
+        "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
+        "timestamp": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "candidates", "timestamp"],
+      "properties": {
+        "type": { "const": "selector-candidates" },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/selectorCandidate" }
+        },
+        "timestamp": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "selector", "text", "tagName", "timestamp"],
+      "properties": {
+        "type": { "const": "click" },
+        "selector": { "type": "string" },
+        "text": { "type": "string" },
+        "tagName": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    }
+  ],
+  "definitions": {
+    "selectorCandidate": {
+      "type": "object",
+      "required": ["role", "selector", "confidence"],
+      "properties": {
+        "role": { "enum": ["login", "kvm-entry", "viewer", "unknown"] },
+        "selector": { "type": "string" },
+        "confidence": { "type": "number" }
+      }
+    }
+  }
+}

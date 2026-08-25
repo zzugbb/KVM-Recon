@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../../version';
 import type {
   CaptureChecklist,
   CapturePackDraft,
@@ -17,7 +18,7 @@ interface CreateEmptyCapturePackInput {
   };
 }
 
-const TOOL_VERSION = '0.2.2';
+const TOOL_VERSION = APP_VERSION;
 
 export function createEmptyCapturePack(input: CreateEmptyCapturePackInput): CapturePackDraft {
   const checklist: CaptureChecklist = {

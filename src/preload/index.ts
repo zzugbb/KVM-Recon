@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { app, contextBridge, ipcRenderer } from 'electron';
 
 interface StartCaptureTarget {
   host: string;
@@ -16,6 +16,7 @@ interface StartCaptureTarget {
 
 contextBridge.exposeInMainWorld('kvmRecon', {
   appName: 'KVM-Recon',
+  appVersion: app.getVersion(),
   startCapture(target: StartCaptureTarget) {
     return ipcRenderer.invoke('capture:start', target);
   },

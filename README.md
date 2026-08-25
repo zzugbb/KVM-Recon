@@ -1,46 +1,58 @@
 # KVM-Recon
 
+**English** | [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml/badge.svg)](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases)](https://github.com/zzugbb/KVM-Recon/releases)
 
-Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。
+Offline BMC/KVM Discovery & Compatibility Toolkit.
 
-KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC → 打开 HTML5 KVM → 建立相关 HTTP/WebSocket」的事实资料，导出脱敏 Capture Pack。离开机房、联网之后，再把资料包交给工程师或 AI 做网关兼容分析。
+KVM-Recon is an offline desktop client for the server room: it records what happens when you log into a BMC, open HTML5 KVM, and establish the related HTTP/WebSocket traffic, then exports a redacted Capture Pack. After you leave the room and get a network connection, give that pack to an engineer or an AI for gateway compatibility analysis.
 
-## 项目定位
+The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
-- 这是离线采集工具，**不是**生产 KVM 网关，也不提供用户远程控制台。
-- 不依赖公网，不在机房内调用外部分析服务。
-- 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
-- 本工具**不写 Adapter**。
+## Screenshots
 
-主键是 `kvmFamily`（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`），不是厂商 Logo 或型号字符串。现场铭牌（厂商/型号/固件/位置）只作为证据。
+![Main window](docs/images/main-window.png)
 
-## 下载
+![Capture progress](docs/images/capture-progress.png)
 
-从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。
+## What this project is
 
-当前构建**未使用 Apple / 微软付费开发者证书**：
+- An offline capture tool. It is **not** a production KVM gateway and does not provide a remote console for operators.
+- It does not need the public internet and does not call external analysis services inside the server room.
+- On-site staff can help log in, click menus, and open HTML5 KVM; the tool records the facts needed for later adaptation.
+- This tool **does not write adapters**.
 
-- **macOS**：ad-hoc 签名。从浏览器下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。
-- **Windows**：无 Authenticode 签名。SmartScreen 若提示已保护你的电脑或未知发布者，点「更多信息 → 仍要运行」。
+The primary key is `kvmFamily` (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`), not a vendor logo or model string. Nameplate fields (vendor / product / firmware / location) are evidence only.
 
-逐步说明见 `docs/offline-field-guide.md`。
+## Download
 
-## 现场流程
+Get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) and check `SHA256SUMS.txt`. Maintainer release steps are in `docs/releasing.md`.
 
-1. 在机房内安装并打开 KVM-Recon。
-2. 输入 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。
-3. 开始采集，工具执行基础探测与 TLS/指纹采集。
-4. 内嵌浏览器打开 BMC，现场人员按需**手工**登录。
-5. 点击 HTML5 KVM 入口，等待 viewer 与 WebSocket。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
-6. 工具记录 HTTP、WebSocket、页面、截图、storage key、TLS、指纹和 checklist。
-7. 导出 Capture Pack。出机房后阅读包内 `artifacts/handover.md`。
+Current builds **do not use paid Apple / Microsoft developer certificates**:
 
-## 开发
+- **macOS**: ad-hoc signature. If Gatekeeper says the developer cannot be verified after a browser download, allow it in **System Settings → Privacy & Security**.
+- **Windows**: no Authenticode signature. If SmartScreen says Windows protected your PC or the publisher is unknown, choose **More info → Run anyway**.
 
-需要 Node.js 22+。
+Step-by-step field instructions (Chinese) are in `docs/offline-field-guide.md`.
+
+## Field workflow
+
+1. Install and open KVM-Recon in the server room.
+2. Enter the BMC address and port; optionally fill in on-site vendor, product, firmware, rack location, and a job note.
+3. Start capture. The tool runs basic probes plus TLS/fingerprint collection.
+4. An embedded browser opens the BMC. On-site staff **manually** log in if needed.
+5. Open the HTML5 KVM entry and wait for the viewer and WebSocket. If KVM opens in a new window, keep that window in the foreground for at least 10 seconds.
+6. The tool records HTTP, WebSocket, page events, screenshots, storage keys, TLS, fingerprints, and the checklist.
+7. Export a Capture Pack. After leaving the room, read `artifacts/handover.md` inside the pack.
+
+The main window shows the current tool version (`vX.Y.Z`), matching `manifest.tool.version` in the exported pack.
+
+## Development
+
+Requires Node.js 22+.
 
 ```bash
 npm ci
@@ -51,29 +63,29 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环
-- `npm run test:e2e`：启动 Electron 主窗口，加载成功后退出（需先 build）
-- `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
+- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop
+- `npm run test:e2e`: launches the Electron main window, then exits after a successful load (build first)
+- `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 
-## 文档
+## Docs
 
-索引见 `docs/README.md`。
+Index: `docs/README.md`.
 
-- `docs/offline-field-guide.md`：现场安装与采集
-- `docs/capture-pack-spec.md`：Capture Pack 契约
-- `docs/releasing.md`：构建与发布安装包
-- `docs/development-plan.md`：阶段计划与项目边界
-- `docs/mvp-architecture.md`：技术架构
-- `schema/`：JSON Schema
-- `CHANGELOG.md`：版本记录；发新版时把 `[Unreleased]` 收成版本号
-- `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`
+- `docs/offline-field-guide.md`: install and capture on site (Chinese)
+- `docs/capture-pack-spec.md`: Capture Pack contract
+- `docs/releasing.md`: build and publish installers
+- `docs/development-plan.md`: staged plan and product boundary
+- `docs/mvp-architecture.md`: technical architecture
+- `schema/`: JSON Schema for pack files (timeline, TLS, probes, and more)
+- `CHANGELOG.md`: version history; fold `[Unreleased]` into a version heading when you ship
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE`
 
-## 安全与边界
+## Safety and limits
 
-- 不保存明文密码；Cookie 值不落盘；不保存完整 KVM 视频码流。
-- 不会做：自动登录、MITM、机房内调 AI、自动写 Adapter、完整视频解码。
-- 漏洞请走 [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new)，不要在 Issue 里贴凭证或未脱敏资料包。
+- No plaintext passwords, no cookie values on disk, no full KVM video bitstream.
+- Will not: auto-login, MITM, call AI inside the server room, auto-write adapters, or fully decode video.
+- Report vulnerabilities via [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new). Do not paste credentials or unredacted capture packs into issues.
 
-## 许可
+## License
 
 [MIT](LICENSE)

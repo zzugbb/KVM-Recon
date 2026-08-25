@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-path-evidence.schema.json",
+  "title": "KVM-Recon BMC path evidence",
+  "type": "object",
+  "properties": {
+    "apiRandomtag": { "type": "boolean" },
+    "apiSession": { "type": "boolean" },
+    "apiKvmToken": { "type": "boolean" },
+    "randomtag": { "type": "boolean" },
+    "kvmVideo": { "type": "boolean" },
+    "sessionService": { "type": "boolean" },
+    "kvmService": { "type": "boolean" },
+    "setKvmKey": { "type": "boolean" }
+  }
+}

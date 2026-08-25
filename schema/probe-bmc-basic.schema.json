@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-bmc-basic.schema.json",
+  "title": "KVM-Recon anonymous BMC basic probe",
+  "type": "object",
+  "required": ["host", "port", "scheme", "vendor", "product", "firmwareVersion"],
+  "properties": {
+    "host": { "type": "string" },
+    "port": { "type": "integer" },
+    "scheme": { "enum": ["http", "https"] },
+    "vendor": { "type": "string" },
+    "product": { "type": "string" },
+    "firmwareVersion": { "type": "string" }
+  }
+}

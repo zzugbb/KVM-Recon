@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-authenticated.schema.json",
+  "title": "KVM-Recon authenticated probe summary",
+  "type": "object",
+  "required": ["attempted", "cookieNames", "paths"],
+  "properties": {
+    "attempted": { "type": "boolean" },
+    "cookieNames": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "apiRandomtag": { "type": "boolean" },
+        "apiSession": { "type": "boolean" },
+        "apiKvmToken": { "type": "boolean" },
+        "randomtag": { "type": "boolean" },
+        "kvmVideo": { "type": "boolean" },
+        "sessionService": { "type": "boolean" },
+        "kvmService": { "type": "boolean" },
+        "setKvmKey": { "type": "boolean" }
+      }
+    }
+  }
+}

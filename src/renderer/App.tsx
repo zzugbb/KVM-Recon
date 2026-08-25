@@ -7,12 +7,14 @@ import type { CaptureJobSummary } from '../core/delivery/captureJob';
 import { MAX_CAPTURE_JOBS } from '../core/delivery/captureJob';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
+import { APP_VERSION } from '../version';
 import {
   jobRowStatus,
   nextStepText,
   phaseLabel,
   type CapturePhase,
 } from './captureStatus';
+import { readReadmePreview } from './readmePreview';
 
 interface FormattedCaptureError {
   title: string;
@@ -32,6 +34,14 @@ const previewPack = createEmptyCapturePack({
 });
 
 const emptySnapshot = buildLiveCaptureSnapshot({});
+const readmePreview = readReadmePreview();
+
+function displayedAppVersion() {
+  if (typeof window !== 'undefined' && window.kvmRecon?.appVersion) {
+    return window.kvmRecon.appVersion;
+  }
+  return APP_VERSION;
+}
 
 const PRELOAD_MISSING_ERROR: FormattedCaptureError = {
   title: '采集接口未加载',
@@ -57,23 +67,25 @@ function formatSummaryValue(value: string | number | string[]) {
 }
 
 export function App() {
-  const [host, setHost] = useState('10.0.0.10');
-  const [port, setPort] = useState('443');
-  const [operatorNote, setOperatorNote] = useState('');
-  const [vendor, setVendor] = useState('');
-  const [product, setProduct] = useState('');
-  const [firmware, setFirmware] = useState('');
-  const [location, setLocation] = useState('');
-  const [phase, setPhase] = useState<CapturePhase>('idle');
-  const [jobId, setJobId] = useState('');
-  const [jobs, setJobs] = useState<CaptureJobSummary[]>([]);
+  const [host, setHost] = useState(readmePreview?.host ?? '10.0.0.10');
+  const [port, setPort] = useState(readmePreview?.port ?? '443');
+  const [operatorNote, setOperatorNote] = useState(readmePreview?.operatorNote ?? '');
+  const [vendor, setVendor] = useState(readmePreview?.vendor ?? '');
+  const [product, setProduct] = useState(readmePreview?.product ?? '');
+  const [firmware, setFirmware] = useState(readmePreview?.firmware ?? '');
+  const [location, setLocation] = useState(readmePreview?.location ?? '');
+  const [phase, setPhase] = useState<CapturePhase>(readmePreview?.phase ?? 'idle');
+  const [jobId, setJobId] = useState(readmePreview?.jobId ?? '');
+  const [jobs, setJobs] = useState<CaptureJobSummary[]>(readmePreview?.jobs ?? []);
   const [paused, setPaused] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<FormattedCaptureError | null>(null);
-  const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
-  const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
+  const [readiness, setReadiness] = useState(readmePreview?.readiness ?? previewPack.manifest.readiness.status);
+  const [progressItems, setProgressItems] = useState<ChecklistItem[]>(
+    readmePreview?.progressItems ?? emptySnapshot.items,
+  );
   const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
-  const [windowsOpen, setWindowsOpen] = useState(false);
+  const [windowsOpen, setWindowsOpen] = useState(readmePreview?.windowsOpen ?? false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
   const snapshotBusy = useRef(false);
   const [packSummary, setPackSummary] = useState<CapturePackSummary | null>(null);
@@ -414,7 +426,12 @@ export function App() {
     <main className="app-shell">
       <section className="hero">
         <p className="eyebrow">Offline BMC/KVM Discovery Toolkit</p>
-        <h1>KVM-Recon</h1>
+        <div className="hero-heading">
+          <h1>KVM-Recon</h1>
+          <span className="app-version" title="工具版本，与导出包 manifest.tool.version 一致">
+            v{displayedAppVersion()}
+          </span>
+        </div>
         <p className="subtitle">离线 BMC/KVM 资料采集工具</p>
         <p className="description">
           在机房内采集登录、HTML5 KVM 入口、HTTP/WebSocket、页面截图和离场验收资料，

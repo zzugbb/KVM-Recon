@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-family-signatures.schema.json",
+  "title": "KVM-Recon kvmFamily signature result",
+  "type": "object",
+  "required": ["primary", "confidence", "candidates"],
+  "properties": {
+    "primary": {
+      "enum": ["ami-megarac", "openbmc-h5", "huawei-ibmc", "unknown-h5", "not-h5"]
+    },
+    "confidence": { "type": "number" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kvmFamily", "confidence", "evidence"],
+        "properties": {
+          "kvmFamily": { "enum": ["ami-megarac", "openbmc-h5", "huawei-ibmc"] },
+          "confidence": { "type": "number" },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

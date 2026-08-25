@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/page-selectors.schema.json",
+  "title": "KVM-Recon page selector candidates",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["role", "selector", "confidence"],
+    "properties": {
+      "role": { "enum": ["login", "kvm-entry", "viewer", "unknown"] },
+      "selector": { "type": "string" },
+      "confidence": { "type": "number" }
+    }
+  }
+}

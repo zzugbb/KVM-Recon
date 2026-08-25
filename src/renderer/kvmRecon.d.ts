@@ -173,6 +173,7 @@ declare global {
   interface Window {
     kvmRecon?: {
       appName: string;
+      appVersion: string;
       startCapture(target: StartCaptureTarget): Promise<StartCaptureResult>;
       exportCapture(jobId: string): Promise<ExportCaptureResult>;
       getCaptureSnapshot(jobId: string): Promise<SnapshotResult>;

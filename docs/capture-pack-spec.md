@@ -23,7 +23,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代 `kvmFamily`。
 
-阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 位于 `schema/`（manifest、checklist、HTTP 行、WS socket/frame、operator-observed）；其余文件以 TypeScript 类型与导出代码为权威。采集侧代码阶段已收口，见 `docs/development-plan.md` 第 22 节。
+阶段 8 已落地的字段：时间线 click、storage key 增减、截图角色、WS `magic`、`not-h5`、TLS 的 Chromium 可达性。独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码阶段已收口，见 `docs/development-plan.md` 第 22 节。
 
 ## 2. 目录结构
 

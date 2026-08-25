@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/page-storage.schema.json",
+  "title": "KVM-Recon page storage key snapshot",
+  "type": "object",
+  "required": ["localStorageKeys", "sessionStorageKeys"],
+  "properties": {
+    "localStorageKeys": { "type": "array", "items": { "type": "string" } },
+    "sessionStorageKeys": { "type": "array", "items": { "type": "string" } },
+    "localStorageAdded": { "type": "array", "items": { "type": "string" } },
+    "localStorageRemoved": { "type": "array", "items": { "type": "string" } },
+    "sessionStorageAdded": { "type": "array", "items": { "type": "string" } },
+    "sessionStorageRemoved": { "type": "array", "items": { "type": "string" } }
+  }
+}

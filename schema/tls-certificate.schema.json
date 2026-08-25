@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/tls-certificate.schema.json",
+  "title": "KVM-Recon TLS certificate probe",
+  "type": "object",
+  "required": ["reachable", "authorized", "authorizationError", "protocol", "cipher", "certificate"],
+  "properties": {
+    "reachable": { "type": "boolean" },
+    "authorized": { "type": "boolean" },
+    "authorizationError": { "type": "string" },
+    "protocol": { "type": "string" },
+    "cipher": {
+      "type": ["object", "null"],
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "certificate": {
+      "type": ["object", "null"],
+      "required": ["subject", "issuer", "subjectaltname", "validFrom", "validTo", "selfSigned"],
+      "properties": {
+        "subject": { "type": "object" },
+        "issuer": { "type": "object" },
+        "subjectaltname": { "type": "string" },
+        "validFrom": { "type": "string" },
+        "validTo": { "type": "string" },
+        "selfSigned": { "type": "boolean" }
+      }
+    },
+    "chromium": {
+      "type": "object",
+      "required": ["reachable", "authorizationError"],
+      "properties": {
+        "reachable": { "type": "boolean" },
+        "authorizationError": { "type": "string" }
+      }
+    }
+  }
+}

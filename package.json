@@ -71,6 +71,7 @@
       "package.json",
       "LICENSE",
       "README.md",
+      "README.zh-CN.md",
       "docs/**/*",
       "examples/**/*",
       "schema/**/*"

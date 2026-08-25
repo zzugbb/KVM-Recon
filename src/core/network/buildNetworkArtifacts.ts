@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../../version';
 import type { HttpRequestRecord, WebSocketFrameRecord, WebSocketRecord } from './createNetworkRecorder';
 
 interface NetworkArtifact {
@@ -21,7 +22,7 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
       version: '1.2',
       creator: {
         name: 'KVM-Recon',
-        version: '0.2.2',
+        version: APP_VERSION,
       },
       entries: httpRequests.map(request => ({
         startedDateTime: request.timestamp,

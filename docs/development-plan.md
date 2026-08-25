@@ -274,7 +274,7 @@ popup 窗口与首个窗口共用同一作业的 CDP 与网络记录器。若现
 
 任务：
 
-- 将 Capture Pack 主要文件补为独立 JSON Schema，或在规范中明确「以 TypeScript 类型为权威」。`代码完成`（`schema/`：manifest、checklist、HTTP 行、WS socket/frame、operator-observed；其余文件以 TypeScript 类型为权威）
+- 将 Capture Pack 主要文件补为独立 JSON Schema，或在规范中明确「以 TypeScript 类型为权威」。`代码完成`（`schema/`：manifest、checklist、HTTP/WS 行、page timeline/storage/selectors/screenshots、TLS、probe 文件；与类型冲突时以 TypeScript 导出代码为准）
 
 验收：
 
@@ -429,7 +429,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - 暂停 / 继续采集：采集窗口保持打开，暂停期间不记录新的 HTTP / WebSocket / 点击；进行中的 HTTP 响应和 WebSocket 关闭仍会补全。
 - 多作业列表：新建不再关闭或丢弃上一份作业；最多同时保留 8 份；可切换查看、关闭作业（未导出需确认）。
-- 独立 JSON Schema：`schema/` 提供 `manifest`、`checklist`、HTTP 行、WS socket/frame 的 JSON Schema；运行时仍用轻量必填字段检查，不引入 ajv。
+- 独立 JSON Schema：`schema/` 提供 manifest、checklist、HTTP/WS 行、page timeline/storage/selectors/screenshots、TLS 与 probe 文件的 JSON Schema；运行时仍用轻量必填字段检查，不引入 ajv。
 - 本地打开 / 对比 Capture Pack：选择 zip 后展示族、就绪结论、HTTP/WS 数量和差异表。
 
 验收（模拟）：
@@ -501,7 +501,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - storage 只导出 key，不导明文。
 - 不采集 Cookie 写入调用来源。
-- `page/timeline.jsonl`、`tls/certificate.json` 等不以独立 JSON Schema 全覆盖，以 TypeScript 导出代码为权威。
+- JSON Schema 覆盖主要导出文件；与类型冲突时仍以 TypeScript 导出代码为权威。
 - 铭牌字段在新建作业时填写，不提供作业中途改铭牌。
 
 本阶段之后默认不新增采集功能。
