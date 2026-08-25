@@ -14,7 +14,6 @@ import {
   phaseLabel,
   type CapturePhase,
 } from './captureStatus';
-import { readReadmePreview } from './readmePreview';
 
 interface FormattedCaptureError {
   title: string;
@@ -34,7 +33,6 @@ const previewPack = createEmptyCapturePack({
 });
 
 const emptySnapshot = buildLiveCaptureSnapshot({});
-const readmePreview = readReadmePreview();
 
 function displayedAppVersion() {
   if (typeof window !== 'undefined' && window.kvmRecon?.appVersion) {
@@ -67,25 +65,23 @@ function formatSummaryValue(value: string | number | string[]) {
 }
 
 export function App() {
-  const [host, setHost] = useState(readmePreview?.host ?? '10.0.0.10');
-  const [port, setPort] = useState(readmePreview?.port ?? '443');
-  const [operatorNote, setOperatorNote] = useState(readmePreview?.operatorNote ?? '');
-  const [vendor, setVendor] = useState(readmePreview?.vendor ?? '');
-  const [product, setProduct] = useState(readmePreview?.product ?? '');
-  const [firmware, setFirmware] = useState(readmePreview?.firmware ?? '');
-  const [location, setLocation] = useState(readmePreview?.location ?? '');
-  const [phase, setPhase] = useState<CapturePhase>(readmePreview?.phase ?? 'idle');
-  const [jobId, setJobId] = useState(readmePreview?.jobId ?? '');
-  const [jobs, setJobs] = useState<CaptureJobSummary[]>(readmePreview?.jobs ?? []);
+  const [host, setHost] = useState('10.0.0.10');
+  const [port, setPort] = useState('443');
+  const [operatorNote, setOperatorNote] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [product, setProduct] = useState('');
+  const [firmware, setFirmware] = useState('');
+  const [location, setLocation] = useState('');
+  const [phase, setPhase] = useState<CapturePhase>('idle');
+  const [jobId, setJobId] = useState('');
+  const [jobs, setJobs] = useState<CaptureJobSummary[]>([]);
   const [paused, setPaused] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<FormattedCaptureError | null>(null);
-  const [readiness, setReadiness] = useState(readmePreview?.readiness ?? previewPack.manifest.readiness.status);
-  const [progressItems, setProgressItems] = useState<ChecklistItem[]>(
-    readmePreview?.progressItems ?? emptySnapshot.items,
-  );
+  const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
+  const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
   const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
-  const [windowsOpen, setWindowsOpen] = useState(readmePreview?.windowsOpen ?? false);
+  const [windowsOpen, setWindowsOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
   const snapshotBusy = useRef(false);
   const [packSummary, setPackSummary] = useState<CapturePackSummary | null>(null);

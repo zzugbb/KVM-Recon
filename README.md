@@ -16,8 +16,6 @@ The in-app UI and the field guide are currently Chinese. This README is the Engl
 
 ![Main window](docs/images/main-window.png)
 
-![Capture progress](docs/images/capture-progress.png)
-
 ## What this project is
 
 - An offline capture tool. It is **not** a production KVM gateway and does not provide a remote console for operators.

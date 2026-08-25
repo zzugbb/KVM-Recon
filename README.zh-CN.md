@@ -16,8 +16,6 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 ![主窗口](docs/images/main-window.png)
 
-![采集进度](docs/images/capture-progress.png)
-
 ## 项目定位
 
 - 这是离线采集工具，**不是**生产 KVM 网关，也不提供用户远程控制台。
