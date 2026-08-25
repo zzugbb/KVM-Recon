@@ -45,7 +45,7 @@ const PRELOAD_MISSING_ERROR: FormattedCaptureError = {
   title: '采集接口未加载',
   impact: '主界面预加载脚本没有生效，采集、导出、打开和对比 Capture Pack 都不可用。',
   action:
-    '请使用 GitHub Releases 安装包启动本应用，不要用浏览器打开页面。若已是安装包（含 v0.2.0），请改用修复预加载脚本后的新版本。这与有没有 Capture Pack 无关。',
+    '请使用 GitHub Releases 安装包启动本应用，不要用浏览器打开页面。若安装包是 v0.2.0，预加载脚本损坏，请改用 v0.2.1 或更高版本。这与有没有 Capture Pack 无关。',
   detail: '',
 };
 
@@ -80,7 +80,7 @@ export function App() {
   const [error, setError] = useState<FormattedCaptureError | null>(null);
   const [readiness, setReadiness] = useState(previewPack.manifest.readiness.status);
   const [progressItems, setProgressItems] = useState<ChecklistItem[]>(emptySnapshot.items);
-  const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('viewer');
+  const [screenshotRole, setScreenshotRole] = useState<ScreenshotRole>('login');
   const [windowsOpen, setWindowsOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
   const snapshotBusy = useRef(false);
@@ -555,7 +555,7 @@ export function App() {
         </div>
         {message ? <p className="message">{message}</p> : null}
         {error ? (
-          <aside className="error-card" aria-label="Capture error">
+          <aside className="error-card" aria-label="采集错误">
             <strong>{error.title}</strong>
             <p>{error.impact}</p>
             <p>{error.action}</p>
@@ -564,7 +564,7 @@ export function App() {
         ) : null}
       </section>
 
-      <section className="status-card" aria-label="Capture Pack readiness">
+      <section className="status-card" aria-label="离场适配就绪">
         <div>
           <strong className="status-label">离场适配就绪：{readiness}</strong>
         </div>
@@ -573,7 +573,7 @@ export function App() {
             当前作业 {selectedJob.jobId} · {selectedJob.host}:{selectedJob.port} · {jobRowStatus(selectedJob)}
           </p>
         ) : null}
-        <div className="progress-list" aria-label="Capture progress">
+        <div className="progress-list" aria-label="采集进度">
           <h2>采集进度</h2>
           <ul>
             {progressItems.map(item => (
@@ -586,7 +586,7 @@ export function App() {
         </div>
       </section>
 
-      <section className="status-card job-list" aria-label="Capture jobs">
+      <section className="status-card job-list" aria-label="作业列表">
         <h2>作业列表</h2>
         <p>可同时保留最多 {MAX_CAPTURE_JOBS} 个作业；新建不会覆盖上一份未导出资料。</p>
         {jobs.length === 0 ? (
@@ -619,7 +619,7 @@ export function App() {
         )}
       </section>
 
-      <section className="status-card pack-review" aria-label="Capture pack review">
+      <section className="status-card pack-review" aria-label="本地打开 Capture Pack">
         <h2>本地打开 / 对比 Capture Pack</h2>
         <p>只在本机读取 zip，不调用公网，也不写 Adapter。</p>
         <div className="actions">

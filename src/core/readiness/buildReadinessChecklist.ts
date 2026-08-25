@@ -1,3 +1,4 @@
+import { viewerScreenshotPaths } from '../browser/browserCaptureCore';
 import type {
   CaptureChecklist,
   CaptureReadiness,
@@ -59,10 +60,7 @@ function selectorEvidence(page: BrowserTimelineJson | null | undefined): string[
 }
 
 function screenshotEvidence(page: BrowserTimelineJson | null | undefined): string[] {
-  return (page?.events || [])
-    .filter(event => event.type === 'screenshot')
-    .map(event => event.path)
-    .filter((path): path is string => typeof path === 'string' && path.length > 0);
+  return viewerScreenshotPaths(page?.events || []);
 }
 
 function urlContains(url: string, patterns: RegExp[]) {

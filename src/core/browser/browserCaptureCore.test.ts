@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBmcUrl,
   createBrowserTimeline,
+  isViewerScreenshotEvent,
   shouldAllowCertificateError,
+  viewerScreenshotPaths,
 } from './browserCaptureCore';
 
 describe('browserCaptureCore', () => {
@@ -77,5 +79,18 @@ describe('browserCaptureCore', () => {
         { type: 'selector-candidates' },
       ],
     });
+  });
+
+  it('treats only role=viewer screenshot events as KVM viewer evidence', () => {
+    expect(isViewerScreenshotEvent({ type: 'screenshot', role: 'viewer' })).toBe(true);
+    expect(isViewerScreenshotEvent({ type: 'screenshot', role: 'login' })).toBe(false);
+    expect(isViewerScreenshotEvent({ type: 'screenshot' })).toBe(false);
+    expect(
+      viewerScreenshotPaths([
+        { type: 'screenshot', role: 'login', path: 'page/screenshots/login.png' },
+        { type: 'screenshot', role: 'viewer', path: 'page/screenshots/viewer.png' },
+        { type: 'screenshot', path: 'page/screenshots/unlabeled.png' },
+      ]),
+    ).toEqual(['page/screenshots/viewer.png']);
   });
 });

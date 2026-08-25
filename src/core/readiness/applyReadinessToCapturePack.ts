@@ -50,10 +50,9 @@ function buildReadinessReportMarkdown(checklist: CaptureChecklist): string {
       ? problems.map(item => `- ${item.title}：${item.userAction || '无需现场动作。'}`)
       : ['- 当前关键资料完整，可离场后继续分析。']),
     '',
-    '## 离场后怎么用',
+    '## 阅读说明',
     '',
-    '- KVM-Recon 不在机房写 Adapter，也不调用公网分析服务。',
-    '- 出机房联网后，把本 zip 交给工程师或 AI，先读包内 `README.md`。',
+    '- 本文件只列就绪结论和检查项。出机房后先读根目录 `README.md`。',
   ].join('\n');
 }
 

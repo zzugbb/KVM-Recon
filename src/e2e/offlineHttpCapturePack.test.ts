@@ -86,7 +86,7 @@ describe('offline HTTP capture pack e2e', () => {
       probe,
       page: {
         jobId: 'e2e-offline-http',
-        events: [{ type: 'navigate', url: `http://127.0.0.1:${port}/` }],
+        events: [{ type: 'navigation', url: `http://127.0.0.1:${port}/` }],
       },
       network: {
         httpRequests: [

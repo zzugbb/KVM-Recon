@@ -115,6 +115,7 @@ describe('exportCaptureJob', () => {
             type: 'screenshot',
             path: 'page/screenshots/viewer.png',
             sourcePath: '/tmp/kvm-recon/viewer.png',
+            role: 'viewer',
             timestamp: '2026-08-24T12:00:04.000+08:00',
           },
         ],
@@ -135,7 +136,7 @@ describe('exportCaptureJob', () => {
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(new Uint8Array(await zip.file('page/screenshots/viewer.png')!.async('uint8array'))).toEqual(png);
     expect(JSON.parse(await zip.file('page/screenshots.json')!.async('string'))).toEqual([
-      { path: 'page/screenshots/viewer.png', role: 'unknown' },
+      { path: 'page/screenshots/viewer.png', role: 'viewer' },
     ]);
     expect(await zip.file('page/timeline.jsonl')!.async('string')).not.toContain('/tmp/kvm-recon/viewer.png');
   });

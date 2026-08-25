@@ -1,12 +1,12 @@
-# KVM-Recon MVP 技术架构
+# KVM-Recon 技术架构
 
 ## 1. 背景
 
 不同厂商和固件版本的 BMC HTML5 KVM 在登录方式、Cookie/Token、KVM 入口、WebSocket 子协议和加密细节上差异很大。KVM-Recon 的目标不是复刻生产网关，而是在机房现场离线采集新增 BMC/KVM 适配所需的事实资料，导出后供离场分析和网关兼容开发使用。
 
-## 2. MVP 形态
+## 2. 客户端形态
 
-MVP 推荐实现为 macOS / Windows 桌面客户端：
+实现为 macOS / Windows 桌面客户端：
 
 - 桌面壳：Electron。
 - 采集窗口：Electron 内嵌 Chromium。
@@ -61,7 +61,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可用浏览器会话复验需鉴权的路径。Cookie 值只在内存中使用，不写入 Capture Pack。出机房后的写 Adapter 仍不在本工具内。
 
-MVP 探测项：
+探测项：
 
 - TLS 证书、协议版本、cipher、自签信息。
 - `/redfish/v1` 基础信息。
@@ -83,7 +83,7 @@ MVP 探测项：
 - 是否已知族。
 - 是否允许生成 OEM Profile 草稿。
 
-MVP 先覆盖：
+当前覆盖：
 
 - `ami-megarac`
 - `openbmc-h5`

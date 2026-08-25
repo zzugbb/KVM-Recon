@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCapturePackFileName } from './buildCapturePackFileName';
 
 describe('buildCapturePackFileName', () => {
-  it('builds a deterministic offline handoff file name', () => {
+  it('builds a deterministic offline export file name', () => {
     expect(
       buildCapturePackFileName({
         startedAt: '2026-08-24T13:55:00.000+08:00',

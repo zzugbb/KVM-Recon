@@ -82,3 +82,43 @@ export function validateRequiredPackFiles(paths: string[]): string[] {
   }
   return ['缺少 README.md'];
 }
+
+const SCREENSHOT_ROLES = ['login', 'home', 'kvm-entry', 'viewer', 'error', 'unknown'];
+
+export function validateScreenshotIndexShape(value: unknown): string[] {
+  if (value == null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    return ['page/screenshots.json 必须是数组'];
+  }
+  const errors: string[] = [];
+  for (const [index, item] of value.entries()) {
+    if (!isRecord(item) || typeof item.path !== 'string') {
+      errors.push(`page/screenshots.json[${index}] 缺少 path`);
+      continue;
+    }
+    if (typeof item.role !== 'string' || !SCREENSHOT_ROLES.includes(item.role)) {
+      errors.push(`page/screenshots.json[${index}] 缺少 role`);
+    }
+  }
+  return errors;
+}
+
+export function validateTimelineLineShape(value: unknown): string[] {
+  if (!isRecord(value) || typeof value.type !== 'string') {
+    return ['page/timeline.jsonl 行缺少 type'];
+  }
+  if (value.type === 'navigate') {
+    return ['page/timeline.jsonl 导航类型必须是 navigation，不是 navigate'];
+  }
+  if (value.type === 'screenshot') {
+    if (typeof value.path !== 'string' || !value.path) {
+      return ['page/timeline.jsonl 截图行缺少 path'];
+    }
+    if (typeof value.role !== 'string' || !SCREENSHOT_ROLES.includes(value.role)) {
+      return ['page/timeline.jsonl 截图行缺少 role'];
+    }
+  }
+  return [];
+}

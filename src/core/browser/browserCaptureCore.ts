@@ -80,6 +80,19 @@ export function screenshotRoleFromLabel(label: string): ScreenshotRole {
   return 'unknown';
 }
 
+export function isViewerScreenshotEvent(event: { type?: unknown; role?: unknown }): boolean {
+  return event.type === 'screenshot' && event.role === 'viewer';
+}
+
+export function viewerScreenshotPaths(
+  events: Array<{ type?: unknown; role?: unknown; path?: unknown }>,
+): string[] {
+  return events
+    .filter(isViewerScreenshotEvent)
+    .map(event => event.path)
+    .filter((path): path is string => typeof path === 'string' && path.length > 0);
+}
+
 export function diffKeyLists(previous: string[] | undefined, next: string[]) {
   const prev = new Set(previous || []);
   const upcoming = new Set(next);

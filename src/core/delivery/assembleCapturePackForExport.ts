@@ -1,3 +1,4 @@
+import { viewerScreenshotPaths } from '../browser/browserCaptureCore';
 import { buildBrowserArtifacts } from '../browser/buildBrowserArtifacts';
 import { createEmptyCapturePack } from '../capture-pack/createEmptyCapturePack';
 import type { CapturePackArtifact, CapturePackDraft, CaptureTarget } from '../capture-pack/types';
@@ -155,7 +156,7 @@ export function assembleCapturePackForExport(
       httpRequestCount: input.network.httpRequests.length,
       webSocketCount: input.network.webSockets.length,
       webSocketUrls: [...new Set(input.network.webSockets.map(socket => socket.url).filter(Boolean))],
-      screenshotCount: input.page.events.filter(event => event.type === 'screenshot').length,
+      screenshotCount: viewerScreenshotPaths(input.page.events).length,
       hasOemProfile: artifacts.some(item => item.path === 'artifacts/oem-profile.yaml'),
       hasAuthenticated: Boolean(input.probe.authenticated),
       cookieNames: input.probe.authenticated?.cookieNames ?? [],

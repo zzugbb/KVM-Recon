@@ -21,12 +21,16 @@ describe('App', () => {
     expect(html).toContain('field-row-pair');
     expect(html).toContain('补拍画面（可选）');
     expect(html).toContain('采集当前画面');
+    expect(html).toContain('value="login"');
     expect(html).toContain('actions-extra');
     expect(html).toContain('当前阶段：新建采集');
     expect(html).toContain('填写 BMC 地址后点「新建采集作业」');
     expect(html).not.toContain('请开始采集并至少完成 BMC 登录、HTML5 KVM 入口点击和 WebSocket 建立。');
     expect(html).toContain('采集进度');
-    expect(html).toContain('采集当前画面');
+    expect(html).toContain('aria-label="离场适配就绪"');
+    expect(html).toContain('aria-label="采集进度"');
+    expect(html).toContain('aria-label="作业列表"');
+    expect(html).toContain('aria-label="本地打开 Capture Pack"');
     expect(html).toContain('关闭采集窗口');
     expect(html).toContain('登录后复验探测');
     expect(html).toContain('暂停采集');

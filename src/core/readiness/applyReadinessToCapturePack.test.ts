@@ -23,7 +23,7 @@ const partialChecklist: CaptureChecklist = {
       status: 'missing',
       severity: 'warning',
       evidence: [],
-      userAction: '请打开 HTML5 KVM 后等待画面区域稳定，再采集 viewer 页面截图。',
+      userAction: '打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。',
     },
   ],
 };
@@ -49,8 +49,8 @@ describe('applyReadinessToCapturePack', () => {
     });
     expect(updated.checklist).toBe(partialChecklist);
     expect(updated.reportMarkdown).toContain('离场适配就绪：PARTIAL');
-    expect(updated.reportMarkdown).toContain('请打开 HTML5 KVM 后等待画面区域稳定');
-    expect(updated.reportMarkdown).toContain('离场后怎么用');
+    expect(updated.reportMarkdown).toContain('打开 HTML5 KVM 后会自动截图');
+    expect(updated.reportMarkdown).toContain('阅读说明');
     expect(updated.reportMarkdown).toContain('README.md');
     expect(updated.reportHtml).toContain('<!doctype html>');
     expect(updated.files).toContain('report.html');

@@ -149,9 +149,13 @@ export function createSampleCapturePack() {
   });
 }
 
+export function diskContentFromArtifact(content: string | Uint8Array): string | Buffer {
+  return typeof content === 'string' ? content : Buffer.from(content);
+}
+
 export async function writeSampleCapturePack(rootDir: string) {
   const assembled = createSampleCapturePack();
-  const files = [
+  const files: Array<{ path: string; content: string | Buffer }> = [
     {
       path: 'manifest.json',
       content: JSON.stringify(assembled.pack.manifest, null, 2),
@@ -170,10 +174,7 @@ export async function writeSampleCapturePack(rootDir: string) {
     },
     ...(assembled.pack.artifacts ?? []).map(artifact => ({
       path: artifact.path,
-      content:
-        typeof artifact.content === 'string'
-          ? artifact.content
-          : Buffer.from(artifact.content).toString('utf8'),
+      content: diskContentFromArtifact(artifact.content),
     })),
   ];
 

@@ -12,6 +12,7 @@ describe('collectScreenshotArtifacts', () => {
           {
             type: 'screenshot',
             path: '/Users/ops/captures/job-001/screenshots/viewer-1.png',
+            role: 'viewer',
             timestamp: '2026-08-24T12:00:04.000+08:00',
           },
         ],
@@ -39,6 +40,7 @@ describe('collectScreenshotArtifacts', () => {
           {
             type: 'screenshot',
             path: 'page/screenshots/live.png',
+            role: 'unknown',
             sourcePath: '/tmp/kvm-recon/live.png',
             timestamp: '2026-08-24T12:00:04.000+08:00',
           },

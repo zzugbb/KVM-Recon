@@ -109,6 +109,7 @@ const pageWithScreenshot = {
     {
       type: 'screenshot',
       path: 'page/screenshots/viewer.png',
+      role: 'viewer',
       timestamp: '2026-08-24T12:00:04.000+08:00',
     },
   ],
@@ -156,6 +157,43 @@ describe('buildReadinessChecklist', () => {
       }),
     );
     expect(checklist.items.find(item => item.id === 'page.viewer.screenshot')?.title).not.toContain('已采集');
+  });
+
+  it('does not treat login or unlabeled screenshots as KVM viewer evidence', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: {
+        jobId: 'job-001',
+        events: [
+          {
+            type: 'selector-candidates',
+            candidates: [{ role: 'kvm-entry', selector: '#kvm', confidence: 0.8 }],
+            timestamp: '2026-08-24T12:00:01.000+08:00',
+          },
+          {
+            type: 'screenshot',
+            path: 'page/screenshots/login.png',
+            role: 'login',
+            timestamp: '2026-08-24T12:00:04.000+08:00',
+          },
+          {
+            type: 'screenshot',
+            path: 'page/screenshots/unlabeled.png',
+            timestamp: '2026-08-24T12:00:05.000+08:00',
+          },
+        ],
+      },
+      network: completeNetwork,
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items).toContainEqual(
+      expect.objectContaining({
+        id: 'page.viewer.screenshot',
+        status: 'missing',
+      }),
+    );
   });
 
   it('returns YES when key facts are complete and redaction passed', () => {

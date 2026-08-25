@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { createSampleCapturePack, writeSampleCapturePack } from './createSampleCapturePack';
+import {
+  createSampleCapturePack,
+  diskContentFromArtifact,
+} from './createSampleCapturePack';
 
 describe('sample capture pack', () => {
-  it('includes probe, http, ws, page, and tls artifacts for offline review', async () => {
+  it('includes probe, http, ws, page, and tls artifacts for offline review', () => {
     const root = join(process.cwd(), 'examples/sample-capture-pack');
-    await writeSampleCapturePack(root);
+    const assembled = createSampleCapturePack();
     const required = [
       'manifest.json',
       'checklist.json',
@@ -32,12 +35,16 @@ describe('sample capture pack', () => {
     ];
 
     expect(required.filter(path => existsSync(join(root, path)))).toEqual(required);
-    const readme = readFileSync(join(root, 'README.md'), 'utf8');
-    expect(readme).toContain('文件做什么');
-    expect(readme).toContain('必须问人或看网关仓库');
-    expect(readme).toContain('样例包，仅用于说明导出目录与 README 格式。');
-    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).tool.version).toBeTruthy();
-    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).job.operatorNote).toContain('样例包');
+    const diskReadme = readFileSync(join(root, 'README.md'), 'utf8');
+    const packReadme = assembled.pack.artifacts?.find(item => item.path === 'README.md');
+    expect(String(packReadme?.content)).toBe(diskReadme);
+    expect(diskReadme).toContain('文件做什么');
+    expect(diskReadme).toContain('必须问人或看网关仓库');
+    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).job.operatorNote).toContain(
+      '样例包',
+    );
+    expect(readFileSync(join(root, 'report.md'), 'utf8')).toContain('阅读说明');
+    expect(readFileSync(join(root, 'report.md'), 'utf8')).not.toContain('离场后怎么用');
   });
 
   it('builds a PARTIAL sample pack with KVM WebSocket facts but no screenshot', () => {
@@ -54,5 +61,12 @@ describe('sample capture pack', () => {
         'README.md',
       ]),
     );
+  });
+
+  it('keeps screenshot bytes intact when writing artifacts to disk', () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 255, 0, 26, 10]);
+    const written = diskContentFromArtifact(png);
+    expect(Buffer.from(written).equals(Buffer.from(png))).toBe(true);
+    expect(Buffer.from(Buffer.from(png).toString('utf8'), 'utf8').equals(Buffer.from(png))).toBe(false);
   });
 });

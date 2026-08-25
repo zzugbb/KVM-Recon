@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 
 import { buildCapturePackZip } from './buildCapturePackZip';
 import { compareCapturePacks, summarizeCapturePackZip } from './summarizeCapturePack';
-import { validateManifestShape, validateRequiredPackFiles } from './validateCapturePackShape';
+import { validateManifestShape, validateRequiredPackFiles, validateScreenshotIndexShape, validateTimelineLineShape } from './validateCapturePackShape';
 import { createSampleCapturePack } from '../delivery/createSampleCapturePack';
 
 describe('capture pack schema and local review', () => {
@@ -104,6 +104,28 @@ describe('capture pack schema and local review', () => {
   it('requires a pack root README.md', () => {
     expect(validateRequiredPackFiles(['manifest.json', 'checklist.json'])).toEqual(['缺少 README.md']);
     expect(validateRequiredPackFiles(['README.md', 'manifest.json'])).toEqual([]);
+  });
+
+  it('requires screenshot role in timeline and screenshot index', () => {
+    expect(validateScreenshotIndexShape([{ path: 'page/screenshots/login.png' }])).toEqual([
+      'page/screenshots.json[0] 缺少 role',
+    ]);
+    expect(
+      validateScreenshotIndexShape([{ path: 'page/screenshots/viewer.png', role: 'viewer' }]),
+    ).toEqual([]);
+    expect(validateTimelineLineShape({ type: 'screenshot', path: 'page/screenshots/a.png' })).toEqual([
+      'page/timeline.jsonl 截图行缺少 role',
+    ]);
+    expect(validateTimelineLineShape({ type: 'navigate', url: 'https://10.0.0.10/' })).toEqual([
+      'page/timeline.jsonl 导航类型必须是 navigation，不是 navigate',
+    ]);
+    expect(
+      validateTimelineLineShape({
+        type: 'screenshot',
+        path: 'page/screenshots/viewer.png',
+        role: 'viewer',
+      }),
+    ).toEqual([]);
   });
 
   it('reports a missing pack README without throwing', async () => {

@@ -12,6 +12,9 @@
 - `schema/` 增补 `page/timeline.jsonl`、`tls/certificate.json` 及页面/探测等导出文件的独立 JSON Schema
 - 导出包根目录改为中文 `README.md`（阅读地图 + 适配前裁定），不再写 `artifacts/handover.md`
 - 精简 `docs/development-plan.md` 为当前状态与边界，不再展开已完成阶段清单
+- KVM 画面截图只认 `role=viewer`；仅登录页/异常页截图不再算已采集、不会因此升 YES
+- 包内 `report.md` / `report.html` 只保留检查项，阅读说明指向根目录 `README.md`
+- 补拍画面默认改为登录页；本地打开 zip 会检查截图是否带 role
 
 ## [0.2.2] - 2026-08-25
 

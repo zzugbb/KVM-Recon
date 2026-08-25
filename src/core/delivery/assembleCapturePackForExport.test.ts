@@ -109,6 +109,7 @@ const pageWithScreenshot = {
     {
       type: 'screenshot',
       path: 'page/screenshots/viewer.png',
+      role: 'viewer',
       timestamp: '2026-08-24T12:00:04.000+08:00',
     },
   ],
@@ -214,5 +215,41 @@ describe('assembleCapturePackForExport', () => {
     });
     const packReadme = result.pack.artifacts?.find(item => item.path === 'README.md');
     expect(String(packReadme?.content)).toContain('不能替代 kvmFamily');
+  });
+
+  it('counts only viewer screenshots in the pack README', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-001',
+      startedAt: '2026-08-24T13:55:00.000+08:00',
+      endedAt: '2026-08-24T14:05:00.000+08:00',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      probe: completeProbe,
+      page: {
+        jobId: 'job-export-001',
+        events: [
+          {
+            type: 'selector-candidates',
+            candidates: [{ role: 'kvm-entry', selector: '#kvm', confidence: 0.8 }],
+            timestamp: '2026-08-24T12:00:01.000+08:00',
+          },
+          {
+            type: 'screenshot',
+            path: 'page/screenshots/login.png',
+            role: 'login',
+            timestamp: '2026-08-24T12:00:04.000+08:00',
+          },
+        ],
+      },
+      network: completeNetwork,
+    });
+
+    expect(result.pack.manifest.readiness.status).toBe('PARTIAL');
+    const packReadme = result.pack.artifacts?.find(item => item.path === 'README.md');
+    expect(String(packReadme?.content)).toContain('有没有 viewer 截图：没有');
+    expect(String(packReadme?.content)).toContain('页面截图：0');
   });
 });
