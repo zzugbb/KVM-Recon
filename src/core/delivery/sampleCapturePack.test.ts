@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -7,45 +7,44 @@ import {
   diskContentFromArtifact,
 } from './createSampleCapturePack';
 
+function walkFiles(dir: string, prefix = ''): string[] {
+  return readdirSync(dir).flatMap(name => {
+    if (name.startsWith('.')) return [];
+    const relativePath = prefix ? `${prefix}/${name}` : name;
+    const fullPath = join(dir, name);
+    return statSync(fullPath).isDirectory() ? walkFiles(fullPath, relativePath) : [relativePath];
+  });
+}
+
+function sameSampleContent(disk: Buffer, expected: string | Buffer) {
+  const want = Buffer.isBuffer(expected) ? expected : Buffer.from(expected);
+  if (disk.equals(want)) return true;
+  return disk.toString('utf8').replace(/\n+$/, '') === want.toString('utf8').replace(/\n+$/, '');
+}
+
 describe('sample capture pack', () => {
   it('includes probe, http, ws, page, and tls artifacts for offline review', () => {
     const root = join(process.cwd(), 'examples/sample-capture-pack');
     const assembled = createSampleCapturePack();
-    const required = [
-      'manifest.json',
-      'checklist.json',
-      'report.md',
-      'report.html',
-      'probe/bmc-basic.json',
-      'probe/path-evidence.json',
-      'probe/family-signatures.json',
-      'probe/redfish.json',
-      'probe/operator-observed.json',
-      'tls/certificate.json',
-      'http/requests.jsonl',
-      'http/har.json',
-      'ws/sockets.json',
-      'ws/frames.jsonl',
-      'page/timeline.jsonl',
-      'page/storage.json',
-      'page/selectors.json',
-      'page/screenshots.json',
-      'artifacts/oem-profile.yaml',
-      'README.md',
+    const expectedFiles = [
+      { path: 'manifest.json', content: JSON.stringify(assembled.pack.manifest, null, 2) },
+      { path: 'checklist.json', content: JSON.stringify(assembled.pack.checklist, null, 2) },
+      { path: 'report.md', content: assembled.pack.reportMarkdown },
+      { path: 'report.html', content: assembled.pack.reportHtml || '' },
+      ...(assembled.pack.artifacts ?? []).map(artifact => ({
+        path: artifact.path,
+        content: diskContentFromArtifact(artifact.content),
+      })),
     ];
 
-    expect(required.filter(path => existsSync(join(root, path)))).toEqual(required);
+    expect(walkFiles(root).sort()).toEqual(expectedFiles.map(file => file.path).sort());
+    for (const file of expectedFiles) {
+      expect(
+        sameSampleContent(readFileSync(join(root, file.path)), file.content),
+        `${file.path} must match createSampleCapturePack()`,
+      ).toBe(true);
+    }
     const diskReadme = readFileSync(join(root, 'README.md'), 'utf8');
-    const packReadme = assembled.pack.artifacts?.find(item => item.path === 'README.md');
-    expect(String(packReadme?.content)).toBe(diskReadme);
-    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'))).toEqual(assembled.pack.manifest);
-    expect(JSON.parse(readFileSync(join(root, 'checklist.json'), 'utf8'))).toEqual(assembled.pack.checklist);
-    expect(readFileSync(join(root, 'report.md'), 'utf8').replace(/\n+$/, '')).toBe(
-      assembled.pack.reportMarkdown.replace(/\n+$/, ''),
-    );
-    expect(readFileSync(join(root, 'report.html'), 'utf8').replace(/\n+$/, '')).toBe(
-      (assembled.pack.reportHtml || '').replace(/\n+$/, ''),
-    );
     expect(diskReadme).toContain('文件做什么');
     expect(diskReadme).toContain('必须问人或看网关仓库');
     expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).job.operatorNote).toContain(
