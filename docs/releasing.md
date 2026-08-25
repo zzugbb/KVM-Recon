@@ -23,12 +23,12 @@
 ## 发布到 GitHub Releases
 
 1. 更新 `package.json` 的 `version` 与 `CHANGELOG.md`，提交到 `main`。
-2. 创建 GitHub Release（标签如 `v0.2.4`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
+2. 创建 GitHub Release（标签如 `v0.2.5`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
 3. 也可以只打标签并推送：
 
 ```bash
-git tag -a v0.2.4 -m "KVM-Recon 0.2.4"
-git push origin v0.2.4
+git tag -a v0.2.5 -m "KVM-Recon 0.2.5"
+git push origin v0.2.5
 ```
 
 4. 标签匹配 `v*` 或在 Actions 里手动运行 **Release** 并填写标签后，workflow 会构建安装包并挂到该 Release，再附 `SHA256SUMS.txt`。

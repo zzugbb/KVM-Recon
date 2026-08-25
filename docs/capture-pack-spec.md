@@ -70,7 +70,7 @@ capture-pack/
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.4"
+    "version": "0.2.5"
   },
   "job": {
     "id": "2026-08-24T10-45-00Z-demo",
