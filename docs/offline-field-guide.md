@@ -76,7 +76,7 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 
 仓库提供 `examples/sample-capture-pack/` 作为离线查看样例。该样例不是实际设备数据，仅用于说明目录结构、报告格式和包内 `README.md`。
 
-## 7. 本阶段范围与限制
+## 7. 范围与限制
 
 采集侧功能已收口，见 `docs/development-plan.md` 当前状态。现场按本文采集即可，不必等待后续采集功能。
 

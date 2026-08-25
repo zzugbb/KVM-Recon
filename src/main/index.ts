@@ -345,7 +345,7 @@ function registerCaptureHandlers() {
     };
   });
 
-  ipcMain.handle('capture:collectPage', async (_event, jobId: string, role = 'live') => {
+  ipcMain.handle('capture:collectPage', async (_event, jobId: string, role = 'login') => {
     const session = captureSessions.get(jobId);
     if (!session) {
       return {
@@ -363,11 +363,11 @@ function registerCaptureHandlers() {
           ok: false as const,
           error: formatCaptureError({
             code: 'UNKNOWN',
-            detail: '采集窗口已关闭，无法补采当前页面。可直接导出已采集资料。',
+            detail: '采集窗口已关闭，无法补采当前画面。可直接导出已采集资料。',
           }),
         };
       }
-      const screenshotRole = typeof role === 'string' && role ? role : 'live';
+      const screenshotRole = typeof role === 'string' && role ? role : 'login';
       logger.info('collect-page', { jobId, role: screenshotRole });
       await session.controller.collectPageFacts(screenshotRole);
       return {

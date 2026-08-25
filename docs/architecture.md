@@ -162,6 +162,6 @@ KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发：
 - KVM 协议不可解码：只记录 WS 元数据和首包特征，离场后分析。
 - 资料不完整：导出前用 checklist 阻断或提示补采。
 
-## 7. 本阶段范围
+## 7. 范围
 
 采集侧代码已收口，见 `docs/development-plan.md` 当前状态。架构上不再规划 Adapter 生成器、在线分析或 MITM。真机验收与 Apple/微软付费代码签名按产品安排。安装包由 GitHub Actions 构建：macOS 为 ad-hoc 签名，Windows 无 Authenticode，见 `docs/releasing.md`。

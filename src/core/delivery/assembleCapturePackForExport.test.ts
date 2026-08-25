@@ -250,6 +250,6 @@ describe('assembleCapturePackForExport', () => {
     expect(result.pack.manifest.readiness.status).toBe('PARTIAL');
     const packReadme = result.pack.artifacts?.find(item => item.path === 'README.md');
     expect(String(packReadme?.content)).toContain('有没有 viewer 截图：没有');
-    expect(String(packReadme?.content)).toContain('页面截图：0');
+    expect(String(packReadme?.content)).toContain('KVM 画面截图：0');
   });
 });

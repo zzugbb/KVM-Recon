@@ -33,7 +33,7 @@
 | 探测 | TLS、Redfish、AMI / OpenBMC / 华为路径指纹、`unknown-h5` / `not-h5` |
 | 采集窗口 | 隔离 Chromium、自签证书、popup、选择器、storage key |
 | 网络 | CDP 记 HTTP/HAR、WS 元数据与采样帧、`windowRole` |
-| 画面 | 打开 HTML5 KVM 并收到画面后自动截图；可选补拍登录页/异常画面 |
+| 画面 | 打开 HTML5 KVM 并收到画面后自动截 `role=viewer`；清单/包 README 只认 viewer。可选补拍登录页/异常画面 |
 | 导出 | 脱敏检查、清单、`report.html`、包内中文 `README.md`、已知族 Profile 草稿 |
 | 作业 | 暂停/继续、最多 8 份、关窗后仍可导出、再次导出 |
 | 复核 | 本机打开/对比 zip；独立 JSON Schema 在 `schema/`（权威仍是 TypeScript） |

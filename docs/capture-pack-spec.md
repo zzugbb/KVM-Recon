@@ -229,6 +229,7 @@ HTTP 资料必须脱敏：
 
 - 包内相对路径与角色，例如 `{ "path": "page/screenshots/viewer.png", "role": "viewer" }`。
 - 角色：`login` / `home` / `kvm-entry` / `viewer` / `error` / `unknown`。
+- 离场清单 `page.viewer.screenshot` **只认 `role=viewer`**；登录页、菜单页、异常页或未标明 role 的截图不能让该项通过。
 - 不得包含采集机绝对路径。
 
 `page/screenshots/`：
@@ -276,7 +277,7 @@ HTTP 资料必须脱敏：
   "items": [
     {
       "id": "ws.kvm.established",
-      "title": "KVM WebSocket 已建立",
+      "title": "KVM WebSocket",
       "status": "pass",
       "severity": "blocking",
       "evidence": ["ws-0001"],
@@ -334,9 +335,9 @@ HTTP 资料必须脱敏：
 - Token/Cookie/CSRF 不得明文进入导出包。
 - 完整 KVM 视频流不得进入导出包。
 - 用户可查看脱敏摘要。
-- 工具应默认导出安全包；调试级原始包不作为本阶段功能。
+- 工具应默认导出安全包；不提供未脱敏的调试级原始包。
 
-## 12. 本阶段契约范围
+## 12. 契约范围
 
-采集侧代码阶段已收口。本规范与 `schema/`、`examples/sample-capture-pack/` 对齐当前导出物。`probe/operator-observed.json` 仅在现场填写了铭牌或备注时出现。`probe/authenticated.json` 仅在做过登录后复验时出现。
+采集侧代码已收口。本规范与 `schema/`、`examples/sample-capture-pack/` 对齐当前导出物。`probe/operator-observed.json` 仅在现场填写了铭牌或备注时出现。`probe/authenticated.json` 仅在做过登录后复验时出现。若改了导出结构，请同步更新样例目录（`writeSampleCapturePack`，见 `src/core/delivery/createSampleCapturePack.ts`）；`npm test` 不会改盘上样例。
 

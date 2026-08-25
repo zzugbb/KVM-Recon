@@ -73,7 +73,7 @@ npm run dev
 - `docs/capture-pack-spec.md`：Capture Pack 契约
 - `docs/releasing.md`：构建与发布安装包
 - `docs/development-plan.md`：项目边界与当前状态
-- `docs/mvp-architecture.md`：技术架构
+- `docs/architecture.md`：技术架构
 - `schema/`：JSON Schema（含 timeline、TLS、probe 等导出文件）
 - `CHANGELOG.md`：版本记录；发新版时把 `[Unreleased]` 收成版本号
 - `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`

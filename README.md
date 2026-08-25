@@ -73,7 +73,7 @@ Index: `docs/README.md`.
 - `docs/capture-pack-spec.md`: Capture Pack contract
 - `docs/releasing.md`: build and publish installers
 - `docs/development-plan.md`: product boundary and current status
-- `docs/mvp-architecture.md`: technical architecture
+- `docs/architecture.md`: technical architecture
 - `schema/`: JSON Schema for pack files (timeline, TLS, probes, and more)
 - `CHANGELOG.md`: version history; fold `[Unreleased]` into a version heading when you ship
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE`

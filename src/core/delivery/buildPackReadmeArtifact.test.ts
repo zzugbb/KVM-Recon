@@ -37,7 +37,8 @@ describe('buildPackReadmeArtifact', () => {
     expect(artifact.content).toContain('oem-profile.yaml');
     expect(artifact.content).toContain('文件做什么');
     expect(artifact.content).toContain('必须问人或看网关仓库');
-    expect(artifact.content).toContain('QSESSIONID');
+    expect(artifact.content).toContain('KVM 画面截图：2');
+    expect(artifact.content).toContain('有没有 viewer 截图：有 2 张');
     expect(artifact.content).not.toContain('自动写 Adapter');
     expect(artifact.content).not.toContain('artifacts/handover.md');
   });

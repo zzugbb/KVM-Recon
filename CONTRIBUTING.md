@@ -42,6 +42,7 @@ npm run test:e2e
 4. 描述里说明：改了什么、为什么、如何验证（`npm test` / `npm run typecheck` / 是否跑过 `test:e2e`）。
 5. 用户可见改动请写入 `CHANGELOG.md` 的 `[Unreleased]`。
 6. 使用仓库里的 PR 模板。
+7. 若改了 Capture Pack 导出结构，请同步 `examples/sample-capture-pack/`（`writeSampleCapturePack` 在 `src/core/delivery/createSampleCapturePack.ts`）。`npm test` 不会改盘上样例。
 
 ## Dependabot
 

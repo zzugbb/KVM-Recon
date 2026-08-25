@@ -55,7 +55,7 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '',
       `- kvmFamily：${input.kvmFamily}（置信度 ${input.familyConfidence}）`,
       `- 离场结论：${input.readiness}。${readinessAdvice}`,
-      `- HTTP 请求：${input.httpRequestCount}；WebSocket：${input.webSocketCount}；页面截图：${input.screenshotCount}`,
+      `- HTTP 请求：${input.httpRequestCount}；WebSocket：${input.webSocketCount}；KVM 画面截图：${input.screenshotCount}`,
       `- WebSocket URL：${joinOrNone(input.webSocketUrls)}`,
       `- 登录后复验：${input.hasAuthenticated ? '有 `probe/authenticated.json`' : '未做'}`,
       `- Cookie 名（无值）：${joinOrNone(input.cookieNames)}`,

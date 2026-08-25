@@ -15,6 +15,7 @@
 - KVM 画面截图只认 `role=viewer`；仅登录页/异常页截图不再算已采集、不会因此升 YES
 - 包内 `report.md` / `report.html` 只保留检查项，阅读说明指向根目录 `README.md`
 - 补拍画面默认改为登录页；本地打开 zip 会检查截图是否带 role
+- 包内 README 摘要改为「KVM 画面截图」（只计 viewer）；架构文档改名为 `docs/architecture.md`
 
 ## [0.2.2] - 2026-08-25
 
