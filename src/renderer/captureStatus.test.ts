@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ChecklistItem } from '../core/capture-pack/types';
 import { jobRowStatus, nextStepText, phaseLabel } from './captureStatus';
 
-const emptyItems = [];
+const emptyItems: ChecklistItem[] = [];
 
 describe('captureStatus', () => {
   it('keeps the idle phase as 新建采集', () => {
