@@ -37,7 +37,7 @@
 10. 需要暂时停止记录时可点“暂停采集”：窗口仍开着，但不再记录新的 HTTP / WebSocket / 点击；点“继续采集”后恢复。
 11. 导出前可点“关闭采集窗口”：窗口关掉后作业数据仍保留，可继续导出。也可直接点“停止采集并导出”。导出成功后可“再次导出”。
 12. 导出前会显示离场结论和脱敏摘要，确认后再选择保存位置。导出成功后采集窗口会关闭。
-13. 打开 `report.html` 或 `report.md`，确认离场结论。出机房后把 zip 交给工程师或 AI，并阅读 `artifacts/handover.md`。本工具不写 Adapter。
+13. 打开 `report.html` 或 `report.md`，确认离场结论。出机房后把 zip 交给工程师或 AI，并阅读包内 `README.md`。本工具不写 Adapter。
 14. 出机房联网前也可在本机“打开 Capture Pack”或“对比两份”，只读 zip，不调用公网。
 
 ## 3. 离场判断
@@ -84,4 +84,4 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 - 真实 BMC 验收见 `docs/development-plan.md` 第 13 节，按安排延后。
 - 日志只记录作业号、主机、就绪状态等非敏感字段。
 - 同一时刻最多保留 8 份作业。关闭采集窗口后仍可导出；关闭作业若尚未导出会先确认。可暂停记录且不关窗。
-- 本工具不写 Adapter、不调用公网分析。可在本机打开或对比 Capture Pack zip。出机房后把资料交给工程师或 AI，见包内 `artifacts/handover.md`。
+- 本工具不写 Adapter、不调用公网分析。可在本机打开或对比 Capture Pack zip。出机房后把资料交给工程师或 AI，见包内 `README.md`。

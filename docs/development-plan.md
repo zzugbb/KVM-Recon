@@ -337,7 +337,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 - 补充或修正网关注册、OEM Profile、OpenBMC/Huawei Adapter。
 - 根据 `checklist.json` 判断是否需要二次进场补采。
 
-上述工作不在本仓库实现。本包内的 `artifacts/handover.md` 和（已知族）`artifacts/oem-profile.yaml` 只是给离场分析用的事实摘要，需要人工/AI 审核，不能当生产 Adapter。
+上述工作不在本仓库实现。本包根目录的 `README.md` 和（已知族）`artifacts/oem-profile.yaml` 只是给离场分析用的事实摘要与阅读地图，需要人工/AI 审核，不能当生产 Adapter。
 
 ## 16. 阶段 9：采集作业可用性（不依赖真机）
 
@@ -384,14 +384,14 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 - Cookie / Set-Cookie 保留 cookie **名**，只脱敏值。
 - JSON 请求/响应体摘要保留字段名 `jsonKeys`，不保存明文敏感值。
 - URL query 中的 token 等参数脱敏，路径保留。
-- 每个包写入 `artifacts/handover.md`，说明出机房后如何把包交给工程师/AI。
+- 每个包写入根目录 `README.md`，说明文件用途和适配前要裁定的问题。
 - `report.html` 增加「离场后怎么用」。
 
 验收（模拟）：
 
 - `set-cookie: QSESSIONID=<redacted:...>` 能抽出 cookie 名 `QSESSIONID`，且不含明文 session。
 - 登录 JSON 可见 `UserName` / `Password` 字段名，不见密码原文。
-- 导出包含 `artifacts/handover.md`，文案不暗示本工具会写 Adapter。
+- 导出包含根目录 `README.md`，文案不暗示本工具会写 Adapter。
 
 ## 18. 项目边界
 
@@ -446,7 +446,7 @@ KVM-Recon 交出去的是 Capture Pack，不是 Adapter。
 
 - 界面增加现场厂商、型号、固件、机柜位置；作业备注仍为自由文本。
 - 导出写入 `manifest.job.observed` 与 `probe/operator-observed.json`。
-- `artifacts/handover.md` 分别列出铭牌字段，并写明不能替代 `kvmFamily`。
+- 包内 `README.md` 分别列出铭牌字段，并写明不能替代 `kvmFamily`。
 - 探测得到的协议族不受铭牌字段影响。
 
 验收（模拟）：

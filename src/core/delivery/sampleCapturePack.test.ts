@@ -27,7 +27,7 @@ describe('sample capture pack', () => {
       'page/selectors.json',
       'page/screenshots.json',
       'artifacts/oem-profile.yaml',
-      'artifacts/handover.md',
+      'README.md',
     ];
 
     expect(required.filter(path => existsSync(join(root, path)))).toEqual(required);

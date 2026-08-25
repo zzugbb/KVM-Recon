@@ -142,7 +142,7 @@ describe('assembleCapturePackForExport', () => {
         'ws/sockets.json',
         'page/timeline.jsonl',
         'artifacts/oem-profile.yaml',
-        'artifacts/handover.md',
+        'README.md',
       ]),
     );
   });
@@ -212,7 +212,7 @@ describe('assembleCapturePackForExport', () => {
       vendor: 'Huawei',
       product: '2288H V5',
     });
-    const handover = result.pack.artifacts?.find(item => item.path === 'artifacts/handover.md');
-    expect(String(handover?.content)).toContain('不能替代 kvmFamily');
+    const packReadme = result.pack.artifacts?.find(item => item.path === 'README.md');
+    expect(String(packReadme?.content)).toContain('不能替代 kvmFamily');
   });
 });

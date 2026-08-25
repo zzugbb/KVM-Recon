@@ -44,7 +44,7 @@ Step-by-step field instructions (Chinese) are in `docs/offline-field-guide.md`.
 4. An embedded browser opens the BMC. On-site staff **manually** log in if needed.
 5. Open the HTML5 KVM entry and wait for the viewer and WebSocket. If KVM opens in a new window, keep that window in the foreground for at least 10 seconds.
 6. The tool records HTTP, WebSocket, page events, screenshots, storage keys, TLS, fingerprints, and the checklist.
-7. Export a Capture Pack. After leaving the room, read `artifacts/handover.md` inside the pack.
+7. Export a Capture Pack. After leaving the room, read `README.md` inside the pack.
 
 The main window shows the current tool version (`vX.Y.Z`), matching `manifest.tool.version` in the exported pack.
 

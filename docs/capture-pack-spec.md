@@ -19,7 +19,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - `page/screenshots.json`：包内截图相对路径索引。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
-- 每个包都有 `artifacts/handover.md`：说明出机房后如何把资料交给工程师或 AI。
+- 每个包都有根目录 `README.md`：给人与 AI 看的阅读地图和适配前裁定项。
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代 `kvmFamily`。
 
@@ -29,6 +29,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 
 ```text
 capture-pack/
+  README.md
   manifest.json
   probe/
     bmc-basic.json
@@ -56,7 +57,6 @@ capture-pack/
   artifacts/
     oem-profile.yaml
     notes.md
-    handover.md
 ```
 
 ## 3. manifest.json

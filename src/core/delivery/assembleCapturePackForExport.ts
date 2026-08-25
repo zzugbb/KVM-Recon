@@ -14,7 +14,7 @@ import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCaptur
 import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
 import { validateRedactionForExport } from '../redaction/validateRedactionForExport';
 import { buildCapturePackFileName } from './buildCapturePackFileName';
-import { buildHandoverArtifact } from './buildHandoverArtifact';
+import { buildPackReadmeArtifact } from './buildPackReadmeArtifact';
 import {
   buildOperatorObservedArtifact,
   normalizeOperatorObserved,
@@ -130,15 +130,35 @@ export function assembleCapturePackForExport(
   );
   pack.artifacts = [
     ...artifacts,
-    buildHandoverArtifact({
+    buildPackReadmeArtifact({
       kvmFamily: pack.manifest.family.primary,
+      familyConfidence: pack.manifest.family.confidence,
       readiness: pack.manifest.readiness.status,
+      blockingTitles: pack.checklist.items
+        .filter(
+          item =>
+            item.severity === 'blocking' &&
+            item.status !== 'pass' &&
+            item.status !== 'not_applicable',
+        )
+        .map(item => item.title),
+      warningTitles: pack.checklist.items
+        .filter(
+          item =>
+            item.severity === 'warning' &&
+            item.status !== 'pass' &&
+            item.status !== 'not_applicable',
+        )
+        .map(item => item.title),
       operatorNote: operatorObserved.note,
       operatorObserved,
       httpRequestCount: input.network.httpRequests.length,
       webSocketCount: input.network.webSockets.length,
+      webSocketUrls: [...new Set(input.network.webSockets.map(socket => socket.url).filter(Boolean))],
       screenshotCount: input.page.events.filter(event => event.type === 'screenshot').length,
       hasOemProfile: artifacts.some(item => item.path === 'artifacts/oem-profile.yaml'),
+      hasAuthenticated: Boolean(input.probe.authenticated),
+      cookieNames: input.probe.authenticated?.cookieNames ?? [],
     }),
   ];
 

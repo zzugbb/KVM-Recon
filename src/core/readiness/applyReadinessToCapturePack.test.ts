@@ -51,7 +51,7 @@ describe('applyReadinessToCapturePack', () => {
     expect(updated.reportMarkdown).toContain('离场适配就绪：PARTIAL');
     expect(updated.reportMarkdown).toContain('请打开 HTML5 KVM 后等待画面区域稳定');
     expect(updated.reportMarkdown).toContain('离场后怎么用');
-    expect(updated.reportMarkdown).toContain('artifacts/handover.md');
+    expect(updated.reportMarkdown).toContain('README.md');
     expect(updated.reportHtml).toContain('<!doctype html>');
     expect(updated.files).toContain('report.html');
 

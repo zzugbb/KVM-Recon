@@ -53,7 +53,7 @@ function buildReadinessReportMarkdown(checklist: CaptureChecklist): string {
     '## 离场后怎么用',
     '',
     '- KVM-Recon 不在机房写 Adapter，也不调用公网分析服务。',
-    '- 出机房联网后，把本 zip 交给工程师或 AI，并阅读 `artifacts/handover.md`。',
+    '- 出机房联网后，把本 zip 交给工程师或 AI，先读包内 `README.md`。',
   ].join('\n');
 }
 

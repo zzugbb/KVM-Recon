@@ -44,7 +44,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 4. 内嵌浏览器打开 BMC，现场人员按需**手工**登录。
 5. 点击 HTML5 KVM 入口，等待 viewer 与 WebSocket。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
 6. 工具记录 HTTP、WebSocket、页面、截图、storage key、TLS、指纹和 checklist。
-7. 导出 Capture Pack。出机房后阅读包内 `artifacts/handover.md`。
+7. 导出 Capture Pack。出机房后阅读包内 `README.md`。
 
 主窗口标题旁会显示当前工具版本（`vX.Y.Z`），与导出包 `manifest.tool.version` 一致。
 
