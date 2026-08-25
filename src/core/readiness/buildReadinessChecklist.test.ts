@@ -227,4 +227,106 @@ describe('buildReadinessChecklist', () => {
       }),
     );
   });
+
+  it('scores fingerprint from TLS and KVM traffic instead of a stale AMI probe label', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: {
+          ...completeProbe.basic,
+          vendor: '',
+          product: '',
+        },
+        paths: {
+          apiRandomtag: true,
+          apiSession: true,
+          apiKvmToken: true,
+          randomtag: true,
+          sessionService: true,
+          kvmService: true,
+          setKvmKey: false,
+          kvmVideo: false,
+        },
+        familySignatures: {
+          primary: 'ami-megarac',
+          confidence: 0.9,
+          candidates: [
+            {
+              kvmFamily: 'ami-megarac',
+              confidence: 0.9,
+              evidence: ['/api/randomtag', '/api/session', '/api/kvm/token'],
+            },
+          ],
+        },
+        tls: {
+          ...completeProbe.tls,
+          certificate: {
+            ...completeProbe.tls.certificate,
+            subject: { O: 'OpenBMC', CN: 'bmc' },
+            issuer: { O: 'OpenBMC', CN: 'bmc' },
+          },
+        },
+        authenticated: {
+          attempted: true,
+          cookieNames: ['SESSION'],
+          paths: {
+            apiRandomtag: false,
+            apiSession: false,
+            apiKvmToken: false,
+            randomtag: true,
+            sessionService: true,
+            kvmService: true,
+            setKvmKey: false,
+            kvmVideo: false,
+          },
+        },
+      },
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-08-25T14:00:10.000+08:00',
+            method: 'POST',
+            url: 'https://bmc.example/redfish/v1/SessionService/Sessions',
+            resourceType: 'xhr',
+            status: 201,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 32, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 64, redactedFields: ['Token'] },
+            tags: ['login' as const],
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-kvm',
+            createdAt: '2026-08-25T14:00:14.000+08:00',
+            url: 'wss://bmc.example/kvm/video',
+            subProtocols: ['token'],
+            requestHeaders: {},
+            binaryFrameCount: 8,
+            textFrameCount: 0,
+            tags: ['kvm-video' as const],
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-kvm',
+            timestamp: '2026-08-25T14:00:14.100+08:00',
+            direction: 'up' as const,
+            opcode: 'text' as const,
+            bytes: 48,
+            headHex: Buffer.from('{"paths":["/xyz/openbmc_project/', 'utf8').toString('hex'),
+            sampled: true,
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    const fingerprint = checklist.items.find(item => item.id === 'bmc.fingerprint');
+    expect(fingerprint?.evidence[0]).toMatch(/^openbmc-h5:/);
+    expect(fingerprint?.evidence.join(' ')).not.toContain('/api/session');
+  });
 });

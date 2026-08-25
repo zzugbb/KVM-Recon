@@ -7,6 +7,7 @@ import type {
   ChecklistStatus,
 } from '../capture-pack/types';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
+import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 import type {
   HttpRequestRecord,
   WebSocketFrameRecord,
@@ -104,11 +105,16 @@ function probeConnectionEvidence(probe: ProbeBmcTargetResult | null | undefined)
   return evidence;
 }
 
-function familyEvidence(probe: ProbeBmcTargetResult | null | undefined): string[] {
-  if (!probe || probe.familySignatures.primary === 'unknown-h5') return [];
+function familyEvidence(
+  probe: ProbeBmcTargetResult | null | undefined,
+  network: NetworkSnapshot | null | undefined,
+): string[] {
+  if (!probe) return [];
+  const family = scoreCapturedKvmFamily(probe, network);
+  if (family.primary === 'unknown-h5') return [];
   return [
-    `${probe.familySignatures.primary}:${probe.familySignatures.confidence}`,
-    ...probe.familySignatures.candidates.flatMap(candidate => candidate.evidence),
+    `${family.primary}:${family.confidence}`,
+    ...family.candidates.flatMap(candidate => candidate.evidence),
   ];
 }
 
@@ -144,7 +150,7 @@ function readinessFromItems(items: ChecklistItem[]): CaptureReadiness {
 
 export function buildReadinessChecklist(input: BuildReadinessChecklistInput): CaptureChecklist {
   const connectionEvidence = probeConnectionEvidence(input.probe);
-  const signatureEvidence = familyEvidence(input.probe);
+  const signatureEvidence = familyEvidence(input.probe, input.network);
   const loginIds = loginEvidence(input.network);
   const entryEvidence = [...selectorEvidence(input.page), ...keyHttpEvidence(input.network)];
   const httpIds = keyHttpEvidence(input.network);

@@ -81,6 +81,13 @@ export function isApiPathHit(status: number, data: unknown): boolean {
   return false;
 }
 
+function isKvmVideoPathHit(status: number, data: unknown): boolean {
+  // /kvm/video 是 WS 升级口，GET 常返回 401/空页，不能当 OpenBMC 强证据
+  if (!(status >= 200 && status < 300)) return false;
+  if (isHtmlPayload(data)) return false;
+  return Boolean(data) && typeof data === 'object';
+}
+
 function readStringField(data: unknown, keys: string[]): string {
   if (!data || typeof data !== 'object') return '';
   const record = data as Record<string, unknown>;
@@ -118,7 +125,10 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
   await Promise.all(
     PATHS.map(async ([key, path]) => {
       const response = await safeGet(input.httpClient, path);
-      paths[key] = isApiPathHit(response.status, response.data);
+      paths[key] =
+        key === 'kvmVideo'
+          ? isKvmVideoPathHit(response.status, response.data)
+          : isApiPathHit(response.status, response.data);
     }),
   );
 

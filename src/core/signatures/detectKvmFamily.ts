@@ -243,16 +243,72 @@ function decodeHeadHex(headHex: string): string {
   }
 }
 
+function isDocumentNavigation(resourceType?: string) {
+  const type = String(resourceType || '').toLowerCase();
+  return type === 'document' || type === 'main_frame' || type === 'sub_frame';
+}
+
+export function overlayPathEvidence(
+  base: NonNullable<ProbeSignatureInput['paths']> = {},
+  extra: NonNullable<ProbeSignatureInput['paths']> = {},
+): NonNullable<ProbeSignatureInput['paths']> {
+  const merged: NonNullable<ProbeSignatureInput['paths']> = { ...base };
+  for (const [key, value] of Object.entries(extra) as Array<
+    [keyof NonNullable<ProbeSignatureInput['paths']>, boolean | undefined]
+  >) {
+    if (typeof value === 'boolean') {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 export function trafficEvidenceFromNetwork(network?: {
-  httpRequests?: Array<{ url?: string }>;
+  httpRequests?: Array<{ url?: string; resourceType?: string }>;
   webSockets?: Array<{ url?: string }>;
   webSocketFrames?: Array<{ headHex?: string }>;
 }): NonNullable<ProbeSignatureInput['traffic']> {
   return {
-    httpUrls: (network?.httpRequests || []).map(item => item.url || '').filter(Boolean),
+    httpUrls: (network?.httpRequests || [])
+      .filter(item => item.url && !isDocumentNavigation(item.resourceType))
+      .map(item => item.url || ''),
     webSocketUrls: (network?.webSockets || []).map(item => item.url || '').filter(Boolean),
     frameHeads: (network?.webSocketFrames || [])
       .map(item => decodeHeadHex(item.headHex || ''))
       .filter(Boolean),
   };
+}
+
+export function scoreCapturedKvmFamily(
+  probe?: {
+    basic?: { vendor?: string; product?: string };
+    paths?: ProbeSignatureInput['paths'];
+    tls?: {
+      certificate?: {
+        subject?: Record<string, unknown>;
+        issuer?: Record<string, unknown>;
+      } | null;
+    };
+    authenticated?: { paths?: ProbeSignatureInput['paths'] };
+  } | null,
+  network?: {
+    httpRequests?: Array<{ url?: string; resourceType?: string }>;
+    webSockets?: Array<{ url?: string }>;
+    webSocketFrames?: Array<{ headHex?: string }>;
+  } | null,
+): KvmFamilyDetectionResult {
+  if (!probe) {
+    return { primary: 'not-h5', confidence: 0, candidates: [] };
+  }
+  return detectKvmFamily({
+    redfish: {
+      vendor: probe.basic?.vendor,
+      product: probe.basic?.product,
+    },
+    paths: overlayPathEvidence(probe.paths, probe.authenticated?.paths),
+    tls: {
+      organization: tlsOrganizationFromCertificate(probe.tls?.certificate),
+    },
+    traffic: trafficEvidenceFromNetwork(network || undefined),
+  });
 }

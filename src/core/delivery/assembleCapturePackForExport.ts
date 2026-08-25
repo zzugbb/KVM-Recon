@@ -10,7 +10,7 @@ import type {
 import { buildNetworkArtifacts } from '../network/buildNetworkArtifacts';
 import { buildOemProfileArtifacts } from '../profile/buildOemProfileArtifacts';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
-import { detectKvmFamily, tlsOrganizationFromCertificate, trafficEvidenceFromNetwork } from '../signatures/detectKvmFamily';
+import { overlayPathEvidence, scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 import { buildProbeArtifacts } from '../probe/buildProbeArtifacts';
 import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCapturePack';
 import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
@@ -85,19 +85,10 @@ export function assembleCapturePackForExport(
   });
 
   pack.manifest.job.endedAt = input.endedAt;
-  const familySignatures = detectKvmFamily({
-    redfish: {
-      vendor: input.probe.basic.vendor,
-      product: input.probe.basic.product,
-    },
-    paths: input.probe.paths,
-    tls: {
-      organization: tlsOrganizationFromCertificate(input.probe.tls.certificate),
-    },
-    traffic: trafficEvidenceFromNetwork(input.network),
-  });
+  const familySignatures = scoreCapturedKvmFamily(input.probe, input.network);
   const probe = {
     ...input.probe,
+    paths: overlayPathEvidence(input.probe.paths, input.probe.authenticated?.paths),
     familySignatures,
   };
   pack.manifest.family = {

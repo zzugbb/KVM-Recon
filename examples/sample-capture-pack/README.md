@@ -36,7 +36,7 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 | `checklist.json` / `report.html` | 离场能否适配、缺哪一项 |
 | `probe/bmc-basic.json` | 匿名探测到的厂商/型号/固件（可能为空） |
 | `probe/family-signatures.json` | 为何判成这一族、证据路径 |
-| `probe/path-evidence.json` | 指纹路径是否为 JSON/API 命中（HTML 200 不算） |
+| `probe/path-evidence.json` | 指纹路径是否命中（HTML 200 不算） |
 | `probe/redfish.json` | Redfish 根是否通、根上的原始字段 |
 | `probe/operator-observed.json` | 现场看铭牌填的厂商/型号（可选） |
 | `probe/authenticated.json` | 登录后复验：Cookie 名和带会话后的路径（可选，无 Cookie 值） |

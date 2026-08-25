@@ -1,6 +1,7 @@
 import type { CaptureTarget } from '../capture-pack/types';
 import {
   detectKvmFamily,
+  overlayPathEvidence,
   tlsOrganizationFromCertificate,
   type ProbeSignatureInput,
 } from '../signatures/detectKvmFamily';
@@ -69,20 +70,7 @@ export async function probeBmcTarget(input: ProbeBmcTargetInput): Promise<ProbeB
   };
 }
 
-export function overlayPathEvidence(
-  base: NonNullable<ProbeSignatureInput['paths']> = {},
-  extra: NonNullable<ProbeSignatureInput['paths']> = {},
-): NonNullable<ProbeSignatureInput['paths']> {
-  const merged: NonNullable<ProbeSignatureInput['paths']> = { ...base };
-  for (const [key, value] of Object.entries(extra) as Array<
-    [keyof NonNullable<ProbeSignatureInput['paths']>, boolean | undefined]
-  >) {
-    if (typeof value === 'boolean') {
-      merged[key] = value;
-    }
-  }
-  return merged;
-}
+export { overlayPathEvidence };
 
 export function applyAuthenticatedProbe(
   anonymous: ProbeBmcTargetResult,

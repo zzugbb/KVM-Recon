@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectKvmFamily } from './detectKvmFamily';
+import { detectKvmFamily, scoreCapturedKvmFamily, trafficEvidenceFromNetwork } from './detectKvmFamily';
 
 describe('detectKvmFamily', () => {
   it('detects AMI MegaRAC from /api paths but does not give 0.9 without matching HTTP traffic', () => {
@@ -138,5 +138,55 @@ describe('detectKvmFamily', () => {
     expect(result.candidates[0].evidence).toEqual(
       expect.arrayContaining(['tls.O=OpenBMC', 'ws:/xyz/openbmc_project', 'ws:/kvm/video']),
     );
+  });
+
+  it('ignores document navigations when collecting AMI HTTP traffic', () => {
+    const traffic = trafficEvidenceFromNetwork({
+      httpRequests: [
+        { url: 'https://bmc.example/api/session', resourceType: 'document' },
+        { url: 'https://bmc.example/api/kvm/token', resourceType: 'xhr' },
+      ],
+    });
+
+    expect(traffic.httpUrls).toEqual(['https://bmc.example/api/kvm/token']);
+  });
+
+  it('lets authenticated false overlay stale AMI paths when scoring a capture', () => {
+    const result = scoreCapturedKvmFamily(
+      {
+        basic: { vendor: '', product: '' },
+        paths: {
+          apiRandomtag: true,
+          apiSession: true,
+          apiKvmToken: true,
+        },
+        tls: {
+          certificate: { subject: { O: 'OpenBMC' } },
+        },
+        authenticated: {
+          paths: {
+            apiRandomtag: false,
+            apiSession: false,
+            apiKvmToken: false,
+            randomtag: true,
+            sessionService: true,
+            kvmService: true,
+          },
+        },
+      },
+      {
+        httpRequests: [{ url: 'https://bmc.example/redfish/v1/Managers/1/KvmService', resourceType: 'xhr' }],
+        webSockets: [
+          { url: 'wss://bmc.example/subscribe' },
+          { url: 'wss://bmc.example/kvm/video' },
+        ],
+        webSocketFrames: [
+          { headHex: Buffer.from('{"paths":["/xyz/openbmc_project/', 'utf8').toString('hex') },
+        ],
+      },
+    );
+
+    expect(result.primary).toBe('openbmc-h5');
+    expect(result.candidates.map(item => item.kvmFamily)).not.toContain('ami-megarac');
   });
 });

@@ -16,12 +16,8 @@ import {
 } from '../core/delivery/formatCaptureError';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 import { createCaptureLogger } from '../core/log/createCaptureLogger';
-import {
-  detectKvmFamily,
-  tlsOrganizationFromCertificate,
-  trafficEvidenceFromNetwork,
-} from '../core/signatures/detectKvmFamily';
 import { applyAuthenticatedProbe, probeBmcTarget } from '../core/probe/probeBmcTarget';
+import { scoreCapturedKvmFamily } from '../core/signatures/detectKvmFamily';
 import { createNodeProbeHttpClient } from '../core/probe/createNodeProbeHttpClient';
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
@@ -61,17 +57,7 @@ function toJobSummary(session: CaptureSession): CaptureJobSummary {
     host: session.target.host,
     port: session.target.port,
     scheme: session.target.scheme,
-    family: detectKvmFamily({
-      redfish: {
-        vendor: session.probe.basic.vendor,
-        product: session.probe.basic.product,
-      },
-      paths: session.probe.paths,
-      tls: {
-        organization: tlsOrganizationFromCertificate(session.probe.tls.certificate),
-      },
-      traffic: trafficEvidenceFromNetwork(session.controller.network()),
-    }).primary,
+    family: scoreCapturedKvmFamily(session.probe, session.controller.network()).primary,
     startedAt: session.startedAt,
     vendor: session.operatorObserved?.vendor || '',
     product: session.operatorObserved?.product || '',

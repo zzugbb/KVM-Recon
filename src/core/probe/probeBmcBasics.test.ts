@@ -69,16 +69,33 @@ describe('probeBmcBasics', () => {
         '/api/randomtag': { status: 200, data: { token: 'x' } },
         '/api/session': { status: 200, data: { ok: true } },
         '/api/kvm/token': { status: 401 },
-        '/kvm/video': { status: 200, data: { stream: true } },
+        '/kvm/video': { status: 401 },
       }),
     });
 
     expect(result.paths.apiRandomtag).toBe(true);
     expect(result.paths.apiSession).toBe(true);
     expect(result.paths.apiKvmToken).toBe(true);
-    expect(result.paths.kvmVideo).toBe(true);
+    expect(result.paths.kvmVideo).toBe(false);
     expect(result.familySignatures.primary).toBe('ami-megarac');
     expect(result.familySignatures.confidence).toBeLessThan(0.8);
+  });
+
+  it('does not treat GET /kvm/video 401 as OpenBMC path evidence', async () => {
+    const result = await probeBmcBasics({
+      target: {
+        host: '10.0.0.13',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: createHttpClient({
+        '/kvm/video': { status: 401 },
+        '/randomtag': { status: 200, data: { tag: 'x' } },
+      }),
+    });
+
+    expect(result.paths.kvmVideo).toBe(false);
+    expect(result.paths.randomtag).toBe(true);
   });
 
   it('does not treat SPA HTML 200 as AMI /api evidence', async () => {
