@@ -38,6 +38,14 @@ describe('sample capture pack', () => {
     const diskReadme = readFileSync(join(root, 'README.md'), 'utf8');
     const packReadme = assembled.pack.artifacts?.find(item => item.path === 'README.md');
     expect(String(packReadme?.content)).toBe(diskReadme);
+    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'))).toEqual(assembled.pack.manifest);
+    expect(JSON.parse(readFileSync(join(root, 'checklist.json'), 'utf8'))).toEqual(assembled.pack.checklist);
+    expect(readFileSync(join(root, 'report.md'), 'utf8').replace(/\n+$/, '')).toBe(
+      assembled.pack.reportMarkdown.replace(/\n+$/, ''),
+    );
+    expect(readFileSync(join(root, 'report.html'), 'utf8').replace(/\n+$/, '')).toBe(
+      (assembled.pack.reportHtml || '').replace(/\n+$/, ''),
+    );
     expect(diskReadme).toContain('文件做什么');
     expect(diskReadme).toContain('必须问人或看网关仓库');
     expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).job.operatorNote).toContain(

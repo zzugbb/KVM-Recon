@@ -44,3 +44,12 @@ describe('classifyCaptureError', () => {
     );
   });
 });
+
+describe('export and redaction recovery text', () => {
+  it('does not name the PARTIAL-only button when asking the operator to retry export', () => {
+    expect(formatCaptureError({ code: 'EXPORT_FAILED' }).action).toContain('重新导出 Capture Pack');
+    expect(formatCaptureError({ code: 'EXPORT_FAILED' }).action).not.toContain('停止采集并导出');
+    expect(formatCaptureError({ code: 'REDACTION_FAILED' }).action).toContain('再导出 Capture Pack');
+    expect(formatCaptureError({ code: 'REDACTION_FAILED' }).action).not.toContain('停止采集并导出');
+  });
+});
