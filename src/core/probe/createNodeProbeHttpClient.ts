@@ -43,7 +43,7 @@ export function createNodeProbeHttpClient(
             timeout: 8000,
             headers: {
               Host: target.host,
-              Accept: 'application/json,text/html,*/*',
+              Accept: 'application/json, */*;q=0.1',
               ...options.extraHeaders,
             },
             servername: tlsServerName(target.host),

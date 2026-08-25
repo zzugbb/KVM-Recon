@@ -7,7 +7,7 @@
 
 ## 检查项
 - BMC 基础连接：pass / blocking；证据：https://10.0.0.10:443, tls:TLSv1.2；补采动作：无
-- BMC 协议族指纹：pass / warning；证据：ami-megarac:0.9, /api/randomtag, /api/session, /api/kvm/token；补采动作：无
+- BMC 协议族指纹：pass / warning；证据：ami-megarac:0.9, /api/randomtag, /api/session, /api/kvm/token, http:/api/session, http:/api/kvm/token；补采动作：无
 - 登录链路 HTTP 资料：pass / blocking；证据：login-1；补采动作：无
 - HTML5 KVM 入口：pass / blocking；证据：#kvm, token-1；补采动作：无
 - KVM 关键 HTTP API：pass / warning；证据：token-1；补采动作：无

@@ -1,5 +1,9 @@
 import type { CaptureTarget } from '../capture-pack/types';
-import { detectKvmFamily, type ProbeSignatureInput } from '../signatures/detectKvmFamily';
+import {
+  detectKvmFamily,
+  tlsOrganizationFromCertificate,
+  type ProbeSignatureInput,
+} from '../signatures/detectKvmFamily';
 import { createNodeProbeHttpClient } from './createNodeProbeHttpClient';
 import { probeBmcBasics, type ProbeBmcBasicsResult, type ProbeHttpClient } from './probeBmcBasics';
 import { probeTlsInfo, type TlsProbeResult } from './probeTlsInfo';
@@ -52,10 +56,20 @@ export async function probeBmcTarget(input: ProbeBmcTargetInput): Promise<ProbeB
   return {
     ...basics,
     tls,
+    familySignatures: detectKvmFamily({
+      redfish: {
+        vendor: basics.basic.vendor,
+        product: basics.basic.product,
+      },
+      paths: basics.paths,
+      tls: {
+        organization: tlsOrganizationFromCertificate(tls.certificate),
+      },
+    }),
   };
 }
 
-export function mergePathEvidence(
+export function overlayPathEvidence(
   base: NonNullable<ProbeSignatureInput['paths']> = {},
   extra: NonNullable<ProbeSignatureInput['paths']> = {},
 ): NonNullable<ProbeSignatureInput['paths']> {
@@ -63,7 +77,9 @@ export function mergePathEvidence(
   for (const [key, value] of Object.entries(extra) as Array<
     [keyof NonNullable<ProbeSignatureInput['paths']>, boolean | undefined]
   >) {
-    merged[key] = Boolean(merged[key] || value);
+    if (typeof value === 'boolean') {
+      merged[key] = value;
+    }
   }
   return merged;
 }
@@ -73,7 +89,7 @@ export function applyAuthenticatedProbe(
   authenticated: ProbeBmcTargetResult,
   cookieNames: string[],
 ): ProbeBmcTargetResult {
-  const paths = mergePathEvidence(anonymous.paths, authenticated.paths);
+  const paths = overlayPathEvidence(anonymous.paths, authenticated.paths);
   const vendor = anonymous.basic.vendor || authenticated.basic.vendor;
   const product = anonymous.basic.product || authenticated.basic.product;
   return {
@@ -88,6 +104,9 @@ export function applyAuthenticatedProbe(
     familySignatures: detectKvmFamily({
       redfish: { vendor, product },
       paths,
+      tls: {
+        organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
+      },
     }),
     authenticated: {
       attempted: true,

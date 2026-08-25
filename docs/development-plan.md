@@ -11,7 +11,7 @@
 - 不依赖公网，不在现场调用外部分析服务。
 - 不保存明文密码、Cookie 值、完整 KVM 视频码流。
 - 不实现生产 KVM 网关，不实现浏览器插件。
-- `kvmFamily` 是协议主键；厂商和型号只作铭牌/证据，不能覆盖族判定。
+- `kvmFamily` 是协议主键；厂商和型号只作铭牌/证据，不能覆盖族判定。族判定结合路径形态、TLS 与真实 HTTP/WS，不以匿名 HTML 200 定主键。
 - 未知族只导出资料包，不自动生成 Adapter。
 
 ## 3. 当前状态（2026-08-25）
@@ -30,7 +30,7 @@
 
 | 能力 | 说明 |
 | --- | --- |
-| 探测 | TLS、Redfish、AMI / OpenBMC / 华为路径指纹、`unknown-h5` / `not-h5` |
+| 探测 | TLS、Redfish、路径形态 + 真实 HTTP/WS 族判定、`unknown-h5` / `not-h5` |
 | 采集窗口 | 隔离 Chromium、自签证书、popup、选择器、storage key |
 | 网络 | CDP 记 HTTP/HAR、WS 元数据与采样帧、`windowRole` |
 | 画面 | 打开 HTML5 KVM 并收到画面后自动截 `role=viewer`；清单/包 README 只认 viewer。可选补拍登录页/异常画面 |

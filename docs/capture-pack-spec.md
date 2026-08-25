@@ -15,7 +15,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 
 当前已导出但易被忽略的文件：
 
-- `probe/path-evidence.json`：各指纹路径是否可达。
+- `probe/path-evidence.json`：各指纹路径是否为 JSON/API 命中（HTML 200 不算）。
 - `page/screenshots.json`：包内截图相对路径索引。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。

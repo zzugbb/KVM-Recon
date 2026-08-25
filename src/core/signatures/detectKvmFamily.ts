@@ -13,6 +13,14 @@ export interface ProbeSignatureInput {
     kvmService?: boolean;
     setKvmKey?: boolean;
   };
+  tls?: {
+    organization?: string;
+  };
+  traffic?: {
+    httpUrls?: string[];
+    webSocketUrls?: string[];
+    frameHeads?: string[];
+  };
 }
 
 export interface KvmFamilyCandidate {
@@ -27,63 +35,142 @@ export interface KvmFamilyDetectionResult {
   candidates: KvmFamilyCandidate[];
 }
 
-function pushCandidate(
-  candidates: KvmFamilyCandidate[],
-  candidate: KvmFamilyCandidate | null,
-) {
+function roundConfidence(value: number) {
+  return Math.min(0.93, Math.round(value * 100) / 100);
+}
+
+function pushCandidate(candidates: KvmFamilyCandidate[], candidate: KvmFamilyCandidate | null) {
   if (candidate) {
     candidates.push(candidate);
   }
 }
 
-function detectAmi(paths: ProbeSignatureInput['paths']): KvmFamilyCandidate | null {
-  const evidence = [
-    paths?.apiRandomtag ? '/api/randomtag' : '',
-    paths?.apiSession ? '/api/session' : '',
-    paths?.apiKvmToken ? '/api/kvm/token' : '',
-  ].filter(Boolean);
+function urls(input: ProbeSignatureInput): string[] {
+  return input.traffic?.httpUrls || [];
+}
 
+function wsUrls(input: ProbeSignatureInput): string[] {
+  return input.traffic?.webSocketUrls || [];
+}
+
+function frameHeads(input: ProbeSignatureInput): string[] {
+  return input.traffic?.frameHeads || [];
+}
+
+function urlMatches(list: string[], pattern: RegExp) {
+  return list.some(item => pattern.test(item));
+}
+
+function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
+  const pathEvidence = [
+    input.paths?.apiRandomtag ? '/api/randomtag' : '',
+    input.paths?.apiSession ? '/api/session' : '',
+    input.paths?.apiKvmToken ? '/api/kvm/token' : '',
+  ].filter(Boolean);
+  const trafficEvidence = [
+    urlMatches(urls(input), /\/api\/randomtag(\/|\?|$)/i) ? 'http:/api/randomtag' : '',
+    urlMatches(urls(input), /\/api\/session(\/|\?|$)/i) ? 'http:/api/session' : '',
+    urlMatches(urls(input), /\/api\/kvm\/token(\/|\?|$)/i) ? 'http:/api/kvm/token' : '',
+  ].filter(Boolean);
+  const evidence = [...pathEvidence, ...trafficEvidence];
   if (evidence.length === 0) return null;
+
+  let confidence = 0.5 + 0.05 * Math.min(pathEvidence.length, 3);
+  if (trafficEvidence.length >= 2) {
+    confidence = 0.9;
+  } else if (trafficEvidence.length === 1) {
+    confidence = 0.78;
+  }
 
   return {
     kvmFamily: 'ami-megarac',
-    confidence: evidence.length >= 2 ? 0.9 : 0.72,
+    confidence: roundConfidence(confidence),
     evidence,
   };
 }
 
-function detectOpenBmc(paths: ProbeSignatureInput['paths']): KvmFamilyCandidate | null {
-  const hasAmiApi = !!(paths?.apiRandomtag || paths?.apiSession || paths?.apiKvmToken);
-  if (hasAmiApi) return null;
+function detectOpenBmc(input: ProbeSignatureInput): KvmFamilyCandidate | null {
+  const organization = input.tls?.organization || '';
+  const tlsOpenBmc = /openbmc/i.test(organization);
+  const xyzSubscribe = frameHeads(input).some(head => /\/xyz\/openbmc_project\//i.test(head));
+  const wsKvmVideo = urlMatches(wsUrls(input), /\/kvm\/video(\/|\?|$)/i);
+  const wsSubscribe = urlMatches(wsUrls(input), /\/subscribe(\/|\?|$)/i);
 
   const evidence = [
-    paths?.randomtag ? '/randomtag' : '',
-    paths?.kvmVideo ? '/kvm/video' : '',
-    paths?.sessionService ? '/redfish/v1/SessionService' : '',
+    tlsOpenBmc ? `tls.O=${organization}` : '',
+    xyzSubscribe ? 'ws:/xyz/openbmc_project' : '',
+    wsKvmVideo ? 'ws:/kvm/video' : '',
+    wsSubscribe ? 'ws:/subscribe' : '',
+    input.paths?.kvmVideo ? '/kvm/video' : '',
+    input.paths?.randomtag ? '/randomtag' : '',
+    input.paths?.sessionService ? '/redfish/v1/SessionService' : '',
   ].filter(Boolean);
 
-  if (!paths?.kvmVideo && evidence.length < 2) return null;
+  const strong = tlsOpenBmc || xyzSubscribe || wsKvmVideo;
+  const pathPair =
+    Boolean(input.paths?.kvmVideo && (input.paths.randomtag || input.paths.sessionService)) ||
+    Boolean(input.paths?.randomtag && input.paths?.sessionService);
+  if (!strong && !pathPair) return null;
+
+  let score = 0;
+  if (tlsOpenBmc) score += 0.22;
+  if (xyzSubscribe) score += 0.24;
+  if (wsKvmVideo) score += 0.22;
+  if (wsSubscribe) score += 0.08;
+  if (input.paths?.kvmVideo) score += 0.42;
+  if (input.paths?.randomtag) score += 0.28;
+  if (input.paths?.sessionService) score += 0.18;
 
   return {
     kvmFamily: 'openbmc-h5',
-    confidence: paths?.kvmVideo && evidence.length >= 2 ? 0.82 : 0.65,
+    confidence: roundConfidence(score),
     evidence,
   };
 }
 
 function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const vendor = input.redfish?.vendor || '';
+  const vendorHit = /huawei|华为/i.test(vendor);
+  const kvmServiceHttp = urlMatches(urls(input), /\/kvmservice(\/|\?|$)/i);
+  const setKvmKeyHttp = urlMatches(urls(input), /setkvmkey|kvmservice\.setkvmkey/i);
+  const kvmServicePath = Boolean(input.paths?.kvmService);
+  const setKvmKeyPath = Boolean(input.paths?.setKvmKey);
+
   const evidence = [
-    /huawei|华为/i.test(vendor) ? `redfish.vendor=${vendor}` : '',
-    input.paths?.kvmService ? 'KvmService' : '',
-    input.paths?.setKvmKey ? 'SetKvmKey' : '',
+    vendorHit ? `redfish.vendor=${vendor}` : '',
+    kvmServicePath ? 'KvmService' : '',
+    setKvmKeyPath ? 'SetKvmKey' : '',
+    kvmServiceHttp ? 'http:KvmService' : '',
+    setKvmKeyHttp ? 'http:SetKvmKey' : '',
   ].filter(Boolean);
 
   if (evidence.length === 0) return null;
 
+  if (vendorHit && kvmServicePath && setKvmKeyPath) {
+    return {
+      kvmFamily: 'huawei-ibmc',
+      confidence: 0.88,
+      evidence,
+    };
+  }
+  if (kvmServiceHttp && setKvmKeyHttp) {
+    return {
+      kvmFamily: 'huawei-ibmc',
+      confidence: 0.88,
+      evidence,
+    };
+  }
+
+  let score = 0.5;
+  if (vendorHit) score += 0.08;
+  if (kvmServicePath) score += 0.08;
+  if (setKvmKeyPath) score += 0.08;
+  if (kvmServiceHttp) score += 0.12;
+  if (setKvmKeyHttp) score += 0.14;
+
   return {
     kvmFamily: 'huawei-ibmc',
-    confidence: evidence.length >= 2 ? 0.88 : 0.68,
+    confidence: roundConfidence(Math.min(0.86, score)),
     evidence,
   };
 }
@@ -92,10 +179,13 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
   const candidates: KvmFamilyCandidate[] = [];
 
   pushCandidate(candidates, detectHuawei(input));
-  pushCandidate(candidates, detectAmi(input.paths));
-  pushCandidate(candidates, detectOpenBmc(input.paths));
+  pushCandidate(candidates, detectAmi(input));
+  pushCandidate(candidates, detectOpenBmc(input));
 
-  candidates.sort((left, right) => right.confidence - left.confidence);
+  candidates.sort((left, right) => {
+    if (right.confidence !== left.confidence) return right.confidence - left.confidence;
+    return right.evidence.length - left.evidence.length;
+  });
 
   const primary = candidates[0];
   if (primary) {
@@ -113,11 +203,56 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
     input.paths?.kvmVideo,
     input.paths?.kvmService,
     input.paths?.setKvmKey,
+    urlMatches(urls(input), /\/api\/kvm\/token|\/kvmservice|\/kvm\/video/i),
+    urlMatches(wsUrls(input), /\/kvm\//i),
   ].some(Boolean);
 
   return {
     primary: h5Signals ? 'unknown-h5' : 'not-h5',
     confidence: 0,
     candidates: [],
+  };
+}
+
+function partyOrganization(party?: Record<string, unknown>): string {
+  if (!party) return '';
+  const value = party.O;
+  if (Array.isArray(value)) return value.filter(item => typeof item === 'string').join(',');
+  return typeof value === 'string' ? value : '';
+}
+
+export function tlsOrganizationFromCertificate(
+  certificate?: {
+    subject?: Record<string, unknown>;
+    issuer?: Record<string, unknown>;
+  } | null,
+): string {
+  return partyOrganization(certificate?.subject) || partyOrganization(certificate?.issuer);
+}
+
+function decodeHeadHex(headHex: string): string {
+  const hex = headHex.replace(/[^0-9a-f]/gi, '');
+  if (hex.length < 2 || hex.length % 2 !== 0) return '';
+  try {
+    return Buffer.from(hex, 'hex').toString('utf8');
+  } catch (error) {
+    // 捕获采样帧 hex 无法解码：现场帧可能被截断
+    // 策略：当作无文本证据，不影响 URL 等其它信号
+    void error;
+    return '';
+  }
+}
+
+export function trafficEvidenceFromNetwork(network?: {
+  httpRequests?: Array<{ url?: string }>;
+  webSockets?: Array<{ url?: string }>;
+  webSocketFrames?: Array<{ headHex?: string }>;
+}): NonNullable<ProbeSignatureInput['traffic']> {
+  return {
+    httpUrls: (network?.httpRequests || []).map(item => item.url || '').filter(Boolean),
+    webSocketUrls: (network?.webSockets || []).map(item => item.url || '').filter(Boolean),
+    frameHeads: (network?.webSocketFrames || [])
+      .map(item => decodeHeadHex(item.headHex || ''))
+      .filter(Boolean),
   };
 }

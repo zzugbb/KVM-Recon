@@ -54,10 +54,10 @@ describe('exportCaptureJob', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      fileName: 'KVM-Recon_20260824-135500_10-0-0-10_unknown-h5_NO.zip',
-      filePath: '/tmp/KVM-Recon_20260824-135500_10-0-0-10_unknown-h5_NO.zip',
+      fileName: 'KVM-Recon_20260824-135500_10-0-0-10_not-h5_NO.zip',
+      filePath: '/tmp/KVM-Recon_20260824-135500_10-0-0-10_not-h5_NO.zip',
     });
-    expect(written[0]?.path).toBe('/tmp/KVM-Recon_20260824-135500_10-0-0-10_unknown-h5_NO.zip');
+    expect(written[0]?.path).toBe('/tmp/KVM-Recon_20260824-135500_10-0-0-10_not-h5_NO.zip');
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(await zip.file('report.html')!.async('string')).toContain('离场适配就绪：NO');
     expect(zip.file('README.md')).not.toBeNull();

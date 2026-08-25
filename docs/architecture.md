@@ -69,6 +69,8 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - OpenBMC H5 指纹：`/randomtag`、`/kvm/video`、`/redfish/v1/SessionService`。
 - 华为 iBMC 指纹：Redfish Session、`KvmService`、`SetKvmKey`。
 
+路径命中看 JSON / 已知 API 形态，SPA 返回的 HTML 200 不算。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。
+
 探测实现以当前仓库的 Node probe 与登录后会话复验为准。不要把一次性手工调试脚本直接做进产品主流程。无头批量复验、从调试脚本抽公共库，都不是本项目目标。
 
 ### 3.5 Signature Engine
@@ -92,6 +94,8 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - `not-h5`
 
 无 HTML5 KVM 路径迹象时为 `not-h5`；有 H5 迹象但未命中已知族时为 `unknown-h5`。
+
+打分不只看匿名路径是否探通：证书组织名（如 `O=OpenBMC`）、已采集 HTTP/WS URL、WebSocket 帧头（如 `/xyz/openbmc_project`）一并加权。导出包和作业列表会用真实流量重判主键。AMI 只靠路径存在不再给 0.9；不再因 AMI `/api` 路径否决 OpenBMC。
 
 ### 3.6 Redactor
 

@@ -10,6 +10,7 @@ import type {
 import { buildNetworkArtifacts } from '../network/buildNetworkArtifacts';
 import { buildOemProfileArtifacts } from '../profile/buildOemProfileArtifacts';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
+import { detectKvmFamily, tlsOrganizationFromCertificate, trafficEvidenceFromNetwork } from '../signatures/detectKvmFamily';
 import { buildProbeArtifacts } from '../probe/buildProbeArtifacts';
 import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCapturePack';
 import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
@@ -84,20 +85,35 @@ export function assembleCapturePackForExport(
   });
 
   pack.manifest.job.endedAt = input.endedAt;
+  const familySignatures = detectKvmFamily({
+    redfish: {
+      vendor: input.probe.basic.vendor,
+      product: input.probe.basic.product,
+    },
+    paths: input.probe.paths,
+    tls: {
+      organization: tlsOrganizationFromCertificate(input.probe.tls.certificate),
+    },
+    traffic: trafficEvidenceFromNetwork(input.network),
+  });
+  const probe = {
+    ...input.probe,
+    familySignatures,
+  };
   pack.manifest.family = {
-    primary: input.probe.familySignatures.primary,
-    confidence: input.probe.familySignatures.confidence,
-    candidates: input.probe.familySignatures.candidates,
+    primary: familySignatures.primary,
+    confidence: familySignatures.confidence,
+    candidates: familySignatures.candidates,
   };
 
   const artifacts = [
-    ...buildProbeArtifacts(input.probe),
+    ...buildProbeArtifacts(probe),
     ...(operatorArtifact ? [operatorArtifact] : []),
     ...buildBrowserArtifacts(input.page),
     ...(input.screenshotArtifacts ?? []),
     ...buildNetworkArtifacts(input.network),
     ...buildOemProfileArtifacts({
-      probe: input.probe,
+      probe,
       network: input.network,
     }),
   ];
@@ -120,7 +136,7 @@ export function assembleCapturePackForExport(
   pack = applyReadinessToCapturePack(
     pack,
     buildReadinessChecklist({
-      probe: input.probe,
+      probe: probe,
       page: input.page,
       network: input.network,
       redaction: {
@@ -158,8 +174,8 @@ export function assembleCapturePackForExport(
       webSocketUrls: [...new Set(input.network.webSockets.map(socket => socket.url).filter(Boolean))],
       screenshotCount: viewerScreenshotPaths(input.page.events).length,
       hasOemProfile: artifacts.some(item => item.path === 'artifacts/oem-profile.yaml'),
-      hasAuthenticated: Boolean(input.probe.authenticated),
-      cookieNames: input.probe.authenticated?.cookieNames ?? [],
+      hasAuthenticated: Boolean(probe.authenticated),
+      cookieNames: probe.authenticated?.cookieNames ?? [],
     }),
   ];
 

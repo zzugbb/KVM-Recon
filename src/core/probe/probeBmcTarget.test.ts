@@ -15,7 +15,7 @@ const httpClient: ProbeHttpClient = {
       };
     }
     if (path === '/randomtag' || path === '/kvm/video') {
-      return { status: 200 };
+      return { status: 200, data: { ok: true } };
     }
     return { status: 404 };
   },
@@ -72,7 +72,7 @@ describe('probeBmcTarget', () => {
       httpClient: {
         async get(path) {
           if (path === '/api/randomtag' || path === '/api/session' || path === '/api/kvm/token') {
-            return { status: 200 };
+            return { status: 200, data: { ok: true } };
           }
           return { status: 404 };
         },
@@ -93,5 +93,66 @@ describe('probeBmcTarget', () => {
       paths: authenticated.paths,
     });
     expect(JSON.stringify(merged)).not.toContain('abc123');
+  });
+
+  it('lets authenticated false overlay anonymous true so AMI SPA hits do not stick', async () => {
+    const html = '<!doctype html><html><body>app</body></html>';
+    const anonymous = await probeBmcTarget({
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      httpClient: {
+        async get(path) {
+          if (path.startsWith('/api/')) {
+            return { status: 200, data: html };
+          }
+          if (path === '/redfish/v1/SessionService' || path === '/redfish/v1/Managers/1/KvmService') {
+            return { status: 401 };
+          }
+          return { status: 404 };
+        },
+      },
+      tlsConnector: async () => ({
+        authorized: false,
+        protocol: 'TLSv1.3',
+        cipher: null,
+        certificate: {
+          subject: { O: 'OpenBMC', CN: 'bmc' },
+          issuer: { O: 'OpenBMC', CN: 'bmc' },
+        },
+      }),
+    });
+    const authenticated = await probeBmcTarget({
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      httpClient: {
+        async get(path) {
+          if (path.startsWith('/api/')) {
+            return { status: 404 };
+          }
+          if (path === '/randomtag' || path === '/redfish/v1/SessionService') {
+            return { status: 200, data: { ok: true } };
+          }
+          if (path === '/redfish/v1/Managers/1/KvmService') {
+            return { status: 200, data: { Id: 'KvmService' } };
+          }
+          return { status: 404 };
+        },
+      },
+      tlsConnector: async () => ({
+        authorized: false,
+        protocol: 'TLSv1.3',
+        cipher: null,
+        certificate: {
+          subject: { O: 'OpenBMC', CN: 'bmc' },
+          issuer: { O: 'OpenBMC', CN: 'bmc' },
+        },
+      }),
+    });
+
+    const merged = applyAuthenticatedProbe(anonymous, authenticated, ['SESSION']);
+    expect(merged.paths.apiSession).toBe(false);
+    expect(merged.paths.apiRandomtag).toBe(false);
+    expect(merged.paths.apiKvmToken).toBe(false);
+    expect(merged.paths.randomtag).toBe(true);
+    expect(merged.paths.kvmService).toBe(true);
+    expect(merged.familySignatures.primary).not.toBe('ami-megarac');
   });
 });

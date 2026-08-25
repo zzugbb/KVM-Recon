@@ -56,6 +56,31 @@ function isReachableStatus(status: number) {
   return (status >= 200 && status < 300) || status === 401 || status === 403 || status === 405;
 }
 
+function isHtmlPayload(data: unknown): boolean {
+  if (typeof data !== 'string') return false;
+  const head = data.trimStart().slice(0, 512).toLowerCase();
+  return (
+    head.startsWith('<!doctype') ||
+    head.startsWith('<html') ||
+    /^<html[\s>]/.test(head) ||
+    (head.includes('<head') && head.includes('<body'))
+  );
+}
+
+export function isApiPathHit(status: number, data: unknown): boolean {
+  if (!isReachableStatus(status)) return false;
+  if (isHtmlPayload(data)) return false;
+  if (status === 401 || status === 403 || status === 405) return true;
+  if (data && typeof data === 'object') return true;
+  if (typeof data === 'number' || typeof data === 'boolean') return true;
+  if (data == null || data === '') return false;
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    return trimmed.length > 0 && trimmed.length < 2048 && !trimmed.includes('<');
+  }
+  return false;
+}
+
 function readStringField(data: unknown, keys: string[]): string {
   if (!data || typeof data !== 'object') return '';
   const record = data as Record<string, unknown>;
@@ -93,7 +118,7 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
   await Promise.all(
     PATHS.map(async ([key, path]) => {
       const response = await safeGet(input.httpClient, path);
-      paths[key] = isReachableStatus(response.status);
+      paths[key] = isApiPathHit(response.status, response.data);
     }),
   );
 
@@ -128,7 +153,7 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
     redfish: {
       path: '/redfish/v1',
       status: redfish.status,
-      reachable: isReachableStatus(redfish.status),
+      reachable: isApiPathHit(redfish.status, redfish.data),
       vendor,
       product,
       firmwareVersion,

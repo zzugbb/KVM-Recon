@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+- 路径探测只把 JSON / 已知 API 形态当命中，SPA 返回的 HTML 200 不再记成 AMI `/api`
+- 登录后复验为 false 的路径覆盖匿名结果，不再用 OR 合并把假阳性留下
+- 取消「有 AMI `/api` 就禁止 OpenBMC」；证书 `O=OpenBMC`、`/xyz/openbmc_project` 订阅、真实 `/kvm/video` WebSocket 参与打分
+- AMI 只靠路径存在不再给 0.9；导出包与作业列表用真实 HTTP/WS 重判 `kvmFamily`
+
 ## [0.2.3] - 2026-08-25
 
 - 主窗口标题旁显示当前工具版本，与 `package.json` / 导出包 `manifest.tool.version` 一致

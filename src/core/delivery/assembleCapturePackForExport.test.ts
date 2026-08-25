@@ -252,4 +252,118 @@ describe('assembleCapturePackForExport', () => {
     expect(String(packReadme?.content)).toContain('有没有 viewer 截图：没有');
     expect(String(packReadme?.content)).toContain('KVM 画面截图：0');
   });
+
+  it('reclassifies export primary using TLS and KVM traffic even if probe still says AMI', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-openbmc',
+      startedAt: '2026-08-25T14:00:00.000+08:00',
+      endedAt: '2026-08-25T14:10:00.000+08:00',
+      target: {
+        host: 'bmc.example',
+        port: 443,
+        scheme: 'https',
+      },
+      probe: {
+        ...completeProbe,
+        basic: {
+          ...completeProbe.basic,
+          host: 'bmc.example',
+          vendor: '',
+          product: '',
+        },
+        paths: {
+          apiRandomtag: false,
+          apiSession: false,
+          apiKvmToken: false,
+          randomtag: true,
+          kvmVideo: false,
+          sessionService: true,
+          kvmService: true,
+          setKvmKey: false,
+        },
+        tls: {
+          ...completeProbe.tls,
+          certificate: {
+            ...completeProbe.tls.certificate,
+            subject: { O: 'OpenBMC', CN: 'bmc' },
+            issuer: { O: 'OpenBMC', CN: 'bmc' },
+          },
+        },
+      },
+      page: {
+        jobId: 'job-export-openbmc',
+        events: [],
+      },
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-08-25T14:00:10.000+08:00',
+            method: 'POST',
+            url: 'https://bmc.example/redfish/v1/SessionService/Sessions',
+            resourceType: 'xhr',
+            status: 201,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 32, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 64, redactedFields: ['Token'] },
+            tags: ['login' as const],
+          },
+          {
+            id: 'kvm-1',
+            timestamp: '2026-08-25T14:00:12.000+08:00',
+            method: 'GET',
+            url: 'https://bmc.example/redfish/v1/Managers/1/KvmService',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: { bytes: 32, redactedFields: [] },
+            tags: [],
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-sub',
+            createdAt: '2026-08-25T14:00:13.000+08:00',
+            url: 'wss://bmc.example/subscribe',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 0,
+            textFrameCount: 1,
+            tags: [],
+          },
+          {
+            id: 'ws-kvm',
+            createdAt: '2026-08-25T14:00:14.000+08:00',
+            url: 'wss://bmc.example/kvm/video',
+            subProtocols: ['token'],
+            requestHeaders: {},
+            binaryFrameCount: 8,
+            textFrameCount: 0,
+            tags: ['kvm-video' as const],
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-sub',
+            timestamp: '2026-08-25T14:00:13.100+08:00',
+            direction: 'up' as const,
+            opcode: 'text' as const,
+            bytes: 48,
+            headHex: Buffer.from('{"paths":["/xyz/openbmc_project/', 'utf8').toString('hex'),
+            sampled: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.pack.manifest.family.primary).toBe('openbmc-h5');
+    expect(result.fileName).toContain('openbmc-h5');
+    expect(result.pack.manifest.family.candidates.map(item => item.kvmFamily)).toContain('huawei-ibmc');
+    expect(result.pack.manifest.family.candidates.map(item => item.kvmFamily)).not.toContain(
+      'ami-megarac',
+    );
+  });
 });

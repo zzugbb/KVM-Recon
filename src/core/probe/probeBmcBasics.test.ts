@@ -27,7 +27,7 @@ describe('probeBmcBasics', () => {
             FirmwareVersion: '1.0.0',
           },
         },
-        '/redfish/v1/Managers/1/KvmService': { status: 200 },
+        '/redfish/v1/Managers/1/KvmService': { status: 200, data: { Id: 'KvmService' } },
         '/redfish/v1/Managers/1/KvmService/Actions/KvmService.SetKvmKey': { status: 405 },
       }),
     });
@@ -66,10 +66,10 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/api/randomtag': { status: 200 },
-        '/api/session': { status: 200 },
+        '/api/randomtag': { status: 200, data: { token: 'x' } },
+        '/api/session': { status: 200, data: { ok: true } },
         '/api/kvm/token': { status: 401 },
-        '/kvm/video': { status: 200 },
+        '/kvm/video': { status: 200, data: { stream: true } },
       }),
     });
 
@@ -78,5 +78,29 @@ describe('probeBmcBasics', () => {
     expect(result.paths.apiKvmToken).toBe(true);
     expect(result.paths.kvmVideo).toBe(true);
     expect(result.familySignatures.primary).toBe('ami-megarac');
+    expect(result.familySignatures.confidence).toBeLessThan(0.8);
+  });
+
+  it('does not treat SPA HTML 200 as AMI /api evidence', async () => {
+    const html = '<!doctype html><html><head></head><body>app</body></html>';
+    const result = await probeBmcBasics({
+      target: {
+        host: '10.0.0.12',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: createHttpClient({
+        '/api/randomtag': { status: 200, data: html },
+        '/api/session': { status: 200, data: html },
+        '/api/kvm/token': { status: 200, data: html },
+        '/redfish/v1/Managers/1/KvmService': { status: 200, data: { Id: 'KvmService' } },
+      }),
+    });
+
+    expect(result.paths.apiRandomtag).toBe(false);
+    expect(result.paths.apiSession).toBe(false);
+    expect(result.paths.apiKvmToken).toBe(false);
+    expect(result.paths.kvmService).toBe(true);
+    expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
 });
