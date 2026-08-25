@@ -6,6 +6,7 @@
 | [README.zh-CN.md](../README.zh-CN.md) | 中文读者 | 中文项目说明 |
 | [offline-field-guide.md](offline-field-guide.md) | 现场人员 | 离线安装、采集、导出 |
 | [capture-pack-spec.md](capture-pack-spec.md) | 出机房后的工程师 | Capture Pack 目录与字段 |
+| [kvm-family.md](kvm-family.md) | 出机房后写网关的人 | 采集桶 vs 网关主键；未知族如何起名、不要改现网三族 |
 | [architecture.md](architecture.md) | 开发者 | 模块划分 |
 | [development-plan.md](development-plan.md) | 开发者 | 项目边界与当前状态 |
 | [releasing.md](releasing.md) | 维护者 | 构建与发布安装包 |

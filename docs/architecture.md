@@ -93,7 +93,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - `unknown-h5`
 - `not-h5`
 
-无 HTML5 KVM 路径迹象时为 `not-h5`；有 H5 迹象但未命中已知族时为 `unknown-h5`。
+无 HTML5 KVM 路径迹象时为 `not-h5`；有 H5 迹象但未命中已知族时为 `unknown-h5`。后两个是未识别采集桶，不是网关 Adapter 名；已知三族也须用流量核对是否同构。下游起名见 `docs/kvm-family.md`。
 
 打分不只看匿名路径是否探通：证书组织名（如 `O=OpenBMC`）、已采集 HTTP/WS URL、WebSocket 帧头（如 `/xyz/openbmc_project`）一并加权。现场清单、作业列表和导出包走同一套重判。页面 document 导航不计入 AMI HTTP 证据。AMI 只靠路径存在不再给 0.9；不再因 AMI `/api` 路径否决 OpenBMC。
 
@@ -142,13 +142,15 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 
 ## 4. 与下游网关适配的衔接
 
-KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发：
+KVM-Recon 导出的资料最终服务于下游 KVM 网关或兼容层开发。完整裁定见 `docs/kvm-family.md`。
 
-- `kvmFamily` 对齐网关侧的 canonical family。
-- AMI 差异进入 OEM Profile，而不是新建品牌 Adapter。
+- zip 名 / `manifest.family.primary` 是**采集桶**。流量与现网族同构时沿用该名；否则按市面 BMC 产品另起网关主键。
+- 先核对包内 HTTP/WS 是否与现网族**同构**；同构才改 Profile 或该 Adapter 的小分支。
+- AMI 差异进入 OEM Profile，而不是按服务器品牌新建 Adapter。
 - 华为差异用于修正 `huawei-ibmc` 反代、KvmService、SetKvmKey、WebCrypto 垫片。
 - OpenBMC 差异用于完善 `openbmc-h5` 登录、WS 子协议和 viewer 参数。
-- 未知族只输出 Capture Pack，由出机房后的工程师或 AI 判断是新 Profile 还是新 Adapter。本工具不写 Adapter。
+- `unknown-h5` / `not-h5`（以及 zip 写成已知族但流量对不上）默认**新建 Adapter**，起名如 `dell-idrac-h5` / `hpe-ilo-h5`。不要先改现网三个，也不要把采集桶写进 registry。
+- 本工具不写 Adapter。
 
 ## 5. 项目非目标
 

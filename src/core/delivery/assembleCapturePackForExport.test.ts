@@ -214,7 +214,7 @@ describe('assembleCapturePackForExport', () => {
       product: '2288H V5',
     });
     const packReadme = result.pack.artifacts?.find(item => item.path === 'README.md');
-    expect(String(packReadme?.content)).toContain('不能替代 kvmFamily');
+    expect(String(packReadme?.content)).toContain('不能替代工具判定的采集桶');
   });
 
   it('counts only viewer screenshots in the pack README', () => {

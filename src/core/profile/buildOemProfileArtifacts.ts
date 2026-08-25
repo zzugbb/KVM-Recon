@@ -190,12 +190,13 @@ function unknownNotes(input: BuildOemProfileArtifactsInput): string {
   return [
     '# OEM Profile 分析备注',
     '',
-    '当前采集结果属于未知协议族。KVM-Recon 只负责离线采集，不会生成 Adapter 或空壳 Profile。',
+    '当前采集结果属于未识别采集桶。KVM-Recon 只负责离线采集，不会生成 Adapter 或空壳 Profile。',
     '',
     `primary=${input.probe.familySignatures.primary}`,
     `confidence=${input.probe.familySignatures.confidence}`,
     '',
     '出机房联网后，请将本 Capture Pack 交给工程师或 AI，结合 probe、http、ws、page、tls 做协议分析。',
+    'primary 是采集桶，不要写进网关 registry。默认新建 Adapter，主键用市面 BMC 产品名（如 dell-idrac-h5 / hpe-ilo-h5），不要先改现网 ami-megarac / openbmc-h5 / huawei-ibmc。',
     '若资料不足，按 report.html / checklist.json 提示回现场补采，不要在机房内调用外部分析服务。',
   ].join('\n');
 }

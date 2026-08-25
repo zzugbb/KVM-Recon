@@ -11,7 +11,7 @@
 - 不依赖公网，不在现场调用外部分析服务。
 - 不保存明文密码、Cookie 值、完整 KVM 视频码流。
 - 不实现生产 KVM 网关，不实现浏览器插件。
-- `kvmFamily` 是协议主键；厂商和型号只作铭牌/证据，不能覆盖族判定。族判定结合路径形态、TLS 与真实 HTTP/WS，不以匿名 HTML 200 定主键。
+- 厂商/型号只作铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
 ## 3. 当前状态（2026-08-25）
@@ -57,7 +57,7 @@
 KVM-Recon 交出 Capture Pack，不写 Adapter。出机房联网后，工程师或 AI 只读本包：
 
 - 先看根目录 `README.md`，再按文件地图打开 `manifest.json`、checklist、HTTP/WS。
-- 判断族、是否已有 Adapter、成功标准、PARTIAL 时写草稿还是补采。
+- 按 `docs/kvm-family.md` 判断：流量是否与现网三族同构；`unknown-h5` / `not-h5` 默认新建 Adapter，用市面 BMC 产品名，不要先改现网三个。
 - `artifacts/oem-profile.yaml` 只供审核，不是可上线 Adapter。
 
 上述工作不在本仓库实现。

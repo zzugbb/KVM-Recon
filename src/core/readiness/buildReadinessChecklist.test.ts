@@ -329,4 +329,47 @@ describe('buildReadinessChecklist', () => {
     expect(fingerprint?.evidence[0]).toMatch(/^openbmc-h5:/);
     expect(fingerprint?.evidence.join(' ')).not.toContain('/api/session');
   });
+
+  it('does not treat not-h5 as a passed family fingerprint', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, vendor: '', product: '' },
+        paths: {},
+        familySignatures: {
+          primary: 'not-h5',
+          confidence: 0,
+          candidates: [],
+        },
+      },
+      page: null,
+      network: { httpRequests: [], webSockets: [], webSocketFrames: [] },
+      redaction: { status: 'pass', redactedFields: 0 },
+    });
+    const fingerprint = checklist.items.find(item => item.id === 'bmc.fingerprint');
+    expect(fingerprint?.status).toBe('not_applicable');
+    expect(fingerprint?.evidence[0]).toMatch(/^not-h5:/);
+    expect(fingerprint?.userAction).toContain('新建 Adapter');
+  });
+
+  it('does not treat unknown-h5 as a missing family fingerprint', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, vendor: '', product: '' },
+        paths: { randomtag: true },
+        familySignatures: {
+          primary: 'unknown-h5',
+          confidence: 0,
+          candidates: [],
+        },
+      },
+      page: null,
+      network: { httpRequests: [], webSockets: [], webSocketFrames: [] },
+      redaction: { status: 'pass', redactedFields: 0 },
+    });
+    const fingerprint = checklist.items.find(item => item.id === 'bmc.fingerprint');
+    expect(fingerprint?.status).toBe('not_applicable');
+    expect(fingerprint?.evidence[0]).toMatch(/^unknown-h5:/);
+  });
 });

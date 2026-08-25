@@ -33,12 +33,14 @@ describe('buildPackReadmeArtifact', () => {
     expect(artifact.content).toContain('机房 A 柜');
     expect(artifact.content).toContain('现场厂商：AMI');
     expect(artifact.content).toContain('现场型号：MegaRAC SPX');
-    expect(artifact.content).toContain('不能替代 kvmFamily');
+    expect(artifact.content).toContain('不能替代工具判定的采集桶');
     expect(artifact.content).toContain('oem-profile.yaml');
     expect(artifact.content).toContain('文件做什么');
     expect(artifact.content).toContain('必须问人或看网关仓库');
     expect(artifact.content).toContain('KVM 画面截图：2');
     expect(artifact.content).toContain('有没有 viewer 截图：有 2 张');
+    expect(artifact.content).toContain('核对真实族再动手');
+    expect(artifact.content).toContain('同构');
     expect(artifact.content).not.toContain('自动写 Adapter');
     expect(artifact.content).not.toContain('artifacts/handover.md');
   });
@@ -60,6 +62,9 @@ describe('buildPackReadmeArtifact', () => {
     });
 
     expect(artifact.content).toContain('不要指望采集工具写出 Adapter');
+    expect(artifact.content).toContain('本包工具判定为 `unknown-h5`');
+    expect(artifact.content).toContain('不要把 `unknown-h5` / `not-h5` 写进网关 registry');
+    expect(artifact.content).toContain('dell-idrac-h5');
     expect(artifact.content).toContain('作业备注：（无）');
     expect(artifact.content).toContain('现场厂商：（无）');
     expect(artifact.content).toContain('不要用残缺包硬写网关');

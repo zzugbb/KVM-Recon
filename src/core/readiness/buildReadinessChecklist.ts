@@ -105,17 +105,48 @@ function probeConnectionEvidence(probe: ProbeBmcTargetResult | null | undefined)
   return evidence;
 }
 
-function familyEvidence(
+function familyFingerprintItem(
   probe: ProbeBmcTargetResult | null | undefined,
   network: NetworkSnapshot | null | undefined,
-): string[] {
-  if (!probe) return [];
+): ChecklistItem {
+  if (!probe) {
+    return item({
+      id: 'bmc.fingerprint',
+      title: 'BMC 协议族指纹',
+      status: 'unknown',
+      severity: 'warning',
+      evidence: [],
+      userAction: '请补充登录后页面截图、KVM 入口点击记录和 HTTP/WS 资料，便于离线判断协议族。',
+    });
+  }
+
   const family = scoreCapturedKvmFamily(probe, network);
-  if (family.primary === 'unknown-h5') return [];
-  return [
+  const unclassified = family.primary === 'unknown-h5' || family.primary === 'not-h5';
+  if (unclassified) {
+    return item({
+      id: 'bmc.fingerprint',
+      title: 'BMC 协议族指纹',
+      status: 'not_applicable',
+      severity: 'warning',
+      evidence: [`${family.primary}:${family.confidence}`],
+      userAction: '无需补采已知族指纹。出机房后按 HTTP/WS 新建 Adapter，不要把该采集桶写进网关。',
+    });
+  }
+
+  const evidence = [
     `${family.primary}:${family.confidence}`,
     ...family.candidates.flatMap(candidate => candidate.evidence),
   ];
+  return item({
+    id: 'bmc.fingerprint',
+    title: 'BMC 协议族指纹',
+    status: statusForEvidence(evidence, 'unknown'),
+    severity: 'warning',
+    evidence,
+    userAction: evidence.length
+      ? ''
+      : '请补充登录后页面截图、KVM 入口点击记录和 HTTP/WS 资料，便于离线判断协议族。',
+  });
 }
 
 function tlsEvidence(probe: ProbeBmcTargetResult | null | undefined): {
@@ -150,7 +181,6 @@ function readinessFromItems(items: ChecklistItem[]): CaptureReadiness {
 
 export function buildReadinessChecklist(input: BuildReadinessChecklistInput): CaptureChecklist {
   const connectionEvidence = probeConnectionEvidence(input.probe);
-  const signatureEvidence = familyEvidence(input.probe, input.network);
   const loginIds = loginEvidence(input.network);
   const entryEvidence = [...selectorEvidence(input.page), ...keyHttpEvidence(input.network)];
   const httpIds = keyHttpEvidence(input.network);
@@ -169,16 +199,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
         ? ''
         : '请确认 BMC 地址、端口和网络可达后重新执行基础探测。',
     }),
-    item({
-      id: 'bmc.fingerprint',
-      title: 'BMC 协议族指纹',
-      status: statusForEvidence(signatureEvidence, 'unknown'),
-      severity: 'warning',
-      evidence: signatureEvidence,
-      userAction: signatureEvidence.length
-        ? ''
-        : '请补充登录后页面截图、KVM 入口点击记录和 HTTP/WS 资料，便于离线判断协议族。',
-    }),
+    familyFingerprintItem(input.probe, input.network),
     item({
       id: 'login.chain',
       title: '登录链路 HTTP 资料',

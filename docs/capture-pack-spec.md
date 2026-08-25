@@ -4,9 +4,9 @@
 
 Capture Pack 是 KVM-Recon 的核心导出物。它需要让工程师在离开机房后仍能回答：
 
-- 目标 BMC 属于哪个 `kvmFamily` 候选？
+- 目标 BMC 属于哪个采集桶（`manifest.family.primary`）？真实协议是否与该桶同构？
 - 登录链路、KVM 入口、HTTP API、WebSocket 链路是否被采集？
-- 资料是否足够支撑下游 KVM 网关适配？
+- 资料是否足够支撑下游 KVM 网关适配？未知族应新建 Adapter 还是误判进了已知三族？
 - 缺失资料有哪些，现场人员需要补做什么？
 
 Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机房联网后，工程师或 AI 应能仅凭本包分析协议；KVM-Recon 本身不写 Adapter。
@@ -21,7 +21,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
 - 每个包都有根目录 `README.md`：给人与 AI 看的阅读地图和适配前裁定项。
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
-- 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代 `kvmFamily`。
+- 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代采集桶。
 
 独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
 
@@ -111,6 +111,8 @@ capture-pack/
   }
 }
 ```
+
+`family.primary` 是采集桶（含 `unknown-h5` / `not-h5`），不是网关 Adapter 主键。出机房后按 HTTP/WS 核对是否同构，裁定见 `docs/kvm-family.md`。每个包根目录 `README.md` 也有同样的「核对真实族再动手」一节。
 
 ## 4. HTTP 资料
 
@@ -300,7 +302,7 @@ HTTP 资料必须脱敏：
 导出报告必须给出明确结论：
 
 - `YES`：资料足够，离开机房后大概率可以分析并适配。
-- `PARTIAL`：能分析协议族，但缺少部分复验资料。
+- `PARTIAL`：能分析协议，但缺少部分复验资料。
 - `NO`：缺登录、KVM 入口或 WebSocket 等关键资料，建议不要离场。
 
 `NO` 的典型阻断条件：

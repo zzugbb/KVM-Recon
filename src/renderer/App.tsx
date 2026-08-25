@@ -451,7 +451,7 @@ export function App() {
               <input
                 value={vendor}
                 onChange={event => setVendor(event.target.value)}
-                placeholder="铭牌，不作为 kvmFamily"
+                placeholder="铭牌，不作为采集桶"
               />
             </label>
             <label>
@@ -637,7 +637,7 @@ export function App() {
               <dd>{packPath || '本地 zip'}</dd>
             </div>
             <div>
-              <dt>协议族</dt>
+              <dt>采集桶</dt>
               <dd>{packSummary.family}</dd>
             </div>
             <div>

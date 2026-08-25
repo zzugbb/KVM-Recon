@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- 说明：采集桶（含 `unknown-h5` / `not-h5`）不是网关 Adapter 主键；包内 README 增加「核对真实族再动手」；新增 `docs/kvm-family.md`（市面 BMC 产品名如 `dell-idrac-h5`，未知族默认新建 Adapter、不要先改现网三族）
+- 清单：未识别桶的「协议族指纹」为不适用，不再当成已通过，也不再因此挡住 YES；主窗口打开 zip 时显示「采集桶」
+
 ## [0.2.4] - 2026-08-25
 
 - 路径探测：HTML 200 不算命中（含 UTF-8 BOM）；2xx 需为 JSON 或短非 HTML 文本；401/403/405 仍算接口存在。`/kvm/video` 的匿名 GET 401 不算

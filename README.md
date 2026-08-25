@@ -23,7 +23,7 @@ The in-app UI and the field guide are currently Chinese. This README is the Engl
 - On-site staff can help log in, click menus, and open HTML5 KVM; the tool records the facts needed for later adaptation.
 - This tool **does not write adapters**.
 
-The primary key is `kvmFamily` (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`), not a vendor logo or model string. Nameplate fields (vendor / product / firmware / location) are evidence only.
+The capture tool writes one of five **capture buckets** (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`). `unknown-h5` and `not-h5` are not gateway adapter names. After leaving the room, treat HTTP/WebSocket in the pack as source of truth: reuse an existing adapter only when the protocol matches; otherwise add a new adapter named after the market BMC product (for example `dell-idrac-h5`). See `docs/kvm-family.md` (Chinese). Nameplate vendor/model fields are evidence only.
 
 ## Download
 
@@ -70,6 +70,7 @@ npm run dev
 Index: `docs/README.md`.
 
 - `docs/offline-field-guide.md`: install and capture on site (Chinese)
+- `docs/kvm-family.md`: capture buckets vs gateway `kvmFamily` keys (Chinese)
 - `docs/capture-pack-spec.md`: Capture Pack contract
 - `docs/releasing.md`: build and publish installers
 - `docs/development-plan.md`: product boundary and current status

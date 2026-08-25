@@ -60,7 +60,7 @@ KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
 KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 ```
 
-命名只保留时间、目标主机、协议族和离场结论，不包含账号、密码、Token、Cookie 等敏感信息。
+命名只保留时间、目标主机、采集器打的族标签和离场结论，不包含账号、密码、Token、Cookie 等敏感信息。中间那截可能是 `ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`，**不是**戴尔、惠普这类铭牌。zip 名写错不改变包内 HTTP/WS。出机房后的网关主键怎么起名，见 `docs/kvm-family.md`。
 
 ## 5. 常见错误提示
 

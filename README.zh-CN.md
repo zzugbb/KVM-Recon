@@ -23,7 +23,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 - 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
 - 本工具**不写 Adapter**。
 
-主键是 `kvmFamily`（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`），不是厂商 Logo 或型号字符串。现场铭牌（厂商/型号/固件/位置）只作为证据。
+采集器只会打五个**采集桶**（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`）。这不是网关 Adapter 主键：`unknown-h5` / `not-h5` 不能写进 registry；已知三族也要先用包内 HTTP/WS 核对是否同构。新 Adapter 用市面 BMC 产品名（如 `dell-idrac-h5`）。详见 `docs/kvm-family.md`。现场铭牌只作为证据。
 
 ## 下载
 
@@ -70,6 +70,7 @@ npm run dev
 索引见 `docs/README.md`。
 
 - `docs/offline-field-guide.md`：现场安装与采集
+- `docs/kvm-family.md`：采集桶与网关 `kvmFamily` 主键、未知族如何起名
 - `docs/capture-pack-spec.md`：Capture Pack 契约
 - `docs/releasing.md`：构建与发布安装包
 - `docs/development-plan.md`：项目边界与当前状态

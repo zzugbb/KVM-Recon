@@ -260,6 +260,7 @@ describe('buildOemProfileArtifacts', () => {
     });
 
     expect(unknown[0]?.path).toBe('artifacts/notes.md');
+    expect(unknown[0]?.content).toContain('dell-idrac-h5');
     expect(notH5[0]?.path).toBe('artifacts/notes.md');
     expect(notH5[0]?.content).toContain('primary=not-h5');
   });

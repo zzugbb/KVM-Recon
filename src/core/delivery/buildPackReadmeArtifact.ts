@@ -28,6 +28,30 @@ function titleList(titles: string[]) {
   return titles.join('、');
 }
 
+function isUnclassifiedFamily(kvmFamily: string) {
+  return kvmFamily === 'unknown-h5' || kvmFamily === 'not-h5';
+}
+
+function familyHandoffLines(kvmFamily: string): string[] {
+  const unclassifiedNote = isUnclassifiedFamily(kvmFamily)
+    ? [
+        '',
+        `本包工具判定为 \`${kvmFamily}\`：这是采集桶，不是可上线的 kvmFamily。网关请另起市面 BMC 产品名（如 \`dell-idrac-h5\` / \`hpe-ilo-h5\`）并**新建 Adapter**，不要先改现网三个。`,
+      ]
+    : [];
+  return [
+    '### 核对真实族再动手（必做）',
+    '',
+    'zip 名和 `manifest.family.primary` 只是采集器对三套已知指纹的打分，**不是**网关 Adapter 主键。HTTP / WebSocket 才是事实。',
+    '',
+    '1. 对照 `http/requests.jsonl` 与 `ws/sockets.json`：登录 URL、Cookie 名、KVM WS 路径和子协议，是否与某一已知族同构。',
+    '2. **同构**：才可复用现网 `ami-megarac` / `openbmc-h5` / `huawei-ibmc`，差异放 Profile 或该 Adapter 内的小分支。',
+    '3. **不同构，或工具标 `unknown-h5` / `not-h5`**：默认新建 Adapter + 新的 registry 名。不要先改现网那三个，也不要把采集桶写进网关配置。',
+    '4. 新族名用市面 BMC 产品（kebab-case），例如 `dell-idrac-h5`、`hpe-ilo-h5`、`lenovo-xcc-h5`。不要用服务器铭牌当族名。',
+    ...unclassifiedNote,
+  ];
+}
+
 export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): CapturePackArtifact {
   const observed = normalizeOperatorObserved({
     ...input.operatorObserved,
@@ -67,7 +91,7 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       `- 机柜位置：${observed.location || '（无）'}`,
       `- 作业备注：${observed.note || '（无）'}`,
       ...(hasStructuredObserved(observed)
-        ? ['- 现场厂商/型号只是铭牌证据，不能替代 kvmFamily。']
+        ? ['- 现场厂商/型号只是铭牌证据，不能替代工具判定的采集桶。']
         : []),
       `- ${profileLine}`,
       '',
@@ -104,6 +128,8 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '',
       '## 动手前先裁定',
       '',
+      ...familyHandoffLines(input.kvmFamily),
+      '',
       '### 本包已经能回答',
       '',
       `- 工具判定的族是 ${input.kvmFamily}，离场结论是 ${input.readiness}。`,
@@ -115,7 +141,7 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '### 必须问人或看网关仓库（本包没有）',
       '',
       '- 要适配进哪套网关代码？接口、目录、已有 Adapter 长什么样？',
-      '- 那边是否已有 `ami-megarac` / `openbmc-h5` / `huawei-ibmc` 实现，这次是改 Profile 还是新建 Adapter？',
+      '- 流量是否与现网某一族同构？同构才改 Profile / 小分支；否则新建 Adapter，不要先改现网三个。',
       '- 成功标准是什么：能反代登录即可，还是必须打通 WS / 画面 / WebCrypto？',
       '- 若结论不是 YES：先写草稿，还是等现场补采后再写？',
       '',
@@ -124,7 +150,8 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '## 不要做',
       '',
       '- 不要把本包当成可上线 Adapter，也不要补造 BMC 未出现的接口。',
-      '- 不要把铭牌厂商/型号当成 kvmFamily。',
+      '- 不要把铭牌厂商/型号当成采集桶或网关主键。',
+      '- 不要把 `unknown-h5` / `not-h5` 写进网关 registry；也不要因为 zip 写成某一已知族就去改现网对应 Adapter。',
       '- 包内没有明文密码、Cookie 值、storage 值、完整 KVM 视频；不要向现场人员索要这些往包里填。',
       '- 结论为 NO 时不要硬写网关。',
       '',
