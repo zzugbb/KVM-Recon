@@ -72,7 +72,7 @@ Index: `docs/README.md`.
 - `docs/offline-field-guide.md`: install and capture on site (Chinese)
 - `docs/capture-pack-spec.md`: Capture Pack contract
 - `docs/releasing.md`: build and publish installers
-- `docs/development-plan.md`: staged plan and product boundary
+- `docs/development-plan.md`: product boundary and current status
 - `docs/mvp-architecture.md`: technical architecture
 - `schema/`: JSON Schema for pack files (timeline, TLS, probes, and more)
 - `CHANGELOG.md`: version history; fold `[Unreleased]` into a version heading when you ship

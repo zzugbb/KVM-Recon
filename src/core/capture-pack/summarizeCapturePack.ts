@@ -4,6 +4,7 @@ import {
   validateChecklistShape,
   validateHttpRequestLineShape,
   validateManifestShape,
+  validateRequiredPackFiles,
   validateWebSocketListShape,
 } from './validateCapturePackShape';
 
@@ -91,11 +92,13 @@ export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<Captur
   const operatorObserved = asRecord(await readZipJson(zip, 'probe/operator-observed.json'));
   const requestLines = parseJsonl(await readZipText(zip, 'http/requests.jsonl'));
 
+  const packPaths = Object.keys(zip.files).filter(path => !zip.files[path]?.dir);
   const schemaErrors = [
     ...validateManifestShape(manifest),
     ...validateChecklistShape(Object.keys(checklist).length ? checklist : null),
     ...validateWebSocketListShape(sockets),
     ...requestLines.flatMap(line => validateHttpRequestLineShape(line)),
+    ...validateRequiredPackFiles(packPaths),
   ];
 
   const family = asRecord(manifest.family);

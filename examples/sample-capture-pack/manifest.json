@@ -2,18 +2,18 @@
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.1.0"
+    "version": "0.2.2"
   },
   "job": {
     "id": "sample-job",
     "startedAt": "2026-08-24T13:55:00.000+08:00",
     "endedAt": "2026-08-24T14:05:00.000+08:00",
-    "operatorNote": "Sample pack for offline handoff format review.",
+    "operatorNote": "样例包，仅用于说明导出目录与 README 格式。",
     "observed": {
       "vendor": "AMI",
       "product": "MegaRAC SPX",
       "firmware": "1.0.0",
-      "location": "Lab rack A"
+      "location": "实验室 A 柜"
     }
   },
   "target": {
@@ -43,6 +43,6 @@
   },
   "redaction": {
     "status": "pass",
-    "redactedFields": 6
+    "redactedFields": 3
   }
 }

@@ -6,10 +6,10 @@ reviewRequired: true
 source:
   vendor: AMI
   product: MegaRAC
-  firmwareVersion: sample
+  firmwareVersion: 1.0.0
 amiMegaRac:
   cookieNames:
-    - QSESSIONID
+    []
   csrfNames:
     - CSRFToken
   tokenApi: /api/kvm/token
@@ -18,7 +18,7 @@ amiMegaRac:
   subProtocols:
     - binary
   permissionFields:
-    - privilege
+    []
   loginFingerprint:
     - /api/randomtag
     - /api/session

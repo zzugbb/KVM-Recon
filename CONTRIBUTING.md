@@ -1,6 +1,6 @@
 # 参与贡献
 
-感谢你关注 KVM-Recon。本仓库是**离线采集工具**，不是生产 KVM 网关。贡献前请先阅读 `README.md`（英文）或 `README.zh-CN.md`（中文），以及 `docs/development-plan.md` 第 2、22、23 节。
+感谢你关注 KVM-Recon。本仓库是**离线采集工具**，不是生产 KVM 网关。贡献前请先阅读 `README.md`（英文）或 `README.zh-CN.md`（中文），以及 `docs/development-plan.md` 的约束与当前状态。
 
 ## 环境
 

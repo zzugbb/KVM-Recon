@@ -60,6 +60,8 @@ describe('exportCaptureJob', () => {
     expect(written[0]?.path).toBe('/tmp/KVM-Recon_20260824-135500_10-0-0-10_unknown-h5_NO.zip');
     const zip = await JSZip.loadAsync(written[0]!.bytes);
     expect(await zip.file('report.html')!.async('string')).toContain('离场适配就绪：NO');
+    expect(zip.file('README.md')).not.toBeNull();
+    expect(await zip.file('README.md')!.async('string')).toContain('文件做什么');
     expect(zip.file('probe/redfish.json')).not.toBeNull();
     expect(JSON.parse(await zip.file('tls/certificate.json')!.async('string')).chromium).toEqual({
       reachable: true,

@@ -1,22 +1,35 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <title>KVM-Recon Capture Report</title>
+<meta charset="utf-8" />
+<title>KVM-Recon Capture Report</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.6;padding:24px;color:#111827;}li{margin:6px 0;}code{background:#f3f4f6;padding:2px 4px;border-radius:4px;}</style>
 </head>
 <body>
-  <h1>KVM-Recon Capture Report</h1>
-  <p>离场适配就绪：PARTIAL</p>
-  <p>阻断项：0</p>
-  <p>警告项：1</p>
-  <h2>现场补采提示</h2>
-  <ul>
-    <li>KVM 画面截图：打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。</li>
-  </ul>
-  <h2>离场后怎么用</h2>
-  <ul>
-    <li>KVM-Recon 不在机房写 Adapter，也不调用公网分析服务。</li>
-    <li>出机房联网后，把本 zip 交给工程师或 AI，并阅读 README.md。</li>
-  </ul>
+<h1>KVM-Recon Capture Report</h1>
+
+<p>离场适配就绪：PARTIAL</p>
+
+<p>阻断项：0</p>
+<p>警告项：1</p>
+
+<h2>检查项</h2>
+<li>BMC 基础连接：pass / blocking；证据：https://10.0.0.10:443, tls:TLSv1.2；补采动作：无</li>
+<li>BMC 协议族指纹：pass / warning；证据：ami-megarac:0.9, /api/randomtag, /api/session, /api/kvm/token；补采动作：无</li>
+<li>登录链路 HTTP 资料：pass / blocking；证据：login-1；补采动作：无</li>
+<li>HTML5 KVM 入口：pass / blocking；证据：#kvm, token-1；补采动作：无</li>
+<li>KVM 关键 HTTP API：pass / warning；证据：token-1；补采动作：无</li>
+<li>KVM WebSocket：pass / blocking；证据：ws-1；补采动作：无</li>
+<li>KVM 画面截图：missing / warning；证据：无；补采动作：打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。</li>
+<li>TLS 证书信息：pass / info；证据：TLSv1.2, CN=bmc.local；补采动作：无</li>
+<li>导出脱敏检查通过：pass / blocking；证据：redactedFields=3；补采动作：无</li>
+
+<h2>现场补采提示</h2>
+<li>KVM 画面截图：打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。</li>
+
+<h2>离场后怎么用</h2>
+
+<li>KVM-Recon 不在机房写 Adapter，也不调用公网分析服务。</li>
+<li>出机房联网后，把本 zip 交给工程师或 AI，先读包内 `README.md`。</li>
 </body>
 </html>

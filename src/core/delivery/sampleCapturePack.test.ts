@@ -1,12 +1,13 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { createSampleCapturePack } from './createSampleCapturePack';
+import { createSampleCapturePack, writeSampleCapturePack } from './createSampleCapturePack';
 
 describe('sample capture pack', () => {
-  it('includes probe, http, ws, page, and tls artifacts for offline review', () => {
+  it('includes probe, http, ws, page, and tls artifacts for offline review', async () => {
     const root = join(process.cwd(), 'examples/sample-capture-pack');
+    await writeSampleCapturePack(root);
     const required = [
       'manifest.json',
       'checklist.json',
@@ -31,6 +32,12 @@ describe('sample capture pack', () => {
     ];
 
     expect(required.filter(path => existsSync(join(root, path)))).toEqual(required);
+    const readme = readFileSync(join(root, 'README.md'), 'utf8');
+    expect(readme).toContain('文件做什么');
+    expect(readme).toContain('必须问人或看网关仓库');
+    expect(readme).toContain('样例包，仅用于说明导出目录与 README 格式。');
+    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).tool.version).toBeTruthy();
+    expect(JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')).job.operatorNote).toContain('样例包');
   });
 
   it('builds a PARTIAL sample pack with KVM WebSocket facts but no screenshot', () => {
@@ -44,6 +51,7 @@ describe('sample capture pack', () => {
         'page/timeline.jsonl',
         'tls/certificate.json',
         'probe/operator-observed.json',
+        'README.md',
       ]),
     );
   });

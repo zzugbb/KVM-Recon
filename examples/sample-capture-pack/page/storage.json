@@ -1,4 +1,8 @@
 {
   "localStorageKeys": [],
-  "sessionStorageKeys": []
+  "sessionStorageKeys": [],
+  "localStorageAdded": [],
+  "localStorageRemoved": [],
+  "sessionStorageAdded": [],
+  "sessionStorageRemoved": []
 }

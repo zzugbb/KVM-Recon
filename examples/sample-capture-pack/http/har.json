@@ -3,28 +3,78 @@
     "version": "1.2",
     "creator": {
       "name": "KVM-Recon",
-      "version": "0.1.0"
+      "version": "0.2.2"
     },
     "entries": [
       {
         "startedDateTime": "2026-08-24T13:55:00.000+08:00",
+        "time": -1,
         "request": {
           "method": "POST",
-          "url": "https://10.0.0.10/api/session"
+          "url": "https://10.0.0.10/api/session",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": -1,
+          "bodySize": 32
         },
         "response": {
-          "status": 200
-        }
+          "status": 200,
+          "statusText": "",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "cookies": [],
+          "content": {
+            "size": 64,
+            "mimeType": ""
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 64
+        },
+        "cache": {},
+        "timings": {
+          "send": -1,
+          "wait": -1,
+          "receive": -1
+        },
+        "comment": "{\"resourceType\":\"xhr\",\"tags\":[\"login\"]}"
       },
       {
         "startedDateTime": "2026-08-24T13:55:02.000+08:00",
+        "time": -1,
         "request": {
           "method": "GET",
-          "url": "https://10.0.0.10/api/kvm/token"
+          "url": "https://10.0.0.10/api/kvm/token",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": -1,
+          "bodySize": 0
         },
         "response": {
-          "status": 200
-        }
+          "status": 200,
+          "statusText": "",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "cookies": [],
+          "content": {
+            "size": 32,
+            "mimeType": ""
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 32
+        },
+        "cache": {},
+        "timings": {
+          "send": -1,
+          "wait": -1,
+          "receive": -1
+        },
+        "comment": "{\"resourceType\":\"xhr\",\"tags\":[\"kvm-token\"]}"
       }
     ]
   }

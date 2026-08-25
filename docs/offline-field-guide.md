@@ -1,6 +1,6 @@
 # KVM-Recon 离线现场使用说明
 
-本文面向机房现场人员，说明如何在无公网环境中安装、采集、导出和交接 Capture Pack。
+本文面向机房现场人员，说明如何在无公网环境中安装、采集并导出 Capture Pack。
 
 ## 1. 安装包
 
@@ -74,14 +74,14 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 
 ## 6. 样例 Capture Pack
 
-仓库提供 `examples/sample-capture-pack/` 作为离线查看样例。该样例不是实际设备数据，仅用于说明目录结构、报告格式和交接内容。
+仓库提供 `examples/sample-capture-pack/` 作为离线查看样例。该样例不是实际设备数据，仅用于说明目录结构、报告格式和包内 `README.md`。
 
 ## 7. 本阶段范围与限制
 
-采集侧功能已收口，见 `docs/development-plan.md` 第 22 节。现场按本文采集即可，不必等待后续采集功能。
+采集侧功能已收口，见 `docs/development-plan.md` 当前状态。现场按本文采集即可，不必等待后续采集功能。
 
 - macOS 安装包使用 ad-hoc 签名（不是 Apple 付费公证）；Windows 安装包无 Authenticode 签名。下载后的系统提示与处理步骤见第 1 节。两套安装包均由 GitHub Actions 构建。
-- 真实 BMC 验收见 `docs/development-plan.md` 第 13 节，按安排延后。
+- 真实 BMC 验收见 `docs/development-plan.md` 真机验收闸门，按安排进行。
 - 日志只记录作业号、主机、就绪状态等非敏感字段。
 - 同一时刻最多保留 8 份作业。关闭采集窗口后仍可导出；关闭作业若尚未导出会先确认。可暂停记录且不关窗。
 - 本工具不写 Adapter、不调用公网分析。可在本机打开或对比 Capture Pack zip。出机房后把资料交给工程师或 AI，见包内 `README.md`。

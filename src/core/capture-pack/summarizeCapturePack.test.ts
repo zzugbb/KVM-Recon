@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import JSZip from 'jszip';
 
 import { buildCapturePackZip } from './buildCapturePackZip';
 import { compareCapturePacks, summarizeCapturePackZip } from './summarizeCapturePack';
-import { validateManifestShape } from './validateCapturePackShape';
+import { validateManifestShape, validateRequiredPackFiles } from './validateCapturePackShape';
 import { createSampleCapturePack } from '../delivery/createSampleCapturePack';
 
 describe('capture pack schema and local review', () => {
@@ -73,6 +74,7 @@ describe('capture pack schema and local review', () => {
     expect(left.observedVendor).toBe('AMI');
     expect(left.observedProduct).toBe('MegaRAC SPX');
     expect(left.schemaErrors).toEqual([]);
+    expect(assembled.pack.artifacts?.some(item => item.path === 'README.md')).toBe(true);
 
     const right = {
       ...left,
@@ -97,5 +99,30 @@ describe('capture pack schema and local review', () => {
         '缺少字段 manifest.job.id',
       ]),
     );
+  });
+
+  it('requires a pack root README.md', () => {
+    expect(validateRequiredPackFiles(['manifest.json', 'checklist.json'])).toEqual(['缺少 README.md']);
+    expect(validateRequiredPackFiles(['README.md', 'manifest.json'])).toEqual([]);
+  });
+
+  it('reports a missing pack README without throwing', async () => {
+    const zip = new JSZip();
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        schemaVersion: '1.0.0',
+        tool: { name: 'KVM-Recon' },
+        job: { id: 'job-1' },
+        target: { host: '10.0.0.10' },
+        family: { primary: 'unknown-h5' },
+        readiness: { status: 'NO' },
+        redaction: { status: 'pass' },
+      }),
+    );
+    zip.file('checklist.json', JSON.stringify({ readiness: 'NO', items: [] }));
+    zip.file('ws/sockets.json', '[]');
+    const summary = await summarizeCapturePackZip(await zip.generateAsync({ type: 'uint8array' }));
+    expect(summary.schemaErrors).toContain('缺少 README.md');
   });
 });

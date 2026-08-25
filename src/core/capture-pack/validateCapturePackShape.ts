@@ -75,3 +75,10 @@ export function validateHttpRequestLineShape(value: unknown): string[] {
   }
   return [];
 }
+
+export function validateRequiredPackFiles(paths: string[]): string[] {
+  if (paths.includes('README.md')) {
+    return [];
+  }
+  return ['缺少 README.md'];
+}
