@@ -13,6 +13,8 @@ type StructuredBodySample =
 
 interface CreateNetworkRecorderOptions {
   frameHeadBytes: number;
+  idleQuietMs?: number;
+  idleTimeoutMs?: number;
 }
 
 interface HttpRequestInput {
@@ -62,7 +64,7 @@ export interface HttpRequestRecord {
   responseContentType?: string;
   redirectLocation?: string;
   responseStructure?: {
-    bodyKind: 'json-object' | 'json-array' | 'text' | 'html' | 'empty' | 'other';
+    bodyKind: 'json-object' | 'json-array' | 'form' | 'text' | 'html' | 'empty' | 'other';
     jsonKeys: string[];
     jsonShape: Record<string, string>;
     jsonPaths: Record<string, string>;
@@ -142,15 +144,22 @@ type HttpResponseStructure = NonNullable<HttpRequestRecord['responseStructure']>
 
 function tagHttp(url: string): HttpTag[] {
   const lower = url.toLowerCase();
+  const isStaticAsset = /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(lower);
   const tags: HttpTag[] = [];
   if (
-    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|login/.test(
+    !isStaticAsset &&
+    (/\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|(?:^|\/)(?:login|signin)(?:[/?#.]|$)/.test(
       lower,
-    )
+    ) ||
+      /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i.test(lower))
   ) {
     tags.push('login');
   }
-  if (/kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file/.test(lower)) {
+  if (
+    /kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file|\/bmc\/php\/(?:gettoken|setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/.test(
+      lower,
+    )
+  ) {
     tags.push('kvm-token');
   }
   if (/kvm|console|viewer|vconsole|ircport|\/irc\.js|\/wss\/irc|\/vnc\//.test(lower) && !tags.includes('kvm-token')) {
@@ -172,8 +181,8 @@ function tagWebSocket(url: string): WebSocketTag[] {
   return ['unknown'];
 }
 
-function summarizeBody(body = '') {
-  const parsed = parseBody(body);
+function summarizeBody(body = '', contentType = '') {
+  const parsed = parseBody(body, contentType);
   const redactedFields = collectSensitiveFieldNames(parsed);
   const sample = sampleStructuredBody(parsed);
   return {
@@ -204,10 +213,12 @@ function isHtmlText(text: string) {
   );
 }
 
-function structureBody(body = ''): HttpResponseStructure {
-  const parsed = parseBody(body);
+function structureBody(body = '', contentType = ''): HttpResponseStructure {
+  const isForm = isUrlEncodedBody(body, contentType);
+  const parsed = parseBody(body, contentType);
   let bodyKind: HttpResponseStructure['bodyKind'] = 'other';
   if (body === '') bodyKind = 'empty';
+  else if (isForm) bodyKind = 'form';
   else if (typeof parsed === 'string' && isHtmlText(parsed)) bodyKind = 'html';
   else if (Array.isArray(parsed)) bodyKind = 'json-array';
   else if (parsed && typeof parsed === 'object') bodyKind = 'json-object';
@@ -268,7 +279,20 @@ function normalizeSample(value: unknown, key = '', depth = 0): StructuredBodySam
   return String(value);
 }
 
+function redactTextSample(text: string): string {
+  return redactUrl(text)
+    .replace(/((?:password|passwd|pwd|token|csrf|cookie|sessionid|session_id|authparam|garc|x-auth-token)=)([^&;\s]+)/gi, (_match, prefix, value) => {
+      return `${prefix}${redactSensitiveData({ value }).data.value}`;
+    })
+    .slice(0, 512);
+}
+
 function sampleStructuredBody(parsed: unknown): StructuredBodySample | undefined {
+  if (typeof parsed === 'string') {
+    const text = parsed.trim();
+    if (!text || isHtmlText(text)) return undefined;
+    return redactTextSample(text);
+  }
   if (!parsed || typeof parsed !== 'object') return undefined;
   return redactSensitiveData(normalizeSample(parsed)).data;
 }
@@ -281,8 +305,39 @@ function collectJsonKeys(value: unknown): string[] {
   return [...new Set(Object.keys(value).concat(...Object.values(value).flatMap(collectJsonKeys)))];
 }
 
-function parseBody(body: string): unknown {
+function contentTypeFromHeaders(headers: HeaderMap): string {
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] || '';
+}
+
+function isUrlEncodedBody(body: string, contentType = '') {
+  if (!body) return false;
+  if (/application\/x-www-form-urlencoded/i.test(contentType)) return true;
+  const trimmed = body.trim();
+  if (!trimmed || trimmed.includes('<') || trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
+  return /^[A-Za-z0-9_.:%\-[\]]+=[\s\S]*$/.test(trimmed) && trimmed.includes('=');
+}
+
+function parseUrlEncodedBody(body: string): Record<string, string | string[]> {
+  const params = new URLSearchParams(body);
+  const output: Record<string, string | string[]> = {};
+  for (const [key, value] of params.entries()) {
+    const existing = output[key];
+    if (existing === undefined) {
+      output[key] = value;
+    } else if (Array.isArray(existing)) {
+      existing.push(value);
+    } else {
+      output[key] = [existing, value];
+    }
+  }
+  return output;
+}
+
+function parseBody(body: string, contentType = ''): unknown {
   if (!body) return '';
+  if (isUrlEncodedBody(body, contentType)) {
+    return parseUrlEncodedBody(body);
+  }
   try {
     return JSON.parse(body);
   } catch {
@@ -342,19 +397,46 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const webSockets = new Map<string, WebSocketRecord>();
   const webSocketFrames: WebSocketFrameRecord[] = [];
   const pendingTasks = new Set<Promise<unknown>>();
+  const inFlightHttpRequestIds = new Set<string>();
+  let lastActivityAt = Date.now();
   let paused = false;
+
+  function markActivity() {
+    lastActivityAt = Date.now();
+  }
+
+  function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   return {
     trackPending(task: Promise<unknown>) {
+      markActivity();
       pendingTasks.add(task);
       void task.finally(() => {
         pendingTasks.delete(task);
+        markActivity();
       });
       return task;
     },
     async waitForIdle() {
-      while (pendingTasks.size > 0) {
-        await Promise.allSettled(Array.from(pendingTasks));
+      const quietMs = options.idleQuietMs ?? 120;
+      const timeoutMs = options.idleTimeoutMs ?? 5000;
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        if (pendingTasks.size > 0) {
+          await Promise.allSettled(Array.from(pendingTasks));
+          continue;
+        }
+        if (inFlightHttpRequestIds.size === 0 && Date.now() - lastActivityAt >= quietMs) {
+          return;
+        }
+        await sleep(Math.min(quietMs, 25));
+      }
+    },
+    markHttpRequestFinished(id: string) {
+      if (inFlightHttpRequestIds.delete(id)) {
+        markActivity();
       }
     },
     setPaused(next: boolean) {
@@ -365,6 +447,8 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     },
     recordHttpRequest(input: HttpRequestInput) {
       if (paused) return;
+      markActivity();
+      inFlightHttpRequestIds.add(input.id);
       httpRequests.set(input.id, {
         id: input.id,
         timestamp: input.timestamp,
@@ -374,7 +458,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         status: null,
         requestHeaders: redactHeaders(input.requestHeaders),
         responseHeaders: {},
-        requestBodySummary: summarizeBody(input.requestBody),
+        requestBodySummary: summarizeBody(input.requestBody, contentTypeFromHeaders(input.requestHeaders)),
         responseBodySummary: summarizeBody(),
         responseContentType: '',
         redirectLocation: '',
@@ -386,18 +470,20 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     recordHttpResponse(input: HttpResponseInput) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
+      markActivity();
       existing.status = input.status;
       existing.responseHeaders = redactHeaders(input.responseHeaders);
-      existing.responseBodySummary = summarizeBody(input.responseBody);
+      existing.responseBodySummary = summarizeBody(input.responseBody, contentTypeFromHeaders(input.responseHeaders));
       existing.responseContentType = responseContentType(input.responseHeaders);
       existing.redirectLocation = responseRedirectLocation(input.responseHeaders);
-      existing.responseStructure = structureBody(input.responseBody);
+      existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
     },
     recordHttpResponseBody(input: HttpResponseBodyInput) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
-      existing.responseBodySummary = summarizeBody(input.responseBody);
-      existing.responseStructure = structureBody(input.responseBody);
+      markActivity();
+      existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
+      existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
     },
     recordWebSocketCreated(input: WebSocketCreatedInput) {
       if (paused) return;

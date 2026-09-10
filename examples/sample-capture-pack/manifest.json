@@ -39,10 +39,10 @@
     ],
     "productHints": [
       {
-        "productFamily": "h3c-hdm2",
-        "confidence": 0.54,
+        "productFamily": "unknown-h5",
+        "confidence": 0.35,
         "evidence": [
-          "ws:/kvm"
+          "generic:h5-kvm"
         ]
       }
     ]

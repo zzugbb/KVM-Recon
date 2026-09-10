@@ -68,6 +68,10 @@ function urlContains(url: string, patterns: RegExp[]) {
   return patterns.some(pattern => pattern.test(url));
 }
 
+function isStaticAssetUrl(url: string) {
+  return /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(url);
+}
+
 function decodeHeadHex(headHex: string): string {
   const hex = headHex.replace(/[^0-9a-f]/gi, '');
   if (hex.length < 2 || hex.length % 2 !== 0) return '';
@@ -85,15 +89,17 @@ function loginEvidence(network: NetworkSnapshot | null | undefined): string[] {
   return (network?.httpRequests || [])
     .filter(
       request =>
-        request.tags.includes('login') ||
-        urlContains(request.url, [
-          /\/api\/(?:secure_session|session|session_encrypted)/i,
-          /sessionservice\/sessions/i,
-          /sessionservice\.createsession/i,
-          /\/sysmgmt\/2015\/bmc\/session/i,
-          /\/json\/login_session/i,
-          /login/i,
-        ]),
+        (request.tags.includes('login') && !isStaticAssetUrl(request.url)) ||
+        (!isStaticAssetUrl(request.url) &&
+          urlContains(request.url, [
+            /\/api\/(?:secure_session|session|session_encrypted)/i,
+            /sessionservice\/sessions/i,
+            /sessionservice\.createsession/i,
+            /\/sysmgmt\/2015\/bmc\/session/i,
+            /\/json\/login_session/i,
+            /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/i,
+            /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i,
+          ])),
     )
     .map(request => request.id);
 }
@@ -116,6 +122,7 @@ function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] 
           /\/js\/irc(?:KeyboardMouse)?\.js/i,
           /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
           /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i,
+          /\/bmc\/php\/(?:gettoken|setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
         ]),
     )
     .map(request => request.id);

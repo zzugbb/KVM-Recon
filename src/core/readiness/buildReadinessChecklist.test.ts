@@ -157,6 +157,39 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('NO');
   });
 
+  it('does not treat static login assets as login evidence but accepts Huawei legacy token PHP', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[0],
+            id: 'login-image',
+            url: 'https://10.10.8.107/images/login.png',
+            resourceType: 'image',
+            tags: ['login' as const],
+          },
+          {
+            ...completeNetwork.httpRequests[1],
+            id: 'legacy-token',
+            url: 'https://10.10.8.107/bmc/php/gettoken.php',
+            tags: ['kvm-token' as const],
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'login.chain')?.evidence).toEqual([
+      'legacy-token',
+    ]);
+    expect(checklist.items.find(item => item.id === 'page.kvm.entry')?.evidence).toContain(
+      'legacy-token',
+    );
+  });
+
   it('returns NO with a blocking action when KVM WebSocket is missing', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,

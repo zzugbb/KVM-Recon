@@ -66,6 +66,30 @@ function candidate(
 
 export function detectProductHints(input: ProductHintInput): ProductHint[] {
   const text = haystack(input);
+  const h3cIdentity = /h3c|hdm/i.test(text);
+  const h3cCreateSession = hasUrl(
+    input,
+    /\/redfish\/v1\/SessionService\/Actions\/Oem\/Public\/SessionService\.CreateSession/i,
+  );
+  const h3cStartH5Kvm = hasUrl(
+    input,
+    /\/KvmService\/Actions\/Oem\/Public\/KvmService\.StartH5Kvm/i,
+  );
+  const h3cH5Asset = hasUrl(input, /\/(?:css|js)\/(?:chunk-)?h5|h5Kvm/i);
+  const h3cWsKvm = hasUrl(input, /\/kvm(?:\?|$)/i);
+  const h3cHdm2Evidence = h3cCreateSession || h3cStartH5Kvm || h3cH5Asset;
+
+  const huaweiLegacyPhp = hasUrl(input, /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie|gettoken)\.php/i);
+  const huaweiLegacyPage = hasUrl(input, /\/bmc\/pages\/remote\/kvm_by_html5\.html/i);
+  const huaweiLegacyAsset = hasUrl(
+    input,
+    /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i,
+  );
+  const huaweiLegacyWs = hasUrl(input, /:2198\/(?:$|\?)/i);
+  const huaweiLegacyFrame = hasFrameHex(input, /^fef6/i);
+  const huaweiLegacyEvidence =
+    huaweiLegacyPhp || huaweiLegacyPage || huaweiLegacyAsset || huaweiLegacyWs || huaweiLegacyFrame;
+
   const hints = [
     candidate('dell-idrac-h5', 0.55, [
       /dell|idrac|poweredge/i.test(text) ? 'vendor/product:Dell iDRAC' : '',
@@ -85,28 +109,25 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
       hasUrl(input, /\/html\/irc_common\.html/i) ? 'http:/html/irc_common.html' : '',
       hasUrl(input, /\/wss\/ircport/i) ? 'ws:/wss/ircport' : '',
     ]),
-    candidate('h3c-hdm2', 0.54, [
-      /h3c|hdm/i.test(text) ? 'vendor/product:H3C HDM' : '',
-      hasUrl(input, /\/redfish\/v1\/SessionService\/Actions\/Oem\/Public\/SessionService\.CreateSession/i)
-        ? 'http:SessionService.CreateSession'
-        : '',
-      hasUrl(input, /\/KvmService\/Actions\/Oem\/Public\/KvmService\.StartH5Kvm/i)
-        ? 'http:KvmService.StartH5Kvm'
-        : '',
-      hasUrl(input, /\/(?:css|js)\/(?:chunk-)?h5|h5Kvm/i) ? 'asset:h5Kvm' : '',
-      hasUrl(input, /\/kvm(?:\?|$)/i) ? 'ws:/kvm' : '',
-    ]),
-    candidate('huawei-ibmc-legacy', 0.57, [
+    h3cHdm2Evidence
+      ? candidate('h3c-hdm2', h3cIdentity ? 0.62 : 0.54, [
+          h3cIdentity ? 'vendor/product:H3C HDM' : '',
+          h3cCreateSession ? 'http:SessionService.CreateSession' : '',
+          h3cStartH5Kvm ? 'http:KvmService.StartH5Kvm' : '',
+          h3cH5Asset ? 'asset:h5Kvm' : '',
+          h3cWsKvm ? 'ws:/kvm' : '',
+        ])
+      : null,
+    huaweiLegacyEvidence
+      ? candidate('huawei-ibmc-legacy', /huawei|华为|xfusion/i.test(text) ? 0.65 : 0.57, [
       /huawei|华为|xfusion/i.test(text) ? 'vendor/product:Huawei iBMC' : '',
-      hasUrl(input, /:2198\/(?:$|\?)/i) ? 'ws:2198/' : '',
-      hasUrl(input, /\/bmc\/pages\/remote\/kvm_by_html5\.html/i)
-        ? 'http:/bmc/pages/remote/kvm_by_html5.html'
-        : '',
-      hasUrl(input, /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i)
-        ? 'asset:kvmclient.js'
-        : '',
-      hasFrameHex(input, /^fef6/i) ? 'frame:FEF6' : '',
-    ]),
+          huaweiLegacyPhp ? 'http:/bmc/php/*.php' : '',
+          huaweiLegacyWs ? 'ws:2198/' : '',
+          huaweiLegacyPage ? 'http:/bmc/pages/remote/kvm_by_html5.html' : '',
+          huaweiLegacyAsset ? 'asset:kvmclient.js' : '',
+          huaweiLegacyFrame ? 'frame:FEF6' : '',
+        ])
+      : null,
   ].filter((item): item is ProductHint => Boolean(item));
 
   hints.sort((left, right) => {

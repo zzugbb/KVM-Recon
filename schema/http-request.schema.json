@@ -20,7 +20,7 @@
     "responseStructure": {
       "type": "object",
       "properties": {
-        "bodyKind": { "enum": ["json-object", "json-array", "text", "html", "empty", "other"] },
+        "bodyKind": { "enum": ["json-object", "json-array", "form", "text", "html", "empty", "other"] },
         "jsonKeys": {
           "type": "array",
           "items": { "type": "string" }

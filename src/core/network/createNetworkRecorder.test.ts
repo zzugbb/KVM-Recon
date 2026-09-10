@@ -224,6 +224,123 @@ describe('createNetworkRecorder', () => {
     });
   });
 
+  it('captures URL-encoded legacy form body samples and short text response samples', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'legacy-token',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/bmc/php/gettoken.php',
+      resourceType: 'xhr',
+      requestHeaders: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      requestBody: 'user=admin&authParam=secret-auth&method=GetToken',
+    });
+    recorder.recordHttpResponse({
+      id: 'legacy-token',
+      status: 200,
+      responseHeaders: { 'content-type': 'text/plain; charset=UTF-8' },
+      responseBody: 'ret=0&token=legacy-secret&port=2198',
+    });
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request).toMatchObject({
+      tags: ['login', 'kvm-token'],
+      requestBodySummary: {
+        jsonKeys: ['user', 'authParam', 'method'],
+        sample: {
+          user: 'admin',
+          authParam: expect.stringContaining('<redacted:sha256:'),
+          method: 'GetToken',
+        },
+      },
+      responseBodySummary: {
+        jsonKeys: ['ret', 'token', 'port'],
+        sample: {
+          ret: '0',
+          token: expect.stringContaining('<redacted:sha256:'),
+          port: '2198',
+        },
+      },
+      responseStructure: {
+        bodyKind: 'form',
+        jsonPaths: {
+          '$.token': 'string',
+        },
+      },
+    });
+    expect(JSON.stringify(request)).not.toContain('secret-auth');
+    expect(JSON.stringify(request)).not.toContain('legacy-secret');
+  });
+
+  it('keeps bounded samples for short non-HTML text responses', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'legacy-text',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/bmc/php/processparameter.php',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'legacy-text',
+      status: 200,
+      responseHeaders: { 'content-type': 'text/plain' },
+      responseBody: 'OK: viewer mode html5',
+    });
+
+    expect(recorder.toJSON().httpRequests[0]?.responseBodySummary.sample).toBe(
+      'OK: viewer mode html5',
+    );
+  });
+
+  it('does not tag static login assets as the login chain and keeps legacy token requests', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'login-image',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/images/login.png',
+      resourceType: 'image',
+      requestHeaders: {},
+    });
+    recorder.recordHttpRequest({
+      id: 'legacy-token',
+      timestamp: '2026-09-07T03:00:01.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/bmc/php/gettoken.php',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+
+    const records = recorder.toJSON().httpRequests;
+    expect(records[0]?.tags).toEqual([]);
+    expect(records[1]?.tags).toEqual(['login', 'kvm-token']);
+  });
+
+  it('waits for in-flight HTTP requests before reporting network idle', async () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8, idleQuietMs: 20, idleTimeoutMs: 500 });
+    recorder.recordHttpRequest({
+      id: 'req-1',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/bmc/php/getmultiproperty.php',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+
+    let settled = false;
+    const idle = recorder.waitForIdle().then(() => {
+      settled = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(settled).toBe(false);
+
+    recorder.markHttpRequestFinished('req-1');
+    await idle;
+    expect(settled).toBe(true);
+  });
+
   it('records printable WebSocket handshake magic without storing the full stream', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
     recorder.recordWebSocketCreated({

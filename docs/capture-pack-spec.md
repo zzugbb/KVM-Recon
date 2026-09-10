@@ -191,7 +191,8 @@ HTTP 资料必须脱敏：
 - Token、Cookie、CSRF、SessionId 只保留掩码、长度和 hash。
 - Cookie / Set-Cookie **保留 cookie 名**，只脱敏值，便于离场后识别 `QSESSIONID` 等字段。
 - JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
-- JSON 体可保留经过字段级处理的 `sample`，用于还原嵌套结构和非敏感参数关系；敏感值写入 hash/长度掩码。
+- JSON 与 `application/x-www-form-urlencoded` 体可保留经过字段级处理的 `sample`，用于还原嵌套结构、表单参数和非敏感参数关系；敏感值写入 hash/长度掩码。
+- 短文本响应可保留有限长度 `sample`；HTML 页面和长视频/二进制流不落正文。
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
 

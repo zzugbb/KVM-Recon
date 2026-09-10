@@ -126,6 +126,33 @@ describe('field capture regressions from existing on-site packs', () => {
     expect(hints[0]?.productFamily).toBe('h3c-hdm2');
   });
 
+  it('does not suggest H3C HDM2 for H3C G3/G5 style AMI traffic with only shared /kvm evidence', () => {
+    const hints = detectProductHints({
+      observed: { vendor: 'H3C', product: 'H3C UniServer R4900 G5' },
+      traffic: {
+        httpUrls: ['https://10.10.8.10/api/session', 'https://10.10.8.10/api/kvm/token'],
+        webSocketUrls: ['wss://10.10.8.10/kvm'],
+      },
+    });
+
+    expect(hints.map(item => item.productFamily)).not.toContain('h3c-hdm2');
+  });
+
+  it('does not suggest Huawei legacy for modern Huawei identity without legacy protocol evidence', () => {
+    const hints = detectProductHints({
+      observed: { vendor: 'Huawei', product: 'iBMC V5' },
+      traffic: {
+        httpUrls: [
+          'https://10.10.8.20/redfish/v1/SessionService/Sessions',
+          'https://10.10.8.20/UI/Rest/Services/KVM/Start',
+        ],
+        webSocketUrls: ['wss://10.10.8.20/kvm/websocket'],
+      },
+    });
+
+    expect(hints.map(item => item.productFamily)).not.toContain('huawei-ibmc-legacy');
+  });
+
   it.each([
     ['Dell /vnc/vconsole', 'wss://10.10.8.101/vnc/vconsole', '524642203030332e3030380a', 'RFB 003.008'],
     ['Dell :5900/', 'wss://10.10.8.80:5900/', '415043500000004401000104', 'DELL_APCP'],
@@ -195,6 +222,7 @@ describe('field capture regressions from existing on-site packs', () => {
     const network = {
       httpRequests: [
         http('login-1', 'https://10.10.8.107/UI/Rest/Login', ['login']),
+        http('token-1', 'https://10.10.8.107/bmc/php/gettoken.php', ['kvm-token']),
         http('kvm-1', 'https://10.10.8.107/bmc/pages/remote/kvm_by_html5.html', ['kvm-entry']),
         http('asset-1', 'https://10.10.8.107/bmc/resources/js/module/remote/html5/kvmclient.js', [
           'kvm-entry',

@@ -153,7 +153,14 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
 
     if (method === 'Network.loadingFinished') {
-      input.recorder.trackPending(recordResponseBody(stringValue(params.requestId), sessionId));
+      const requestId = stringValue(params.requestId);
+      input.recorder.markHttpRequestFinished(scopedId(requestId, sessionId));
+      input.recorder.trackPending(recordResponseBody(requestId, sessionId));
+      return;
+    }
+
+    if (method === 'Network.loadingFailed') {
+      input.recorder.markHttpRequestFinished(scopedId(stringValue(params.requestId), sessionId));
       return;
     }
 
