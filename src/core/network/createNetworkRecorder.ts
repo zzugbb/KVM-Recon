@@ -140,25 +140,48 @@ interface NetworkRecorderSnapshot {
   webSocketFrames: WebSocketFrameRecord[];
 }
 
+export interface NetworkIdleResult {
+  timedOut: boolean;
+  pendingTaskCount: number;
+  inFlightRequestIds: string[];
+}
+
 type HttpResponseStructure = NonNullable<HttpRequestRecord['responseStructure']>;
 
-function tagHttp(url: string): HttpTag[] {
-  const lower = url.toLowerCase();
+function headerValue(headers: HeaderMap, name: string): string {
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1] || '';
+}
+
+function hasLegacyKvmReferer(headers: HeaderMap) {
+  const referer = `${headerValue(headers, 'referer')} ${headerValue(headers, 'referrer')}`.toLowerCase();
+  return /\/bmc\/(?:pages\/remote\/kvm_by_html5\.html|resources\/js\/module\/remote\/html5\/)/.test(
+    referer,
+  );
+}
+
+function tagHttp(input: HttpRequestInput): HttpTag[] {
+  const lower = input.url.toLowerCase();
   const isStaticAsset = /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(lower);
-  const tags: HttpTag[] = [];
-  if (
-    !isStaticAsset &&
-    (/\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|(?:^|\/)(?:login|signin)(?:[/?#.]|$)/.test(
+  const explicitLogin =
+    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|\/bmc\/php\/(?:dologin|login|gettoken)\.php/.test(
       lower,
-    ) ||
-      /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i.test(lower))
-  ) {
+    );
+  const genericLogin = /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/.test(lower);
+  const interactiveRequest =
+    input.method.toUpperCase() === 'POST' || /^(?:xhr|fetch)$/i.test(input.resourceType);
+  const legacyKvmSupport =
+    /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/.test(
+      lower,
+    ) && hasLegacyKvmReferer(input.requestHeaders);
+  const tags: HttpTag[] = [];
+  if (!isStaticAsset && (explicitLogin || (genericLogin && interactiveRequest))) {
     tags.push('login');
   }
   if (
-    /kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file|\/bmc\/php\/(?:gettoken|setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/.test(
+    /kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file|\/bmc\/php\/gettoken\.php/.test(
       lower,
-    )
+    ) ||
+    legacyKvmSupport
   ) {
     tags.push('kvm-token');
   }
@@ -419,20 +442,29 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       });
       return task;
     },
-    async waitForIdle() {
+    async waitForIdle(): Promise<NetworkIdleResult> {
       const quietMs = options.idleQuietMs ?? 120;
       const timeoutMs = options.idleTimeoutMs ?? 5000;
       const startedAt = Date.now();
       while (Date.now() - startedAt < timeoutMs) {
-        if (pendingTasks.size > 0) {
-          await Promise.allSettled(Array.from(pendingTasks));
-          continue;
-        }
-        if (inFlightHttpRequestIds.size === 0 && Date.now() - lastActivityAt >= quietMs) {
-          return;
+        if (
+          pendingTasks.size === 0 &&
+          inFlightHttpRequestIds.size === 0 &&
+          Date.now() - lastActivityAt >= quietMs
+        ) {
+          return {
+            timedOut: false,
+            pendingTaskCount: 0,
+            inFlightRequestIds: [],
+          };
         }
         await sleep(Math.min(quietMs, 25));
       }
+      return {
+        timedOut: true,
+        pendingTaskCount: pendingTasks.size,
+        inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
+      };
     },
     markHttpRequestFinished(id: string) {
       if (inFlightHttpRequestIds.delete(id)) {
@@ -463,7 +495,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         responseContentType: '',
         redirectLocation: '',
         responseStructure: structureBody(),
-        tags: tagHttp(input.url),
+        tags: tagHttp(input),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
       });
     },

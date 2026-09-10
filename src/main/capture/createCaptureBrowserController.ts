@@ -279,7 +279,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
       return networkRecorder.toJSON();
     },
     async waitForNetworkIdle() {
-      await networkRecorder.waitForIdle();
+      return networkRecorder.waitForIdle();
     },
     chromiumAccess() {
       return chromiumAccess;

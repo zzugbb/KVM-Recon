@@ -10,6 +10,7 @@ import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 import type {
   HttpRequestRecord,
+  NetworkIdleResult,
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
@@ -37,6 +38,7 @@ interface BuildReadinessChecklistInput {
   probe?: ProbeBmcTargetResult | null;
   page?: BrowserTimelineJson | null;
   network?: NetworkSnapshot | null;
+  networkIdle?: NetworkIdleResult | null;
   redaction: RedactionSummary;
 }
 
@@ -72,6 +74,45 @@ function isStaticAssetUrl(url: string) {
   return /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(url);
 }
 
+function requestHeader(request: HttpRequestRecord, name: string) {
+  return Object.entries(request.requestHeaders).find(([key]) => key.toLowerCase() === name)?.[1] || '';
+}
+
+function hasLegacyKvmReferer(request: HttpRequestRecord) {
+  const referer = `${requestHeader(request, 'referer')} ${requestHeader(request, 'referrer')}`.toLowerCase();
+  return /\/bmc\/(?:pages\/remote\/kvm_by_html5\.html|resources\/js\/module\/remote\/html5\/)/.test(
+    referer,
+  );
+}
+
+function isReliableLoginRequest(request: HttpRequestRecord) {
+  if (isStaticAssetUrl(request.url)) return false;
+  const explicitLogin = urlContains(request.url, [
+    /\/api\/(?:secure_session|session|session_encrypted)/i,
+    /sessionservice\/sessions/i,
+    /sessionservice\.createsession/i,
+    /\/sysmgmt\/2015\/bmc\/session/i,
+    /\/json\/login_session/i,
+    /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i,
+  ]);
+  if (explicitLogin) return true;
+  const interactiveRequest =
+    request.method.toUpperCase() === 'POST' || /^(?:xhr|fetch)$/i.test(request.resourceType);
+  return (
+    interactiveRequest &&
+    (request.tags.includes('login') ||
+      urlContains(request.url, [/(?:^|\/)(?:login|signin)(?:[/?#.]|$)/i]))
+  );
+}
+
+function isLegacyKvmSupportRequest(request: HttpRequestRecord) {
+  return (
+    urlContains(request.url, [
+      /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
+    ]) && hasLegacyKvmReferer(request)
+  );
+}
+
 function decodeHeadHex(headHex: string): string {
   const hex = headHex.replace(/[^0-9a-f]/gi, '');
   if (hex.length < 2 || hex.length % 2 !== 0) return '';
@@ -87,20 +128,7 @@ function decodeHeadHex(headHex: string): string {
 
 function loginEvidence(network: NetworkSnapshot | null | undefined): string[] {
   return (network?.httpRequests || [])
-    .filter(
-      request =>
-        (request.tags.includes('login') && !isStaticAssetUrl(request.url)) ||
-        (!isStaticAssetUrl(request.url) &&
-          urlContains(request.url, [
-            /\/api\/(?:secure_session|session|session_encrypted)/i,
-            /sessionservice\/sessions/i,
-            /sessionservice\.createsession/i,
-            /\/sysmgmt\/2015\/bmc\/session/i,
-            /\/json\/login_session/i,
-            /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/i,
-            /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i,
-          ])),
-    )
+    .filter(isReliableLoginRequest)
     .map(request => request.id);
 }
 
@@ -108,8 +136,13 @@ function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] 
   return (network?.httpRequests || [])
     .filter(
       request =>
-        request.tags.includes('kvm-token') ||
+        (request.tags.includes('kvm-token') &&
+          (!urlContains(request.url, [
+            /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
+          ]) ||
+            isLegacyKvmSupportRequest(request))) ||
         request.tags.includes('kvm-entry') ||
+        isLegacyKvmSupportRequest(request) ||
         urlContains(request.url, [
           /\/api\/kvm\/token/i,
           /kvmservice/i,
@@ -122,7 +155,7 @@ function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] 
           /\/js\/irc(?:KeyboardMouse)?\.js/i,
           /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
           /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i,
-          /\/bmc\/php\/(?:gettoken|setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
+          /\/bmc\/php\/gettoken\.php/i,
         ]),
     )
     .map(request => request.id);
@@ -327,6 +360,22 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       userAction: screenshots.length
         ? ''
         : '打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。',
+    }),
+    item({
+      id: 'network.capture.complete',
+      title: '网络响应采集完整性',
+      status: input.networkIdle?.timedOut ? 'needs_user_action' : 'pass',
+      severity: 'warning',
+      evidence: input.networkIdle?.timedOut
+        ? [
+            'timedOut=true',
+            `pendingTaskCount=${input.networkIdle.pendingTaskCount}`,
+            ...input.networkIdle.inFlightRequestIds.map(id => `inFlight=${id}`),
+          ]
+        : ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0'],
+      userAction: input.networkIdle?.timedOut
+        ? '网络仍有未完成请求或响应体读取。请在采集窗口等待片刻后重新导出，避免关键请求出现 status=null 或响应体为空。'
+        : '',
     }),
     item({
       id: 'tls.certificate',

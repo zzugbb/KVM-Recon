@@ -190,6 +190,59 @@ describe('buildReadinessChecklist', () => {
     );
   });
 
+  it('does not accept a GET login page as a completed login chain', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[0],
+            id: 'login-page',
+            method: 'GET',
+            url: 'https://10.0.0.10/login.html',
+            resourceType: 'document',
+            tags: ['login' as const],
+          },
+          completeNetwork.httpRequests[1],
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'login.chain')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+    expect(checklist.readiness).toBe('NO');
+  });
+
+  it('marks an otherwise complete capture PARTIAL when network idle waiting times out', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      networkIdle: {
+        timedOut: true,
+        pendingTaskCount: 1,
+        inFlightRequestIds: ['session-1::request-9'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      severity: 'warning',
+      evidence: [
+        'timedOut=true',
+        'pendingTaskCount=1',
+        'inFlight=session-1::request-9',
+      ],
+    });
+  });
+
   it('returns NO with a blocking action when KVM WebSocket is missing', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,

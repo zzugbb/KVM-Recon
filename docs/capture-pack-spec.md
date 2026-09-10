@@ -25,8 +25,9 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代采集桶。
 - `http/adapter-evidence.json`：登录链路、KVM 启动链路、WebSocket 升级和 HTTP/WS 关联索引，供离场实现 Adapter 时快速复盘。
+- `http/capture-status.json`：导出前网络空闲等待结果；超时会记录响应体任务数和仍在途的请求 ID，并把就绪结论降为 `PARTIAL`。
 
-独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
+独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、网络空闲状态、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
 
 ## 2. 目录结构
 
@@ -46,6 +47,7 @@ capture-pack/
     requests.jsonl
     har.json
     adapter-evidence.json
+    capture-status.json
   ws/
     frames.jsonl
     sockets.json
@@ -202,6 +204,8 @@ HTTP 资料必须脱敏：
 - `kvmLaunchChain`：KVM Token、SetKvmKey、StartH5Kvm、viewer/console/IRC/VNC 入口。
 - `webSocketUpgrades`：KVM WebSocket URL、请求/响应子协议、101 状态、握手响应头名、首帧特征、窗口角色。
 - `correlations`：每条 WebSocket 前最近的登录请求 id 与 KVM 启动请求 id，分成 `likelyLoginHttpIds` / `likelyKvmLaunchHttpIds`。
+
+通用 `login/signin` URL 只有在请求为 POST、XHR 或 Fetch 时才进入 `loginChain`；GET `/login.html` 只保留为普通页面请求。Huawei legacy 的通用属性读写接口只有 Referer 来自 `remote/kvm_by_html5` 时才进入 `kvmLaunchChain`，避免把首页轮询误作 KVM Token 链路。
 
 ## 5. WebSocket 资料
 

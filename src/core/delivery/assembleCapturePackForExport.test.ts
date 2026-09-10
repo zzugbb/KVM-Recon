@@ -140,12 +140,44 @@ describe('assembleCapturePackForExport', () => {
         'probe/bmc-basic.json',
         'probe/redfish.json',
         'http/requests.jsonl',
+        'http/capture-status.json',
         'ws/sockets.json',
         'page/timeline.jsonl',
         'artifacts/oem-profile.yaml',
         'README.md',
       ]),
     );
+  });
+
+  it('records network idle timeout details and downgrades a complete capture to PARTIAL', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-timeout',
+      startedAt: '2026-08-24T13:55:00.000+08:00',
+      endedAt: '2026-08-24T14:05:00.000+08:00',
+      target: {
+        host: '10.0.0.10',
+        port: 443,
+        scheme: 'https',
+      },
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      networkIdle: {
+        timedOut: true,
+        pendingTaskCount: 2,
+        inFlightRequestIds: ['target-1::request-3'],
+      },
+    });
+
+    expect(result.pack.manifest.readiness.status).toBe('PARTIAL');
+    const statusArtifact = result.pack.artifacts?.find(
+      item => item.path === 'http/capture-status.json',
+    );
+    expect(JSON.parse(String(statusArtifact?.content))).toEqual({
+      timedOut: true,
+      pendingTaskCount: 2,
+      inFlightRequestIds: ['target-1::request-3'],
+    });
   });
 
   it('keeps screenshot png bytes under page/screenshots/', () => {

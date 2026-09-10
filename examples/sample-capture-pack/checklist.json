@@ -77,6 +77,18 @@
       "userAction": "打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。"
     },
     {
+      "id": "network.capture.complete",
+      "title": "网络响应采集完整性",
+      "status": "pass",
+      "severity": "warning",
+      "evidence": [
+        "timedOut=false",
+        "pendingTaskCount=0",
+        "inFlightRequestCount=0"
+      ],
+      "userAction": ""
+    },
+    {
       "id": "tls.certificate",
       "title": "TLS 证书信息",
       "status": "pass",

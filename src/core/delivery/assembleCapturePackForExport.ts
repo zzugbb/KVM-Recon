@@ -4,6 +4,7 @@ import { createEmptyCapturePack } from '../capture-pack/createEmptyCapturePack';
 import type { CapturePackArtifact, CapturePackDraft, CaptureTarget } from '../capture-pack/types';
 import type {
   HttpRequestRecord,
+  NetworkIdleResult,
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
@@ -49,6 +50,7 @@ export interface AssembleCapturePackForExportInput {
   probe: ProbeBmcTargetResult;
   page: BrowserTimelineJson;
   network: NetworkSnapshot;
+  networkIdle?: NetworkIdleResult;
   sensitiveValues?: string[];
   screenshotArtifacts?: CapturePackArtifact[];
 }
@@ -72,6 +74,11 @@ function countRedactedFields(network: NetworkSnapshot): number {
 export function assembleCapturePackForExport(
   input: AssembleCapturePackForExportInput,
 ): AssembledCapturePack {
+  const networkIdle = input.networkIdle ?? {
+    timedOut: false,
+    pendingTaskCount: 0,
+    inFlightRequestIds: [],
+  };
   const operatorObserved = normalizeOperatorObserved({
     ...input.operatorObserved,
     note: input.operatorObserved?.note ?? input.operatorNote,
@@ -122,6 +129,10 @@ export function assembleCapturePackForExport(
     ...buildBrowserArtifacts(input.page),
     ...(input.screenshotArtifacts ?? []),
     ...buildNetworkArtifacts(input.network),
+    {
+      path: 'http/capture-status.json',
+      content: JSON.stringify(networkIdle, null, 2),
+    },
     ...buildOemProfileArtifacts({
       probe,
       network: input.network,
@@ -149,6 +160,7 @@ export function assembleCapturePackForExport(
       probe: probe,
       page: input.page,
       network: input.network,
+      networkIdle,
       redaction: {
         status: redaction.status,
         redactedFields: redaction.redactedFields,

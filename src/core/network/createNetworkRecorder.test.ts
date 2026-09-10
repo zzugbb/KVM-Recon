@@ -294,7 +294,7 @@ describe('createNetworkRecorder', () => {
     );
   });
 
-  it('does not tag static login assets as the login chain and keeps legacy token requests', () => {
+  it('requires an interactive generic login request and keeps explicit legacy token requests', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
     recorder.recordHttpRequest({
       id: 'login-image',
@@ -302,6 +302,22 @@ describe('createNetworkRecorder', () => {
       method: 'GET',
       url: 'https://10.10.8.107/images/login.png',
       resourceType: 'image',
+      requestHeaders: {},
+    });
+    recorder.recordHttpRequest({
+      id: 'login-page',
+      timestamp: '2026-09-07T03:00:00.500+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/login.html',
+      resourceType: 'document',
+      requestHeaders: {},
+    });
+    recorder.recordHttpRequest({
+      id: 'login-submit',
+      timestamp: '2026-09-07T03:00:00.750+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/login',
+      resourceType: 'document',
       requestHeaders: {},
     });
     recorder.recordHttpRequest({
@@ -315,7 +331,35 @@ describe('createNetworkRecorder', () => {
 
     const records = recorder.toJSON().httpRequests;
     expect(records[0]?.tags).toEqual([]);
-    expect(records[1]?.tags).toEqual(['login', 'kvm-token']);
+    expect(records[1]?.tags).toEqual([]);
+    expect(records[2]?.tags).toEqual(['login']);
+    expect(records[3]?.tags).toEqual(['login', 'kvm-token']);
+  });
+
+  it('only tags Huawei legacy property calls from the KVM viewer context', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'home-poll',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/bmc/php/getmultiproperty.php',
+      resourceType: 'xhr',
+      requestHeaders: { Referer: 'https://10.10.8.107/bmc/pages/home.html' },
+    });
+    recorder.recordHttpRequest({
+      id: 'viewer-poll',
+      timestamp: '2026-09-07T03:00:01.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/bmc/php/getmultiproperty.php',
+      resourceType: 'xhr',
+      requestHeaders: {
+        Referer: 'https://10.10.8.107/bmc/pages/remote/kvm_by_html5.html',
+      },
+    });
+
+    const records = recorder.toJSON().httpRequests;
+    expect(records[0]?.tags).toEqual([]);
+    expect(records[1]?.tags).toEqual(['kvm-token']);
   });
 
   it('waits for in-flight HTTP requests before reporting network idle', async () => {
@@ -330,15 +374,39 @@ describe('createNetworkRecorder', () => {
     });
 
     let settled = false;
-    const idle = recorder.waitForIdle().then(() => {
+    const idle = recorder.waitForIdle().then(result => {
       settled = true;
+      return result;
     });
     await new Promise(resolve => setTimeout(resolve, 40));
     expect(settled).toBe(false);
 
     recorder.markHttpRequestFinished('req-1');
-    await idle;
+    await expect(idle).resolves.toEqual({
+      timedOut: false,
+      pendingTaskCount: 0,
+      inFlightRequestIds: [],
+    });
     expect(settled).toBe(true);
+  });
+
+  it('reports pending response bodies and in-flight requests when idle waiting times out', async () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8, idleQuietMs: 5, idleTimeoutMs: 20 });
+    recorder.recordHttpRequest({
+      id: 'req-pending',
+      timestamp: '2026-09-07T03:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/api/poll',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+    recorder.trackPending(new Promise(() => {}));
+
+    await expect(recorder.waitForIdle()).resolves.toEqual({
+      timedOut: true,
+      pendingTaskCount: 1,
+      inFlightRequestIds: ['req-pending'],
+    });
   });
 
   it('records printable WebSocket handshake magic without storing the full stream', () => {

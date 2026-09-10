@@ -5,6 +5,7 @@ import { buildCapturePackZip } from '../capture-pack/buildCapturePackZip';
 import type { CaptureReadiness, CaptureTarget } from '../capture-pack/types';
 import type {
   HttpRequestRecord,
+  NetworkIdleResult,
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
@@ -52,7 +53,7 @@ interface ExportCaptureJobInput {
   collectPageFacts(label: string): Promise<void>;
   getPage(): BrowserTimelineJson;
   getNetwork(): NetworkSnapshot;
-  waitForNetworkIdle?(): Promise<void>;
+  waitForNetworkIdle?(): Promise<NetworkIdleResult | void>;
   chooseSavePath(fileName: string): Promise<string | null>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   now?: () => string;
@@ -79,7 +80,11 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
   try {
     // 没有 viewer 截图时补拍一张；已有则控制器会跳过，避免导出再生成第二张图
     await input.collectPageFacts('viewer');
-    await input.waitForNetworkIdle?.();
+    const networkIdle = (await input.waitForNetworkIdle?.()) ?? {
+      timedOut: false,
+      pendingTaskCount: 0,
+      inFlightRequestIds: [],
+    };
     const page = input.getPage();
     const screenshotArtifacts = await collectScreenshotArtifacts({
       page,
@@ -113,6 +118,7 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       },
       page,
       network: input.getNetwork(),
+      networkIdle,
       sensitiveValues: input.sensitiveValues,
       screenshotArtifacts,
     });
