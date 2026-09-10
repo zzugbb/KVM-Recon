@@ -52,10 +52,11 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 - HAR 或结构化请求列表。
 - Cookie、CSRF、Token 等敏感字段脱敏后的 Header/摘要。
 - WebSocket 创建事件、URL、子协议、关闭时间 `closedAt`。
+- WebSocket 握手响应状态、响应头和服务端最终选择的子协议。
 - WebSocket frame 方向、时间戳、长度、前 N 字节 hex、是否二进制。
 - 页面截图、导航时间线、popup URL、选择器候选。
 
-注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
+注意：WebSocket 只记录元数据和首包特征，不保存完整视频流。HTTP JSON 请求/响应会保留字段级脱敏后的结构化样本，便于离场后复原嵌套字段和非敏感参数关系。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
 
 ### 3.4 Probe Engine
 
@@ -69,7 +70,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - OpenBMC H5 指纹：`/randomtag`、`/kvm/video`、`/redfish/v1/SessionService`。
 - 华为 iBMC 指纹：Redfish Session、`KvmService`、`SetKvmKey`。
 
-路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为结构化 JSON 或明确的短非 HTML 指纹文本；401/403/405 只记录为路径事实，不再直接算接口命中。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。探测结果同时导出 `probe/path-details.json`，保留每个路径的状态码、内容类型、重定向和响应结构特征。
+路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为结构化 JSON 或明确的短非 HTML 指纹文本；`text/plain` 但正文为 JSON 的响应按 JSON 解析；Redfish 根同时兼容 `/redfish/v1` 与 `/redfish/v1/`。401/403/405 只记录为路径事实，不再直接算接口命中。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。探测结果同时导出 `probe/path-details.json`，保留每个路径的状态码、内容类型、重定向和响应结构特征。
 
 已知族判定与 InManage NodeServer 的 adapter-registry 语义对齐：AMI/OpenBMC 的 randomtag 需要看到对应 JSON 字段，通用鉴权墙不算；Huawei 需要 Redfish/OEM/TLS/legacy UI/WS/帧头等强身份信号，不能只因通用 `KvmService` 字段命中就归入华为。H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 与未知 HTML5 KVM 会作为产品迹象写入 `probe/product-hints.json` 和 manifest。
 
@@ -125,7 +126,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 
 输出 `YES`、`PARTIAL`、`NO` 三类离场结论。
 
-Readiness 综合登录链路、KVM 启动链路、WebSocket 升级、子协议和真实帧证据判断，不依赖单一 `kvm-video` 标签。viewer 截图只有在正确窗口或子 target 收到可靠 KVM 证据后才自动生成。
+Readiness 综合登录链路、KVM 启动链路、WebSocket 升级、子协议和真实帧证据判断，不依赖单一 `kvm-video` 标签。通用 `/websocket` 文本心跳不触发 viewer 截图；viewer 截图只有在正确窗口或子 target 收到可靠 KVM 证据后才自动生成。
 
 ### 3.8 Exporter
 

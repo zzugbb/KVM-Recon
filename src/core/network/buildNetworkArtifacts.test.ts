@@ -80,6 +80,12 @@ describe('buildNetworkArtifacts', () => {
           },
         },
       ],
+      correlations: [
+        {
+          socketId: 'ws-1',
+          likelyKvmLaunchHttpIds: ['req-1'],
+        },
+      ],
     });
     expect(JSON.parse(artifacts[3].content)).toEqual(webSockets);
     expect(artifacts[4].content).toContain('"headHex":"17000001"');

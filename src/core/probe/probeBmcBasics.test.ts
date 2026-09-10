@@ -141,4 +141,31 @@ describe('probeBmcBasics', () => {
     expect(result.paths.apiKvmToken).toBe(false);
     expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
+
+  it('falls back to /redfish/v1/ when the slashless Redfish root is not usable', async () => {
+    const result = await probeBmcBasics({
+      target: {
+        host: '10.0.0.15',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: createHttpClient({
+        '/redfish/v1': { status: 404 },
+        '/redfish/v1/': {
+          status: 200,
+          data: {
+            Vendor: 'OpenBMC',
+            Product: 'Test BMC',
+          },
+        },
+      }),
+    });
+
+    expect(result.redfish).toMatchObject({
+      path: '/redfish/v1/',
+      reachable: true,
+      vendor: 'OpenBMC',
+      product: 'Test BMC',
+    });
+  });
 });

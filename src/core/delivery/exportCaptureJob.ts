@@ -52,6 +52,7 @@ interface ExportCaptureJobInput {
   collectPageFacts(label: string): Promise<void>;
   getPage(): BrowserTimelineJson;
   getNetwork(): NetworkSnapshot;
+  waitForNetworkIdle?(): Promise<void>;
   chooseSavePath(fileName: string): Promise<string | null>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
   now?: () => string;
@@ -78,6 +79,7 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
   try {
     // 没有 viewer 截图时补拍一张；已有则控制器会跳过，避免导出再生成第二张图
     await input.collectPageFacts('viewer');
+    await input.waitForNetworkIdle?.();
     const page = input.getPage();
     const screenshotArtifacts = await collectScreenshotArtifacts({
       page,

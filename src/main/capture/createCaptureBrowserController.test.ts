@@ -368,6 +368,91 @@ describe('createCaptureBrowserController', () => {
     expect(screenshotLabels).toEqual(['viewer']);
   });
 
+  it('waits past H3C home /websocket text frames before auto-capturing the viewer', async () => {
+    const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') cdpListeners.push(listener);
+      },
+    };
+    const screenshotLabels: string[] = [];
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger(cdp);
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            screenshotLabels.push(label);
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-h3c-shot',
+      target: {
+        host: '10.10.8.129',
+        port: 443,
+        scheme: 'https',
+      },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-home',
+        url: 'wss://10.10.8.129/websocket',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-home',
+        response: {
+          opcode: 1,
+          payloadData: '{"event":"alarm","message":"home"}',
+        },
+      });
+    }
+    await controller.ingestLiveEvents();
+    await controller.flushPageFacts();
+    expect(screenshotLabels).toEqual([]);
+
+    for (const listener of cdpListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-kvm',
+        url: 'wss://10.10.8.129/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-kvm',
+        response: {
+          opcode: 2,
+          payloadData: Buffer.from([0x53, 0x00, 0x00, 0x00]).toString('base64'),
+        },
+      });
+    }
+    await controller.ingestLiveEvents();
+    await controller.flushPageFacts();
+    expect(screenshotLabels).toEqual(['viewer']);
+  });
+
   it('does not capture a second viewer screenshot when polls overlap or export runs again', async () => {
     const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const cdp: CdpDebuggerLike = {

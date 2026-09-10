@@ -7,7 +7,11 @@ import { tlsServerName } from './tlsServerName';
 
 function parseResponseBody(buffer: Buffer, contentType: string): unknown {
   const text = buffer.toString('utf8');
-  if (contentType.toLowerCase().includes('application/json')) {
+  const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 128).toLowerCase();
+  const looksHtml =
+    head.startsWith('<!doctype') || head.startsWith('<html') || /^<html[\s>]/.test(head);
+  const looksJson = head.startsWith('{') || head.startsWith('[');
+  if (contentType.toLowerCase().includes('application/json') || (looksJson && !looksHtml)) {
     try {
       return JSON.parse(text);
     } catch {

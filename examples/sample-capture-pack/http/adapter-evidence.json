@@ -10,7 +10,9 @@
       "redactedFields": [
         "Password",
         "CSRFToken"
-      ]
+      ],
+      "requestBodySample": null,
+      "responseBodySample": null
     }
   ],
   "kvmLaunchChain": [
@@ -21,7 +23,9 @@
       "status": 200,
       "tags": [
         "kvm-token"
-      ]
+      ],
+      "requestBodySample": null,
+      "responseBodySample": null
     }
   ],
   "webSocketUpgrades": [
@@ -32,6 +36,9 @@
         "binary"
       ],
       "requestHeaderNames": [],
+      "handshakeStatus": null,
+      "responseHeaderNames": [],
+      "responseSubProtocol": "",
       "binaryFrameCount": 12,
       "textFrameCount": 0,
       "tags": [
@@ -50,8 +57,10 @@
   "correlations": [
     {
       "socketId": "ws-1",
-      "likelyPrecedingHttpIds": [
-        "login-1",
+      "likelyLoginHttpIds": [
+        "login-1"
+      ],
+      "likelyKvmLaunchHttpIds": [
         "token-1"
       ]
     }

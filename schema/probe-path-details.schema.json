@@ -21,6 +21,10 @@
       "jsonShape": {
         "type": "object",
         "additionalProperties": { "type": "string" }
+      },
+      "jsonPaths": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
       }
     }
   }

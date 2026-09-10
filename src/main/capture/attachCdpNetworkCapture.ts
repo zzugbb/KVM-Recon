@@ -81,14 +81,19 @@ function opcodeName(opcode: number): 'text' | 'binary' {
   return opcode === 1 ? 'text' : 'binary';
 }
 
+function scopedId(requestId: string, sessionId?: string) {
+  return sessionId ? `${sessionId}::${requestId}` : requestId;
+}
+
 export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInput): Promise<void> {
   const now = input.now ?? (() => new Date().toISOString());
 
-  async function recordResponseBody(requestId: string) {
+  async function recordResponseBody(requestId: string, sessionId?: string) {
+    const id = scopedId(requestId, sessionId);
     try {
-      const result = await input.cdp.sendCommand('Network.getResponseBody', { requestId });
+      const result = await input.cdp.sendCommand('Network.getResponseBody', { requestId }, sessionId);
       input.recorder.recordHttpResponseBody({
-        id: requestId,
+        id,
         responseBody: decodeResponseBody(result),
       });
     } catch {
@@ -111,7 +116,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     void error;
   }
 
-  input.cdp.on('message', (_event, method, params, _sessionId) => {
+  input.cdp.on('message', (_event, method, params, sessionId) => {
     if (method === 'Target.attachedToTarget') {
       const attachedSessionId = stringValue(params.sessionId);
       if (attachedSessionId) {
@@ -122,8 +127,9 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
     if (method === 'Network.requestWillBeSent') {
       const request = isRecord(params.request) ? params.request : {};
+      const requestId = stringValue(params.requestId);
       input.recorder.recordHttpRequest({
-        id: stringValue(params.requestId),
+        id: scopedId(requestId, sessionId),
         timestamp: now(),
         method: stringValue(request.method),
         url: stringValue(request.url),
@@ -137,8 +143,9 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
     if (method === 'Network.responseReceived') {
       const response = isRecord(params.response) ? params.response : {};
+      const requestId = stringValue(params.requestId);
       input.recorder.recordHttpResponse({
-        id: stringValue(params.requestId),
+        id: scopedId(requestId, sessionId),
         status: numberValue(response.status),
         responseHeaders: headersValue(response.headers),
       });
@@ -146,13 +153,14 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
 
     if (method === 'Network.loadingFinished') {
-      void recordResponseBody(stringValue(params.requestId));
+      input.recorder.trackPending(recordResponseBody(stringValue(params.requestId), sessionId));
       return;
     }
 
     if (method === 'Network.webSocketCreated') {
+      const requestId = stringValue(params.requestId);
       input.recorder.recordWebSocketCreated({
-        id: stringValue(params.requestId),
+        id: scopedId(requestId, sessionId),
         timestamp: now(),
         url: stringValue(params.url),
         subProtocols: [],
@@ -165,17 +173,30 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     if (method === 'Network.webSocketWillSendHandshakeRequest') {
       const request = isRecord(params.request) ? params.request : {};
       const headers = headersValue(request.headers);
+      const requestId = stringValue(params.requestId);
       input.recorder.recordWebSocketHandshake({
-        id: stringValue(params.requestId),
+        id: scopedId(requestId, sessionId),
         subProtocols: protocolList(headers),
         requestHeaders: headers,
       });
       return;
     }
 
+    if (method === 'Network.webSocketHandshakeResponseReceived') {
+      const response = isRecord(params.response) ? params.response : {};
+      const requestId = stringValue(params.requestId);
+      input.recorder.recordWebSocketHandshakeResponse({
+        id: scopedId(requestId, sessionId),
+        status: numberValue(response.status),
+        responseHeaders: headersValue(response.headers),
+      });
+      return;
+    }
+
     if (method === 'Network.webSocketClosed') {
+      const requestId = stringValue(params.requestId);
       input.recorder.recordWebSocketClosed({
-        id: stringValue(params.requestId),
+        id: scopedId(requestId, sessionId),
         timestamp: now(),
       });
       return;
@@ -184,8 +205,9 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     if (method === 'Network.webSocketFrameReceived' || method === 'Network.webSocketFrameSent') {
       const response = isRecord(params.response) ? params.response : {};
       const opcode = opcodeName(numberValue(response.opcode));
+      const requestId = stringValue(params.requestId);
       input.recorder.recordWebSocketFrame({
-        socketId: stringValue(params.requestId),
+        socketId: scopedId(requestId, sessionId),
         timestamp: now(),
         direction: method === 'Network.webSocketFrameSent' ? 'up' : 'down',
         opcode,

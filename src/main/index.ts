@@ -229,6 +229,7 @@ function registerCaptureHandlers() {
       collectPageFacts: label => session.controller.collectPageFacts(label),
       getPage: () => session.controller.timeline(),
       getNetwork: () => session.controller.network(),
+      waitForNetworkIdle: () => session.controller.waitForNetworkIdle(),
       getChromiumAccess: () => session.controller.chromiumAccess(),
       confirmExport: async summary => {
         logger.info('export-confirm', {

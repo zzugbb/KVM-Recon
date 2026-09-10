@@ -151,11 +151,19 @@ capture-pack/
   "requestBodySummary": {
     "bytes": 128,
     "redactedFields": ["Password"],
-    "jsonKeys": ["UserName", "Password"]
+    "jsonKeys": ["UserName", "Password"],
+    "sample": {
+      "UserName": "admin",
+      "Password": "<redacted:sha256:...>"
+    }
   },
   "responseBodySummary": {
     "bytes": 512,
-    "redactedFields": ["CSRFToken"]
+    "redactedFields": ["CSRFToken"],
+    "sample": {
+      "CSRFToken": "<redacted:sha256:...>",
+      "privilege": 4
+    }
   },
   "responseContentType": "application/json",
   "redirectLocation": "",
@@ -166,6 +174,10 @@ capture-pack/
       "CSRFToken": "string",
       "QSESSIONID": "string",
       "privilege": "number"
+    },
+    "jsonPaths": {
+      "$.CSRFToken": "string",
+      "$.privilege": "number"
     }
   },
   "tags": ["login"],
@@ -179,6 +191,7 @@ HTTP 资料必须脱敏：
 - Token、Cookie、CSRF、SessionId 只保留掩码、长度和 hash。
 - Cookie / Set-Cookie **保留 cookie 名**，只脱敏值，便于离场后识别 `QSESSIONID` 等字段。
 - JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
+- JSON 体可保留经过字段级处理的 `sample`，用于还原嵌套结构和非敏感参数关系；敏感值写入 hash/长度掩码。
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
 
@@ -186,8 +199,8 @@ HTTP 资料必须脱敏：
 
 - `loginChain`：登录、Session 创建、鉴权入口。
 - `kvmLaunchChain`：KVM Token、SetKvmKey、StartH5Kvm、viewer/console/IRC/VNC 入口。
-- `webSocketUpgrades`：KVM WebSocket URL、子协议、请求头名、首帧特征、窗口角色。
-- `correlations`：每条 KVM WebSocket 前最近的登录与 KVM 启动 HTTP 请求 id。
+- `webSocketUpgrades`：KVM WebSocket URL、请求/响应子协议、101 状态、握手响应头名、首帧特征、窗口角色。
+- `correlations`：每条 WebSocket 前最近的登录请求 id 与 KVM 启动请求 id，分成 `likelyLoginHttpIds` / `likelyKvmLaunchHttpIds`。
 
 ## 5. WebSocket 资料
 
@@ -203,6 +216,11 @@ HTTP 资料必须脱敏：
   "requestHeaders": {
     "cookie": "QSESSIONID=<redacted:len:32>"
   },
+  "handshakeStatus": 101,
+  "responseHeaders": {
+    "sec-websocket-protocol": "binary"
+  },
+  "responseSubProtocol": "binary",
   "binaryFrameCount": 128,
   "textFrameCount": 0,
   "tags": ["kvm-video"],
@@ -227,7 +245,7 @@ HTTP 资料必须脱敏：
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
 `windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口）。未区分时可省略。
 
-KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳或告警帧不作为可靠 KVM 证据。
 
 限制：
 

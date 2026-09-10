@@ -54,6 +54,13 @@ describe('createNetworkRecorder', () => {
     expect(JSON.stringify(records[0])).not.toContain('abc123');
     expect(records[0].responseHeaders['set-cookie']).toContain('QSESSIONID=');
     expect(records[0].responseBodySummary.jsonKeys).toEqual(['CSRFToken']);
+    expect(records[0].requestBodySummary.sample).toMatchObject({
+      UserName: 'admin',
+      Password: expect.stringContaining('<redacted:sha256:'),
+    });
+    expect(records[0].responseStructure?.jsonPaths).toMatchObject({
+      '$.CSRFToken': 'string',
+    });
     expect(records[1].tags).toEqual(['kvm-token']);
   });
 
@@ -163,6 +170,58 @@ describe('createNetworkRecorder', () => {
     expect(JSON.stringify(request)).not.toContain('abc123');
     expect(request?.responseHeaders['set-cookie']).toContain('Path=/');
     expect(request?.responseBodySummary.jsonKeys).toEqual(['token', 'mode']);
+    expect(request?.responseBodySummary.sample).toMatchObject({
+      token: expect.stringContaining('<redacted:sha256:'),
+      mode: 'html5',
+    });
+  });
+
+  it('does not tag a generic /websocket URL as KVM video before protocol evidence exists', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-home',
+      timestamp: '2026-09-07T02:43:13.000+08:00',
+      url: 'wss://10.10.8.129/websocket',
+      subProtocols: [],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-home',
+      timestamp: '2026-09-07T02:43:13.100+08:00',
+      direction: 'down',
+      opcode: 'text',
+      payload: '{"event":"alarm","message":"home heartbeat"}',
+    });
+
+    expect(recorder.toJSON().webSockets[0]?.tags).toEqual(['unknown']);
+    expect(recorder.toJSON().webSockets[0]?.textFrameCount).toBe(1);
+  });
+
+  it('records WebSocket handshake response status, headers, and selected protocol', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-1',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url: 'wss://10.0.0.10/vnc/vconsole',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketHandshakeResponse({
+      id: 'ws-1',
+      status: 101,
+      responseHeaders: {
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Protocol': 'binary',
+      },
+    });
+
+    expect(recorder.toJSON().webSockets[0]).toMatchObject({
+      handshakeStatus: 101,
+      responseSubProtocol: 'binary',
+      responseHeaders: {
+        Upgrade: 'websocket',
+      },
+    });
   });
 
   it('records printable WebSocket handshake magic without storing the full stream', () => {

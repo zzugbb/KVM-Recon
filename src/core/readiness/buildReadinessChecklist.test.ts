@@ -116,6 +116,47 @@ const pageWithScreenshot = {
 };
 
 describe('buildReadinessChecklist', () => {
+  it('does not treat an H3C home /websocket text frame as reliable KVM evidence', () => {
+    const network = {
+      httpRequests: completeNetwork.httpRequests,
+      webSockets: [
+        {
+          id: 'ws-home',
+          createdAt: '2026-09-07T02:43:13.000+08:00',
+          url: 'wss://10.10.8.129/websocket',
+          subProtocols: [],
+          requestHeaders: {},
+          binaryFrameCount: 0,
+          textFrameCount: 1,
+          tags: ['unknown' as const],
+        },
+      ],
+      webSocketFrames: [
+        {
+          socketId: 'ws-home',
+          timestamp: '2026-09-07T02:43:13.100+08:00',
+          direction: 'down' as const,
+          opcode: 'text' as const,
+          bytes: 42,
+          headHex: Buffer.from('{"event":"alarm","msg":"home"}', 'utf8').toString('hex').slice(0, 32),
+          sampled: true,
+        },
+      ],
+    };
+
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-h3c-home', events: [] },
+      network,
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')?.status).toBe(
+      'needs_user_action',
+    );
+    expect(checklist.readiness).toBe('NO');
+  });
+
   it('returns NO with a blocking action when KVM WebSocket is missing', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,

@@ -31,7 +31,7 @@ export interface ProbeBmcBasicsResult {
 }
 
 export interface ProbeRedfishSummary {
-  path: '/redfish/v1';
+  path: '/redfish/v1' | '/redfish/v1/';
   status: number;
   reachable: boolean;
   contentType?: string;
@@ -54,6 +54,7 @@ export interface ProbePathEvidenceDetail {
   bodyKind: 'json-object' | 'json-array' | 'text' | 'html' | 'empty' | 'other';
   jsonKeys: string[];
   jsonShape: Record<string, string>;
+  jsonPaths: Record<string, string>;
 }
 
 export type ProbePathDetails = Partial<
@@ -123,6 +124,22 @@ function jsonShape(data: unknown): Record<string, string> {
     shape[key] = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
   }
   return shape;
+}
+
+function collectJsonPaths(value: unknown, prefix = '$'): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const paths: Record<string, string> = {};
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (first !== undefined) Object.assign(paths, collectJsonPaths(first, `${prefix}[]`));
+    return paths;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const path = `${prefix}.${key}`;
+    paths[path] = Array.isArray(child) ? 'array' : child === null ? 'null' : typeof child;
+    Object.assign(paths, collectJsonPaths(child, path));
+  }
+  return paths;
 }
 
 function is2xx(status: number) {
@@ -222,6 +239,7 @@ function buildPathDetail(
     bodyKind: bodyKind(response.data),
     jsonKeys: collectJsonKeys(response.data),
     jsonShape: jsonShape(response.data),
+    jsonPaths: collectJsonPaths(response.data),
   };
 }
 
@@ -244,7 +262,16 @@ function oemKeys(data: unknown): string[] {
 }
 
 export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeBmcBasicsResult> {
-  const redfish = await safeGet(input.httpClient, '/redfish/v1');
+  let redfishPath: ProbeRedfishSummary['path'] = '/redfish/v1';
+  let redfish = await safeGet(input.httpClient, redfishPath);
+  if (!(is2xx(redfish.status) && !isHtmlPayload(redfish.data) && Boolean(redfish.data))) {
+    const slashPath = '/redfish/v1/';
+    const slashRedfish = await safeGet(input.httpClient, slashPath);
+    if (is2xx(slashRedfish.status) && !isHtmlPayload(slashRedfish.data) && Boolean(slashRedfish.data)) {
+      redfishPath = slashPath;
+      redfish = slashRedfish;
+    }
+  }
   const paths: NonNullable<ProbeSignatureInput['paths']> = {};
   const pathDetails: ProbePathDetails = {};
 
@@ -287,7 +314,7 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
     pathDetails,
     familySignatures,
     redfish: {
-      path: '/redfish/v1',
+      path: redfishPath,
       status: redfish.status,
       reachable: is2xx(redfish.status) && !isHtmlPayload(redfish.data) && Boolean(redfish.data),
       contentType: contentType(redfish.headers),

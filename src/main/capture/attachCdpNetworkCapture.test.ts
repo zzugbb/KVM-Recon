@@ -114,6 +114,81 @@ describe('attachCdpNetworkCapture', () => {
     });
   });
 
+  it('scopes OOPIF request ids and reads response bodies through the attached session', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const bodyCalls: Array<{ requestId: string; sessionId?: string }> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, params, sessionId) {
+        if (command === 'Network.getResponseBody') {
+          bodyCalls.push({ requestId: String(params?.requestId || ''), sessionId });
+          return {
+            body: '{"StartH5Kvm":{"url":"wss://10.10.8.129/kvm?token=secret","port":443}}',
+            base64Encoded: false,
+          };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-08-24T12:00:00.000+08:00',
+    });
+
+    for (const listener of listeners) {
+      listener(
+        {},
+        'Network.requestWillBeSent',
+        {
+          requestId: 'req-1',
+          type: 'XHR',
+          request: {
+            method: 'POST',
+            url: 'https://bmc.example/redfish/v1/Managers/1/KvmService/Actions/Oem/Public/KvmService.StartH5Kvm',
+            headers: {},
+          },
+        },
+        'oopif-session',
+      );
+      listener(
+        {},
+        'Network.responseReceived',
+        {
+          requestId: 'req-1',
+          response: {
+            status: 200,
+            headers: { 'content-type': 'text/plain' },
+          },
+        },
+        'oopif-session',
+      );
+      listener({}, 'Network.loadingFinished', { requestId: 'req-1' }, 'oopif-session');
+    }
+
+    await recorder.waitForIdle();
+
+    expect(bodyCalls).toEqual([{ requestId: 'req-1', sessionId: 'oopif-session' }]);
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request).toMatchObject({
+      id: 'oopif-session::req-1',
+      responseBodySummary: {
+        sample: {
+          StartH5Kvm: {
+            url: expect.stringContaining('redacted'),
+            port: 443,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(request)).not.toContain('secret');
+  });
+
   it('enables Network for auto-attached iframe/OOPIF targets', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
     const sentCommands: Array<{ command: string; sessionId?: string }> = [];
@@ -142,6 +217,46 @@ describe('attachCdpNetworkCapture', () => {
     expect(sentCommands).toContainEqual({
       command: 'Network.enable',
       sessionId: 'oopif-session',
+    });
+  });
+
+  it('records WebSocket handshake responses from CDP', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-08-24T12:00:00.000+08:00',
+    });
+
+    for (const listener of listeners) {
+      listener({}, 'Network.webSocketCreated', { requestId: 'ws-1', url: 'wss://bmc.example/vnc/vconsole' });
+      listener(
+        {},
+        'Network.webSocketHandshakeResponseReceived',
+        {
+          requestId: 'ws-1',
+          response: {
+            status: 101,
+            headers: { 'Sec-WebSocket-Protocol': 'binary' },
+          },
+        },
+      );
+    }
+
+    expect(recorder.toJSON().webSockets[0]).toMatchObject({
+      handshakeStatus: 101,
+      responseSubProtocol: 'binary',
     });
   });
 });

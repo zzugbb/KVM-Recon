@@ -13,8 +13,8 @@
     "status": { "type": ["integer", "null"] },
     "requestHeaders": { "type": "object" },
     "responseHeaders": { "type": "object" },
-    "requestBodySummary": { "type": "object" },
-    "responseBodySummary": { "type": "object" },
+    "requestBodySummary": { "$ref": "#/definitions/bodySummary" },
+    "responseBodySummary": { "$ref": "#/definitions/bodySummary" },
     "responseContentType": { "type": "string" },
     "redirectLocation": { "type": "string" },
     "responseStructure": {
@@ -28,6 +28,10 @@
         "jsonShape": {
           "type": "object",
           "additionalProperties": { "type": "string" }
+        },
+        "jsonPaths": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       }
     },
@@ -36,5 +40,22 @@
       "items": { "enum": ["login", "kvm-token", "kvm-entry"] }
     },
     "windowRole": { "enum": ["main", "popup"] }
+  },
+  "definitions": {
+    "bodySummary": {
+      "type": "object",
+      "properties": {
+        "bytes": { "type": "integer" },
+        "redactedFields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "jsonKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sample": {}
+      }
+    }
   }
 }

@@ -125,7 +125,6 @@ function isKnownKvmSocketUrl(url: string) {
   return urlContains(url, [
     /\/kvm(?:\/|\?|$)/i,
     /\/kvm\/video/i,
-    /\/websocket(?:\?|$)/i,
     /\/vnc\/vconsole/i,
     /:5900\/(?:$|\?|vkvm\/?)/i,
     /\/wss\/ircport/i,
@@ -142,6 +141,7 @@ function hasKnownKvmFrame(frames: WebSocketFrameRecord[]) {
       frame.magic === 'DELL_APCP' ||
       frame.magic === 'HUAWEI_KVM_FEF6' ||
       /^RFB 003\./.test(frame.magic || text) ||
+      /\/xyz\/openbmc_project/i.test(text) ||
       /^41504350/i.test(frame.headHex) ||
       /^fef6/i.test(frame.headHex) ||
       /^(13|14|17|22|35|3a|50|53)[0-9a-f]{6}/i.test(frame.headHex)
@@ -162,11 +162,9 @@ export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined
       const frameCount = socket.binaryFrameCount + socket.textFrameCount;
       if (frameCount <= 0) return false;
       const frames = framesBySocket.get(socket.id) || [];
-      return (
-        socket.tags.includes('kvm-video') ||
-        isKnownKvmSocketUrl(socket.url) ||
-        hasKnownKvmFrame(frames)
-      );
+      const knownFrame = hasKnownKvmFrame(frames);
+      if (knownFrame) return true;
+      return socket.binaryFrameCount > 0 && (socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url));
     })
     .map(socket => socket.id);
 }

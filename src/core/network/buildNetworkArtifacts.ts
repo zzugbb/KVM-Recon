@@ -60,6 +60,8 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
         comment: JSON.stringify({
           resourceType: request.resourceType,
           tags: request.tags,
+          requestBodySample: request.requestBodySummary.sample,
+          responseBodySample: request.responseBodySummary.sample,
           responseStructure: request.responseStructure,
         }),
       })),
@@ -96,6 +98,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
           ...request.requestBodySummary.redactedFields,
           ...request.responseBodySummary.redactedFields,
         ],
+        requestBodySample: request.requestBodySummary.sample || null,
+        responseBodySample: request.responseBodySummary.sample || null,
+        responseStructure: request.responseStructure,
       })),
     kvmLaunchChain: input.httpRequests
       .filter(request => request.tags.includes('kvm-token') || request.tags.includes('kvm-entry'))
@@ -107,6 +112,8 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         contentType: request.responseContentType,
         redirectLocation: request.redirectLocation,
         tags: request.tags,
+        requestBodySample: request.requestBodySummary.sample || null,
+        responseBodySample: request.responseBodySummary.sample || null,
         responseStructure: request.responseStructure,
       })),
     webSocketUpgrades: input.webSockets.map(socket => {
@@ -116,6 +123,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         url: socket.url,
         subProtocols: socket.subProtocols,
         requestHeaderNames: Object.keys(socket.requestHeaders),
+        handshakeStatus: socket.handshakeStatus || null,
+        responseHeaderNames: Object.keys(socket.responseHeaders || {}),
+        responseSubProtocol: socket.responseSubProtocol || '',
         binaryFrameCount: socket.binaryFrameCount,
         textFrameCount: socket.textFrameCount,
         tags: socket.tags,
@@ -131,13 +141,22 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
           : null,
       };
     }),
-    correlations: input.webSockets.map(socket => ({
-      socketId: socket.id,
-      likelyPrecedingHttpIds: input.httpRequests
-        .filter(request => keyRequestIds.has(request.id) && request.timestamp <= socket.createdAt)
-        .slice(-6)
-        .map(request => request.id),
-    })),
+    correlations: input.webSockets.map(socket => {
+      const preceding = input.httpRequests.filter(
+        request => keyRequestIds.has(request.id) && request.timestamp <= socket.createdAt,
+      );
+      return {
+        socketId: socket.id,
+        likelyLoginHttpIds: preceding
+          .filter(request => request.tags.includes('login'))
+          .slice(-4)
+          .map(request => request.id),
+        likelyKvmLaunchHttpIds: preceding
+          .filter(request => request.tags.includes('kvm-token') || request.tags.includes('kvm-entry'))
+          .slice(-6)
+          .map(request => request.id),
+      };
+    }),
   };
 }
 

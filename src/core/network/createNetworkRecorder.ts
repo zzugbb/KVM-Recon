@@ -3,6 +3,13 @@ import { redactSensitiveData, redactUrl } from '../redaction/redactSensitiveData
 type HeaderMap = Record<string, string>;
 type HttpTag = 'login' | 'kvm-token' | 'kvm-entry';
 type WebSocketTag = 'kvm-video' | 'vmedia' | 'unknown';
+type StructuredBodySample =
+  | string
+  | number
+  | boolean
+  | null
+  | StructuredBodySample[]
+  | { [key: string]: StructuredBodySample };
 
 interface CreateNetworkRecorderOptions {
   frameHeadBytes: number;
@@ -44,11 +51,13 @@ export interface HttpRequestRecord {
     bytes: number;
     redactedFields: string[];
     jsonKeys?: string[];
+    sample?: StructuredBodySample;
   };
   responseBodySummary: {
     bytes: number;
     redactedFields: string[];
     jsonKeys?: string[];
+    sample?: StructuredBodySample;
   };
   responseContentType?: string;
   redirectLocation?: string;
@@ -56,6 +65,7 @@ export interface HttpRequestRecord {
     bodyKind: 'json-object' | 'json-array' | 'text' | 'html' | 'empty' | 'other';
     jsonKeys: string[];
     jsonShape: Record<string, string>;
+    jsonPaths: Record<string, string>;
   };
   tags: HttpTag[];
   windowRole?: 'main' | 'popup';
@@ -96,10 +106,19 @@ export interface WebSocketRecord {
   url: string;
   subProtocols: string[];
   requestHeaders: HeaderMap;
+  handshakeStatus?: number;
+  responseHeaders?: HeaderMap;
+  responseSubProtocol?: string;
   binaryFrameCount: number;
   textFrameCount: number;
   tags: WebSocketTag[];
   windowRole?: 'main' | 'popup';
+}
+
+interface WebSocketHandshakeResponseInput {
+  id: string;
+  status: number;
+  responseHeaders: HeaderMap;
 }
 
 export interface WebSocketFrameRecord {
@@ -143,7 +162,7 @@ function tagHttp(url: string): HttpTag[] {
 function tagWebSocket(url: string): WebSocketTag[] {
   const lower = url.toLowerCase();
   if (
-    /\/kvm(?:\/|\?|$)|\/kvm\/video|\/websocket(?:\?|$)|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/.test(
+    /\/kvm(?:\/|\?|$)|\/kvm\/video|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/.test(
       lower,
     )
   ) {
@@ -156,10 +175,12 @@ function tagWebSocket(url: string): WebSocketTag[] {
 function summarizeBody(body = '') {
   const parsed = parseBody(body);
   const redactedFields = collectSensitiveFieldNames(parsed);
+  const sample = sampleStructuredBody(parsed);
   return {
     bytes: body.length,
     redactedFields,
     jsonKeys: collectJsonKeys(parsed),
+    ...(sample === undefined ? {} : { sample }),
   };
 }
 
@@ -203,7 +224,53 @@ function structureBody(body = ''): HttpResponseStructure {
     bodyKind,
     jsonKeys: collectJsonKeys(parsed),
     jsonShape,
+    jsonPaths: collectJsonPaths(parsed),
   };
+}
+
+function collectJsonPaths(value: unknown, prefix = '$'): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const paths: Record<string, string> = {};
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (first !== undefined) {
+      Object.assign(paths, collectJsonPaths(first, `${prefix}[]`));
+    }
+    return paths;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const path = `${prefix}.${key}`;
+    paths[path] = Array.isArray(child) ? 'array' : child === null ? 'null' : typeof child;
+    Object.assign(paths, collectJsonPaths(child, path));
+  }
+  return paths;
+}
+
+function normalizeSample(value: unknown, key = '', depth = 0): StructuredBodySample {
+  void key;
+  if (depth > 6) return '<truncated>';
+  if (value == null) return null;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const redactedUrl = redactUrl(value);
+    return redactedUrl.length > 512 ? `${redactedUrl.slice(0, 512)}<truncated>` : redactedUrl;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 8).map(item => normalizeSample(item, key, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const output: Record<string, StructuredBodySample> = {};
+    for (const [childKey, child] of Object.entries(value).slice(0, 80)) {
+      output[childKey] = normalizeSample(child, childKey, depth + 1);
+    }
+    return output;
+  }
+  return String(value);
+}
+
+function sampleStructuredBody(parsed: unknown): StructuredBodySample | undefined {
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  return redactSensitiveData(normalizeSample(parsed)).data;
 }
 
 function collectJsonKeys(value: unknown): string[] {
@@ -274,9 +341,22 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const httpRequests = new Map<string, HttpRequestRecord>();
   const webSockets = new Map<string, WebSocketRecord>();
   const webSocketFrames: WebSocketFrameRecord[] = [];
+  const pendingTasks = new Set<Promise<unknown>>();
   let paused = false;
 
   return {
+    trackPending(task: Promise<unknown>) {
+      pendingTasks.add(task);
+      void task.finally(() => {
+        pendingTasks.delete(task);
+      });
+      return task;
+    },
+    async waitForIdle() {
+      while (pendingTasks.size > 0) {
+        await Promise.allSettled(Array.from(pendingTasks));
+      }
+    },
     setPaused(next: boolean) {
       paused = next;
     },
@@ -327,6 +407,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         url: redactUrl(input.url),
         subProtocols: input.subProtocols,
         requestHeaders: redactHeaders(input.requestHeaders),
+        responseHeaders: {},
         binaryFrameCount: 0,
         textFrameCount: 0,
         tags: tagWebSocket(input.url),
@@ -338,6 +419,15 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       if (!socket) return;
       socket.subProtocols = input.subProtocols;
       socket.requestHeaders = redactHeaders(input.requestHeaders);
+    },
+    recordWebSocketHandshakeResponse(input: WebSocketHandshakeResponseInput) {
+      const socket = webSockets.get(input.id);
+      if (!socket) return;
+      const headers = redactHeaders(input.responseHeaders);
+      socket.handshakeStatus = input.status;
+      socket.responseHeaders = headers;
+      socket.responseSubProtocol =
+        Object.entries(headers).find(([key]) => key.toLowerCase() === 'sec-websocket-protocol')?.[1] || '';
     },
     recordWebSocketClosed(input: WebSocketClosedInput) {
       const socket = webSockets.get(input.id);

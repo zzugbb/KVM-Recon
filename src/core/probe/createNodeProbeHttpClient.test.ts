@@ -79,4 +79,29 @@ describe('createNodeProbeHttpClient', () => {
     await expect(client.get('/api/kvm/token')).resolves.toMatchObject({ status: 401 });
     expect(seen[0]).toBe('QSESSIONID=abc123');
   });
+
+  it('parses JSON returned as text/plain when the body is not HTML', async () => {
+    const { port } = await startServer((request, response) => {
+      if (request.url === '/api/randomtag') {
+        response.setHeader('content-type', 'text/plain');
+        response.end(JSON.stringify({ random: 'abc123', encrypt_ctrl: 0 }));
+        return;
+      }
+      response.setHeader('content-type', 'text/plain');
+      response.end('<html>login</html>');
+    });
+
+    const client = createNodeProbeHttpClient({
+      host: '127.0.0.1',
+      port,
+      scheme: 'http',
+    });
+
+    await expect(client.get('/api/randomtag')).resolves.toMatchObject({
+      data: { random: 'abc123', encrypt_ctrl: 0 },
+    });
+    await expect(client.get('/')).resolves.toMatchObject({
+      data: '<html>login</html>',
+    });
+  });
 });
