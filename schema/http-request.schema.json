@@ -15,6 +15,22 @@
     "responseHeaders": { "type": "object" },
     "requestBodySummary": { "type": "object" },
     "responseBodySummary": { "type": "object" },
+    "responseContentType": { "type": "string" },
+    "redirectLocation": { "type": "string" },
+    "responseStructure": {
+      "type": "object",
+      "properties": {
+        "bodyKind": { "enum": ["json-object", "json-array", "text", "html", "empty", "other"] },
+        "jsonKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "jsonShape": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
     "tags": {
       "type": "array",
       "items": { "enum": ["login", "kvm-token", "kvm-entry"] }

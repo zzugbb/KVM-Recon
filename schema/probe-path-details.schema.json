@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-path-details.schema.json",
+  "title": "KVM-Recon probe path details",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": ["path", "hit"],
+    "properties": {
+      "path": { "type": "string" },
+      "status": { "type": "integer" },
+      "hit": { "type": "boolean" },
+      "contentType": { "type": "string" },
+      "redirected": { "type": "boolean" },
+      "redirectLocation": { "type": "string" },
+      "bodyKind": { "enum": ["json-object", "json-array", "text", "html", "empty", "other"] },
+      "jsonKeys": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "jsonShape": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      }
+    }
+  }
+}

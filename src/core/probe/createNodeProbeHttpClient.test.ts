@@ -44,13 +44,18 @@ describe('createNodeProbeHttpClient', () => {
       scheme: 'http',
     });
 
-    await expect(client.get('/redfish/v1')).resolves.toEqual({
+    await expect(client.get('/redfish/v1')).resolves.toMatchObject({
       status: 200,
       data: { Vendor: 'OpenBMC', Product: 'Test BMC' },
+      headers: { 'content-type': 'application/json' },
+      redirected: false,
+      redirectLocation: '',
     });
-    await expect(client.get('/missing')).resolves.toEqual({
+    await expect(client.get('/missing')).resolves.toMatchObject({
       status: 404,
       data: 'not found',
+      redirected: false,
+      redirectLocation: '',
     });
   });
 

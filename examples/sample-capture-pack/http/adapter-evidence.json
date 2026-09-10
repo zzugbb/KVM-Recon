@@ -1,0 +1,59 @@
+{
+  "loginChain": [
+    {
+      "id": "login-1",
+      "method": "POST",
+      "url": "https://10.0.0.10/api/session",
+      "status": 200,
+      "requestJsonKeys": [],
+      "responseJsonKeys": [],
+      "redactedFields": [
+        "Password",
+        "CSRFToken"
+      ]
+    }
+  ],
+  "kvmLaunchChain": [
+    {
+      "id": "token-1",
+      "method": "GET",
+      "url": "https://10.0.0.10/api/kvm/token",
+      "status": 200,
+      "tags": [
+        "kvm-token"
+      ]
+    }
+  ],
+  "webSocketUpgrades": [
+    {
+      "id": "ws-1",
+      "url": "wss://10.0.0.10/kvm",
+      "subProtocols": [
+        "binary"
+      ],
+      "requestHeaderNames": [],
+      "binaryFrameCount": 12,
+      "textFrameCount": 0,
+      "tags": [
+        "kvm-video"
+      ],
+      "windowRole": "",
+      "firstFrame": {
+        "direction": "down",
+        "opcode": "binary",
+        "bytes": 64,
+        "headHex": "17000001",
+        "magic": ""
+      }
+    }
+  ],
+  "correlations": [
+    {
+      "socketId": "ws-1",
+      "likelyPrecedingHttpIds": [
+        "login-1",
+        "token-1"
+      ]
+    }
+  ]
+}

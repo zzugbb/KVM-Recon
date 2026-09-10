@@ -18,10 +18,13 @@
 | `tls-certificate.schema.json` | `tls/certificate.json` |
 | `probe-bmc-basic.schema.json` | `probe/bmc-basic.json` |
 | `probe-path-evidence.schema.json` | `probe/path-evidence.json` |
+| `probe-path-details.schema.json` | `probe/path-details.json` |
+| `probe-product-hints.schema.json` | `probe/product-hints.json` |
 | `probe-family-signatures.schema.json` | `probe/family-signatures.json` |
 | `probe-redfish.schema.json` | `probe/redfish.json` |
 | `operator-observed.schema.json` | `probe/operator-observed.json`（现场铭牌，可选） |
 | `probe-authenticated.schema.json` | `probe/authenticated.json`（登录后复验，可选） |
+| `http-adapter-evidence.schema.json` | `http/adapter-evidence.json` |
 
 `http/har.json` 遵循 HAR 1.2，不另写一份项目内 Schema。`page/screenshots/` 下的 PNG 与 `artifacts/*` 不是 JSON。
 

@@ -48,7 +48,11 @@
       "properties": {
         "primary": { "type": "string" },
         "confidence": { "type": "number" },
-        "candidates": { "type": "array" }
+        "candidates": { "type": "array" },
+        "productHints": {
+          "type": "array",
+          "items": { "$ref": "probe-product-hints.schema.json#/items" }
+        }
       }
     },
     "readiness": {

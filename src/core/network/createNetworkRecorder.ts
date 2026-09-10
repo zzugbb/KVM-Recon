@@ -50,6 +50,13 @@ export interface HttpRequestRecord {
     redactedFields: string[];
     jsonKeys?: string[];
   };
+  responseContentType?: string;
+  redirectLocation?: string;
+  responseStructure?: {
+    bodyKind: 'json-object' | 'json-array' | 'text' | 'html' | 'empty' | 'other';
+    jsonKeys: string[];
+    jsonShape: Record<string, string>;
+  };
   tags: HttpTag[];
   windowRole?: 'main' | 'popup';
 }
@@ -112,16 +119,22 @@ interface NetworkRecorderSnapshot {
   webSocketFrames: WebSocketFrameRecord[];
 }
 
+type HttpResponseStructure = NonNullable<HttpRequestRecord['responseStructure']>;
+
 function tagHttp(url: string): HttpTag[] {
   const lower = url.toLowerCase();
   const tags: HttpTag[] = [];
-  if (/\/api\/session|sessionservice\/sessions|login/.test(lower)) {
+  if (
+    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|login/.test(
+      lower,
+    )
+  ) {
     tags.push('login');
   }
-  if (/kvm\/token|setkvmkey|kvmservice/.test(lower)) {
+  if (/kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file/.test(lower)) {
     tags.push('kvm-token');
   }
-  if (/kvm|console|viewer/.test(lower) && !tags.includes('kvm-token')) {
+  if (/kvm|console|viewer|vconsole|ircport|\/irc\.js|\/wss\/irc|\/vnc\//.test(lower) && !tags.includes('kvm-token')) {
     tags.push('kvm-entry');
   }
   return tags;
@@ -129,7 +142,13 @@ function tagHttp(url: string): HttpTag[] {
 
 function tagWebSocket(url: string): WebSocketTag[] {
   const lower = url.toLowerCase();
-  if (/\/kvm|websocket|\/kvm\/video/.test(lower)) return ['kvm-video'];
+  if (
+    /\/kvm(?:\/|\?|$)|\/kvm\/video|\/websocket(?:\?|$)|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/.test(
+      lower,
+    )
+  ) {
+    return ['kvm-video'];
+  }
   if (/vm|media|cd-server/.test(lower)) return ['vmedia'];
   return ['unknown'];
 }
@@ -141,6 +160,49 @@ function summarizeBody(body = '') {
     bytes: body.length,
     redactedFields,
     jsonKeys: collectJsonKeys(parsed),
+  };
+}
+
+function responseContentType(headers: HeaderMap): string {
+  return (
+    Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] || ''
+  );
+}
+
+function responseRedirectLocation(headers: HeaderMap): string {
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === 'location')?.[1] || '';
+}
+
+function isHtmlText(text: string) {
+  const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 512).toLowerCase();
+  return (
+    head.startsWith('<!doctype') ||
+    head.startsWith('<html') ||
+    /^<html[\s>]/.test(head) ||
+    (head.includes('<head') && head.includes('<body'))
+  );
+}
+
+function structureBody(body = ''): HttpResponseStructure {
+  const parsed = parseBody(body);
+  let bodyKind: HttpResponseStructure['bodyKind'] = 'other';
+  if (body === '') bodyKind = 'empty';
+  else if (typeof parsed === 'string' && isHtmlText(parsed)) bodyKind = 'html';
+  else if (Array.isArray(parsed)) bodyKind = 'json-array';
+  else if (parsed && typeof parsed === 'object') bodyKind = 'json-object';
+  else if (typeof parsed === 'string') bodyKind = 'text';
+
+  const jsonShape: Record<string, string> = {};
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      jsonShape[key] = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
+    }
+  }
+
+  return {
+    bodyKind,
+    jsonKeys: collectJsonKeys(parsed),
+    jsonShape,
   };
 }
 
@@ -189,8 +251,16 @@ function payloadToBytes(payload: string | Uint8Array): Uint8Array {
 }
 
 function detectFrameMagic(payload: string | Uint8Array): string | undefined {
-  const text = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
+  const bytes = payloadToBytes(payload);
+  const text =
+    typeof payload === 'string' ? payload : new TextDecoder('utf8', { fatal: false }).decode(payload);
   if (text.includes('AMI_IVTP_CONNECTION_ALLOWED')) return 'AMI_IVTP_CONNECTION_ALLOWED';
+  if (text.startsWith('RFB 003.')) return text.trim();
+  if (text.startsWith('APCP')) return 'DELL_APCP';
+  if (bytes[0] === 0xfe && bytes[1] === 0xf6) return 'HUAWEI_KVM_FEF6';
+  if ([0x13, 0x14, 0x17, 0x22, 0x35, 0x3a, 0x50, 0x53].includes(bytes[0] || 0)) {
+    return 'AMI_IVTP_BINARY';
+  }
   return undefined;
 }
 
@@ -226,6 +296,9 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         responseHeaders: {},
         requestBodySummary: summarizeBody(input.requestBody),
         responseBodySummary: summarizeBody(),
+        responseContentType: '',
+        redirectLocation: '',
+        responseStructure: structureBody(),
         tags: tagHttp(input.url),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
       });
@@ -236,11 +309,15 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       existing.status = input.status;
       existing.responseHeaders = redactHeaders(input.responseHeaders);
       existing.responseBodySummary = summarizeBody(input.responseBody);
+      existing.responseContentType = responseContentType(input.responseHeaders);
+      existing.redirectLocation = responseRedirectLocation(input.responseHeaders);
+      existing.responseStructure = structureBody(input.responseBody);
     },
     recordHttpResponseBody(input: HttpResponseBodyInput) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
       existing.responseBodySummary = summarizeBody(input.responseBody);
+      existing.responseStructure = structureBody(input.responseBody);
     },
     recordWebSocketCreated(input: WebSocketCreatedInput) {
       if (paused) return;

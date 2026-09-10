@@ -68,12 +68,32 @@ function urlContains(url: string, patterns: RegExp[]) {
   return patterns.some(pattern => pattern.test(url));
 }
 
+function decodeHeadHex(headHex: string): string {
+  const hex = headHex.replace(/[^0-9a-f]/gi, '');
+  if (hex.length < 2 || hex.length % 2 !== 0) return '';
+  try {
+    return Buffer.from(hex, 'hex').toString('utf8');
+  } catch (error) {
+    // 捕获帧头 hex 解码失败：现场帧可能截断或非 UTF-8
+    // 策略：仅跳过文本魔数，继续使用 URL、opcode 和字节数判断 WS 证据
+    void error;
+    return '';
+  }
+}
+
 function loginEvidence(network: NetworkSnapshot | null | undefined): string[] {
   return (network?.httpRequests || [])
     .filter(
       request =>
         request.tags.includes('login') ||
-        urlContains(request.url, [/\/api\/session/i, /sessionservice\/sessions/i, /login/i]),
+        urlContains(request.url, [
+          /\/api\/(?:secure_session|session|session_encrypted)/i,
+          /sessionservice\/sessions/i,
+          /sessionservice\.createsession/i,
+          /\/sysmgmt\/2015\/bmc\/session/i,
+          /\/json\/login_session/i,
+          /login/i,
+        ]),
     )
     .map(request => request.id);
 }
@@ -84,16 +104,69 @@ function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] 
       request =>
         request.tags.includes('kvm-token') ||
         request.tags.includes('kvm-entry') ||
-        urlContains(request.url, [/\/api\/kvm\/token/i, /kvmservice/i, /setkvmkey/i, /\/kvm\/video/i]),
+        urlContains(request.url, [
+          /\/api\/kvm\/token/i,
+          /kvmservice/i,
+          /setkvmkey/i,
+          /starth5kvm/i,
+          /\/kvm\/video/i,
+          /\/vnc\/vconsole/i,
+          /\/restgui\/(?:html5viewer|views\/configuration\/vconsole)/i,
+          /\/wss\/ircport/i,
+          /\/js\/irc(?:KeyboardMouse)?\.js/i,
+          /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
+          /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i,
+        ]),
     )
     .map(request => request.id);
 }
 
-function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined): string[] {
+function isKnownKvmSocketUrl(url: string) {
+  return urlContains(url, [
+    /\/kvm(?:\/|\?|$)/i,
+    /\/kvm\/video/i,
+    /\/websocket(?:\?|$)/i,
+    /\/vnc\/vconsole/i,
+    /:5900\/(?:$|\?|vkvm\/?)/i,
+    /\/wss\/ircport/i,
+    /:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/i,
+  ]);
+}
+
+function hasKnownKvmFrame(frames: WebSocketFrameRecord[]) {
+  return frames.some(frame => {
+    const text = decodeHeadHex(frame.headHex);
+    return (
+      frame.magic === 'AMI_IVTP_CONNECTION_ALLOWED' ||
+      frame.magic === 'AMI_IVTP_BINARY' ||
+      frame.magic === 'DELL_APCP' ||
+      frame.magic === 'HUAWEI_KVM_FEF6' ||
+      /^RFB 003\./.test(frame.magic || text) ||
+      /^41504350/i.test(frame.headHex) ||
+      /^fef6/i.test(frame.headHex) ||
+      /^(13|14|17|22|35|3a|50|53)[0-9a-f]{6}/i.test(frame.headHex)
+    );
+  });
+}
+
+export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined): string[] {
+  const framesBySocket = new Map<string, WebSocketFrameRecord[]>();
+  for (const frame of network?.webSocketFrames || []) {
+    const frames = framesBySocket.get(frame.socketId) || [];
+    frames.push(frame);
+    framesBySocket.set(frame.socketId, frames);
+  }
+
   return (network?.webSockets || [])
     .filter(socket => {
       const frameCount = socket.binaryFrameCount + socket.textFrameCount;
-      return socket.tags.includes('kvm-video') && frameCount > 0;
+      if (frameCount <= 0) return false;
+      const frames = framesBySocket.get(socket.id) || [];
+      return (
+        socket.tags.includes('kvm-video') ||
+        isKnownKvmSocketUrl(socket.url) ||
+        hasKnownKvmFrame(frames)
+      );
     })
     .map(socket => socket.id);
 }

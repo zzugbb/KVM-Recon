@@ -86,7 +86,9 @@ export function createElectronCaptureBrowserAdapter(
       });
 
       const windows = new Set<BrowserWindow>();
+      const windowRoles = new Map<BrowserWindow, 'main' | 'popup'>();
       let foreground: BrowserWindow | null = null;
+      let debuggerCount = 0;
 
       function activeWindow() {
         if (windowAlive(foreground)) return foreground;
@@ -114,16 +116,25 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
-      async function pickScreenshotWindow() {
+      async function pickScreenshotWindow(options?: { requireKvmSurface?: boolean; preferredWindowRole?: 'main' | 'popup' }) {
         const alive = [...windows].filter(windowAlive);
-        if (windowAlive(foreground) && (await windowHasKvmSurface(foreground))) {
+        const preferred = alive.filter(
+          candidate => !options?.preferredWindowRole || windowRoles.get(candidate) === options.preferredWindowRole,
+        );
+        const ordered = [...preferred, ...alive.filter(candidate => !preferred.includes(candidate))];
+        if (
+          windowAlive(foreground) &&
+          (!options?.preferredWindowRole || windowRoles.get(foreground) === options.preferredWindowRole) &&
+          (await windowHasKvmSurface(foreground))
+        ) {
           return foreground;
         }
-        for (const candidate of alive) {
+        for (const candidate of ordered) {
           if (candidate !== foreground && (await windowHasKvmSurface(candidate))) {
             return candidate;
           }
         }
+        if (options?.requireKvmSurface) return null;
         return activeWindow();
       }
 
@@ -140,11 +151,15 @@ export function createElectronCaptureBrowserAdapter(
       async function attachWindow(targetWindow: BrowserWindow, attachDebugger: boolean) {
         windows.add(targetWindow);
         foreground = targetWindow;
+        if (!windowRoles.has(targetWindow)) {
+          windowRoles.set(targetWindow, debuggerCount++ === 0 ? 'main' : 'popup');
+        }
         targetWindow.on('focus', () => {
           if (windowAlive(targetWindow)) foreground = targetWindow;
         });
         targetWindow.on('closed', () => {
           windows.delete(targetWindow);
+          windowRoles.delete(targetWindow);
           if (foreground === targetWindow) {
             foreground = [...windows].find(windowAlive) || null;
           }
@@ -225,6 +240,7 @@ export function createElectronCaptureBrowserAdapter(
         });
         if (attachDebugger) {
           await options.onNetworkDebugger(targetWindow.webContents.debugger as unknown as CdpDebuggerLike);
+          recordCaptureWindowLog(`capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`);
         }
       }
 
@@ -241,10 +257,8 @@ export function createElectronCaptureBrowserAdapter(
         },
       });
 
-      await attachWindow(window, false);
+      await attachWindow(window, true);
       recordCaptureWindowLog(`capture-window-created host=${options.targetHost} partition=${options.partition}`);
-
-      let networkDebuggerAttached = false;
 
       return {
         async loadURL(url) {
@@ -253,13 +267,6 @@ export function createElectronCaptureBrowserAdapter(
           try {
             await current.loadURL(url);
             recordCaptureWindowLog(`capture-load-done ${current.webContents.getURL()}`);
-            if (!networkDebuggerAttached) {
-              networkDebuggerAttached = true;
-              await options.onNetworkDebugger(
-                current.webContents.debugger as unknown as CdpDebuggerLike,
-              );
-              recordCaptureWindowLog('capture-cdp-attached');
-            }
           } catch (error) {
             recordCaptureWindowLog(
               `capture-load-error ${error instanceof Error ? error.message : String(error)}`,
@@ -279,8 +286,15 @@ export function createElectronCaptureBrowserAdapter(
         async collectSelectorCandidates() {
           return activeWindow().webContents.executeJavaScript(selectorScript, true);
         },
-        async captureScreenshot(label) {
-          const current = await pickScreenshotWindow();
+        async captureScreenshot(label, screenshotOptions) {
+          const requireKvmSurface = /^viewer/i.test(label);
+          const current = await pickScreenshotWindow({
+            requireKvmSurface,
+            preferredWindowRole: screenshotOptions?.preferredWindowRole,
+          });
+          if (!current) {
+            throw new Error('No KVM viewer surface is ready for screenshot');
+          }
           await mkdir(adapterOptions.screenshotDir, { recursive: true });
           const fileName = `${sanitizeLabel(label)}-${Date.now()}.png`;
           const filePath = join(adapterOptions.screenshotDir, fileName);

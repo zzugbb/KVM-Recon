@@ -14,7 +14,10 @@ const httpClient: ProbeHttpClient = {
         },
       };
     }
-    if (path === '/randomtag' || path === '/kvm/video') {
+    if (path === '/randomtag') {
+      return { status: 200, data: { random: 1234, OemString: 'Public' } };
+    }
+    if (path === '/kvm/video') {
       return { status: 200, data: { ok: true } };
     }
     return { status: 404 };
@@ -72,7 +75,9 @@ describe('probeBmcTarget', () => {
       httpClient: {
         async get(path) {
           if (path === '/api/randomtag' || path === '/api/session' || path === '/api/kvm/token') {
-            return { status: 200, data: { ok: true } };
+            if (path === '/api/randomtag') return { status: 200, data: { encrypt_ctrl: 1, random: 1234 } };
+            if (path === '/api/session') return { status: 200, data: { cc: 0, racsession_id: 'sid' } };
+            return { status: 200, data: { token: 'kvm-token', cc: 0 } };
           }
           return { status: 404 };
         },
@@ -87,7 +92,7 @@ describe('probeBmcTarget', () => {
 
     const merged = applyAuthenticatedProbe(anonymous, authenticated, ['QSESSIONID', 'QSESSIONID']);
     expect(merged.familySignatures.primary).toBe('ami-megarac');
-    expect(merged.authenticated).toEqual({
+    expect(merged.authenticated).toMatchObject({
       attempted: true,
       cookieNames: ['QSESSIONID'],
       paths: authenticated.paths,
@@ -127,8 +132,11 @@ describe('probeBmcTarget', () => {
           if (path.startsWith('/api/')) {
             return { status: 404 };
           }
-          if (path === '/randomtag' || path === '/redfish/v1/SessionService') {
-            return { status: 200, data: { ok: true } };
+          if (path === '/randomtag') {
+            return { status: 200, data: { random: 1234, OemString: 'Public' } };
+          }
+          if (path === '/redfish/v1/SessionService') {
+            return { status: 200, data: { '@odata.id': '/redfish/v1/SessionService' } };
           }
           if (path === '/redfish/v1/Managers/1/KvmService') {
             return { status: 200, data: { Id: 'KvmService' } };

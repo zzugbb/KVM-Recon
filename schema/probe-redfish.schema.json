@@ -8,9 +8,16 @@
     "path": { "const": "/redfish/v1" },
     "status": { "type": "integer" },
     "reachable": { "type": "boolean" },
+    "contentType": { "type": "string" },
+    "redirected": { "type": "boolean" },
+    "redirectLocation": { "type": "string" },
     "vendor": { "type": "string" },
     "product": { "type": "string" },
     "firmwareVersion": { "type": "string" },
+    "oemKeys": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "rootFields": {
       "type": "object",
       "additionalProperties": {

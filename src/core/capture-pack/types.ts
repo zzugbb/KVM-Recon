@@ -43,6 +43,11 @@ export interface CaptureManifest {
       confidence: number;
       evidence: string[];
     }>;
+    productHints?: Array<{
+      productFamily: string;
+      confidence: number;
+      evidence: string[];
+    }>;
   };
   readiness: {
     status: CaptureReadiness;

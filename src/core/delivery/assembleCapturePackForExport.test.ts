@@ -361,7 +361,7 @@ describe('assembleCapturePackForExport', () => {
 
     expect(result.pack.manifest.family.primary).toBe('openbmc-h5');
     expect(result.fileName).toContain('openbmc-h5');
-    expect(result.pack.manifest.family.candidates.map(item => item.kvmFamily)).toContain('huawei-ibmc');
+    expect(result.pack.manifest.family.candidates.map(item => item.kvmFamily)).not.toContain('huawei-ibmc');
     expect(result.pack.manifest.family.candidates.map(item => item.kvmFamily)).not.toContain(
       'ami-megarac',
     );

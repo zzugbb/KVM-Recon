@@ -6,10 +6,19 @@ type NetworkRecorder = ReturnType<typeof createNetworkRecorder>;
 
 export interface CdpDebuggerLike {
   attach(protocolVersion: string): Promise<void> | void;
-  sendCommand(command: string, params?: Record<string, unknown>): Promise<unknown> | unknown;
+  sendCommand(
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<unknown> | unknown;
   on(
     event: 'message',
-    listener: (event: unknown, method: string, params: Record<string, unknown>) => void,
+    listener: (
+      event: unknown,
+      method: string,
+      params: Record<string, unknown>,
+      sessionId?: string,
+    ) => void,
   ): void;
 }
 
@@ -90,8 +99,27 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
   await input.cdp.attach('1.3');
   await input.cdp.sendCommand('Network.enable');
+  try {
+    await input.cdp.sendCommand('Target.setAutoAttach', {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
+  } catch (error) {
+    // 捕获旧 Chromium/Electron 不支持 Target auto-attach：保留当前 webContents 的 Network 采集
+    // 策略：不阻断现场采集，弹窗仍由 Electron did-create-window 单独附加
+    void error;
+  }
 
-  input.cdp.on('message', (_event, method, params) => {
+  input.cdp.on('message', (_event, method, params, _sessionId) => {
+    if (method === 'Target.attachedToTarget') {
+      const attachedSessionId = stringValue(params.sessionId);
+      if (attachedSessionId) {
+        void input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
+      }
+      return;
+    }
+
     if (method === 'Network.requestWillBeSent') {
       const request = isRecord(params.request) ? params.request : {};
       input.recorder.recordHttpRequest({

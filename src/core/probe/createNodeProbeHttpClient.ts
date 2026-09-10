@@ -56,6 +56,13 @@ export function createNodeProbeHttpClient(
             response.on('end', () => {
               resolve({
                 status: response.statusCode || 0,
+                headers: response.headers as Record<string, string | string[] | undefined>,
+                redirected: Boolean(
+                  response.statusCode && response.statusCode >= 300 && response.statusCode < 400,
+                ),
+                redirectLocation: Array.isArray(response.headers.location)
+                  ? response.headers.location[0] || ''
+                  : String(response.headers.location || ''),
                 data: parseResponseBody(
                   Buffer.concat(chunks),
                   String(response.headers['content-type'] || ''),

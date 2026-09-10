@@ -45,9 +45,9 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
           cookies: [],
           content: {
             size: request.responseBodySummary.bytes,
-            mimeType: '',
+            mimeType: request.responseContentType || '',
           },
-          redirectURL: '',
+          redirectURL: request.redirectLocation || '',
           headersSize: -1,
           bodySize: request.responseBodySummary.bytes,
         },
@@ -57,9 +57,87 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
           wait: -1,
           receive: -1,
         },
-        comment: JSON.stringify({ resourceType: request.resourceType, tags: request.tags }),
+        comment: JSON.stringify({
+          resourceType: request.resourceType,
+          tags: request.tags,
+          responseStructure: request.responseStructure,
+        }),
       })),
     },
+  };
+}
+
+function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
+  const keyRequestIds = new Set(
+    input.httpRequests
+      .filter(request => request.tags.length > 0)
+      .map(request => request.id),
+  );
+  const firstFrameBySocket = new Map<string, WebSocketFrameRecord>();
+  for (const frame of input.webSocketFrames) {
+    if (!firstFrameBySocket.has(frame.socketId)) {
+      firstFrameBySocket.set(frame.socketId, frame);
+    }
+  }
+
+  return {
+    loginChain: input.httpRequests
+      .filter(request => request.tags.includes('login'))
+      .map(request => ({
+        id: request.id,
+        method: request.method,
+        url: request.url,
+        status: request.status,
+        contentType: request.responseContentType,
+        redirectLocation: request.redirectLocation,
+        requestJsonKeys: request.requestBodySummary.jsonKeys || [],
+        responseJsonKeys: request.responseBodySummary.jsonKeys || [],
+        redactedFields: [
+          ...request.requestBodySummary.redactedFields,
+          ...request.responseBodySummary.redactedFields,
+        ],
+      })),
+    kvmLaunchChain: input.httpRequests
+      .filter(request => request.tags.includes('kvm-token') || request.tags.includes('kvm-entry'))
+      .map(request => ({
+        id: request.id,
+        method: request.method,
+        url: request.url,
+        status: request.status,
+        contentType: request.responseContentType,
+        redirectLocation: request.redirectLocation,
+        tags: request.tags,
+        responseStructure: request.responseStructure,
+      })),
+    webSocketUpgrades: input.webSockets.map(socket => {
+      const firstFrame = firstFrameBySocket.get(socket.id);
+      return {
+        id: socket.id,
+        url: socket.url,
+        subProtocols: socket.subProtocols,
+        requestHeaderNames: Object.keys(socket.requestHeaders),
+        binaryFrameCount: socket.binaryFrameCount,
+        textFrameCount: socket.textFrameCount,
+        tags: socket.tags,
+        windowRole: socket.windowRole || '',
+        firstFrame: firstFrame
+          ? {
+              direction: firstFrame.direction,
+              opcode: firstFrame.opcode,
+              bytes: firstFrame.bytes,
+              headHex: firstFrame.headHex,
+              magic: firstFrame.magic || '',
+            }
+          : null,
+      };
+    }),
+    correlations: input.webSockets.map(socket => ({
+      socketId: socket.id,
+      likelyPrecedingHttpIds: input.httpRequests
+        .filter(request => keyRequestIds.has(request.id) && request.timestamp <= socket.createdAt)
+        .slice(-6)
+        .map(request => request.id),
+    })),
   };
 }
 
@@ -72,6 +150,10 @@ export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): Networ
     {
       path: 'http/har.json',
       content: JSON.stringify(buildHar(input.httpRequests), null, 2),
+    },
+    {
+      path: 'http/adapter-evidence.json',
+      content: JSON.stringify(buildAdapterEvidence(input), null, 2),
     },
     {
       path: 'ws/sockets.json',

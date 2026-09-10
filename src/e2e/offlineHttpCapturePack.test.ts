@@ -23,9 +23,22 @@ function startMockBmc() {
       );
       return;
     }
-    if (path === '/api/randomtag' || path === '/api/session' || path === '/api/kvm/token') {
+    if (path === '/api/randomtag') {
       response.statusCode = 200;
-      response.end('ok');
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ random: 'abc123', encrypt_ctrl: 0 }));
+      return;
+    }
+    if (path === '/api/session') {
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ racsession_id: 'mock-session', CSRFToken: 'mock-token', privilege: 4 }));
+      return;
+    }
+    if (path === '/api/kvm/token') {
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ token: 'mock-kvm-token', client_ip: '127.0.0.1', cc: 0 }));
       return;
     }
     response.statusCode = 404;

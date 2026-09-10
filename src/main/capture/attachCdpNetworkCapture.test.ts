@@ -85,7 +85,7 @@ describe('attachCdpNetworkCapture', () => {
 
     const snapshot = recorder.toJSON();
 
-    expect(sentCommands).toEqual(['Network.enable', 'Network.getResponseBody']);
+    expect(sentCommands).toEqual(['Network.enable', 'Target.setAutoAttach', 'Network.getResponseBody']);
     expect(snapshot.httpRequests[0]).toMatchObject({
       id: 'req-1',
       method: 'GET',
@@ -111,6 +111,37 @@ describe('attachCdpNetworkCapture', () => {
       opcode: 'binary',
       bytes: 6,
       headHex: '17000001',
+    });
+  });
+
+  it('enables Network for auto-attached iframe/OOPIF targets', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const sentCommands: Array<{ command: string; sessionId?: string }> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, _params, sessionId) {
+        sentCommands.push({ command, sessionId });
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder: createNetworkRecorder({ frameHeadBytes: 4 }),
+      now: () => '2026-08-24T12:00:00.000+08:00',
+    });
+
+    for (const listener of listeners) {
+      listener({}, 'Target.attachedToTarget', { sessionId: 'oopif-session' }, undefined);
+    }
+    await Promise.resolve();
+
+    expect(sentCommands).toContainEqual({
+      command: 'Network.enable',
+      sessionId: 'oopif-session',
     });
   });
 });

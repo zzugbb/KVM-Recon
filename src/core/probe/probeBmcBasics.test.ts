@@ -40,7 +40,7 @@ describe('probeBmcBasics', () => {
       product: 'iBMC',
       firmwareVersion: '1.0.0',
     });
-    expect(result.redfish).toEqual({
+    expect(result.redfish).toMatchObject({
       path: '/redfish/v1',
       status: 200,
       reachable: true,
@@ -54,7 +54,7 @@ describe('probeBmcBasics', () => {
       },
     });
     expect(result.paths.kvmService).toBe(true);
-    expect(result.paths.setKvmKey).toBe(true);
+    expect(result.paths.setKvmKey).toBe(false);
     expect(result.familySignatures.primary).toBe('huawei-ibmc');
   });
 
@@ -66,9 +66,9 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/api/randomtag': { status: 200, data: { token: 'x' } },
-        '/api/session': { status: 200, data: { ok: true } },
-        '/api/kvm/token': { status: 401 },
+        '/api/randomtag': { status: 200, data: { encrypt_ctrl: 1, random: 1234 } },
+        '/api/session': { status: 200, data: { cc: 0, racsession_id: 'sid' } },
+        '/api/kvm/token': { status: 200, data: { token: 'kvm-token', cc: 0 } },
         '/kvm/video': { status: 200, data: { stream: true } },
       }),
     });
@@ -90,7 +90,7 @@ describe('probeBmcBasics', () => {
       },
       httpClient: createHttpClient({
         '/kvm/video': { status: 401 },
-        '/randomtag': { status: 200, data: { tag: 'x' } },
+        '/randomtag': { status: 200, data: { random: 'x' } },
       }),
     });
 

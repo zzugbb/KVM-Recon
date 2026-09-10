@@ -22,6 +22,9 @@
         "kvmService": { "type": "boolean" },
         "setKvmKey": { "type": "boolean" }
       }
+    },
+    "pathDetails": {
+      "$ref": "probe-path-details.schema.json#"
     }
   }
 }

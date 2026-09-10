@@ -60,6 +60,7 @@ describe('buildProbeArtifacts', () => {
     expect(artifacts.map(artifact => artifact.path).sort()).toEqual([
       'probe/bmc-basic.json',
       'probe/family-signatures.json',
+      'probe/path-details.json',
       'probe/path-evidence.json',
       'probe/redfish.json',
       'tls/certificate.json',

@@ -188,6 +188,70 @@ describe('createNetworkRecorder', () => {
     });
   });
 
+  it.each([
+    ['wss://10.0.0.10/vnc/vconsole', ['binary'], new Uint8Array(Buffer.from('RFB 003.008\n'))],
+    ['wss://10.0.0.10:5900/', ['lws-dvc-protocol'], new Uint8Array(Buffer.from('APCP'))],
+    ['wss://10.0.0.10:5900/vkvm/', ['lws-dvc-protocol'], new Uint8Array(Buffer.from('APCP'))],
+    ['wss://10.0.0.10/wss/ircport', [], new Uint8Array([0x42, 0x45, 0x45, 0x46])],
+    ['wss://10.0.0.10:2198/', [], new Uint8Array([0xfe, 0xf6, 0x00, 0x04])],
+  ])('tags KVM WebSocket variant %s', (url, subProtocols, payload) => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 12 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-variant',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url,
+      subProtocols,
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-variant',
+      timestamp: '2026-08-24T12:00:02.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload,
+    });
+
+    expect(recorder.toJSON().webSockets[0]?.tags).toEqual(['kvm-video']);
+    expect(recorder.toJSON().webSocketFrames[0]?.headHex).toBeTruthy();
+  });
+
+  it('records binary frame magic for Dell and Huawei legacy protocols', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 12 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-rfb',
+      timestamp: '2026-08-24T12:00:02.000+08:00',
+      url: 'wss://10.0.0.10/vnc/vconsole',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-rfb',
+      timestamp: '2026-08-24T12:00:02.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array(Buffer.from('RFB 003.008\n')),
+    });
+    recorder.recordWebSocketCreated({
+      id: 'ws-hw',
+      timestamp: '2026-08-24T12:00:03.000+08:00',
+      url: 'wss://10.0.0.11:2198/',
+      subProtocols: [],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-hw',
+      timestamp: '2026-08-24T12:00:03.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array([0xfe, 0xf6, 0x00, 0x04]),
+    });
+
+    expect(recorder.toJSON().webSocketFrames.map(item => item.magic)).toEqual([
+      'RFB 003.008',
+      'HUAWEI_KVM_FEF6',
+    ]);
+  });
+
   it('ignores new HTTP and WebSocket records while paused but still closes in-flight items', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
     recorder.recordHttpRequest({

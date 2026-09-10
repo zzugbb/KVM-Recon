@@ -20,6 +20,10 @@ export function buildProbeArtifacts(result: ProbeBmcTargetResult): ProbeArtifact
       content: stringify(result.paths),
     },
     {
+      path: 'probe/path-details.json',
+      content: stringify(result.pathDetails || {}),
+    },
+    {
       path: 'probe/family-signatures.json',
       content: stringify(result.familySignatures),
     },

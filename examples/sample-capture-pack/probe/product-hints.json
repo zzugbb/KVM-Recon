@@ -1,0 +1,9 @@
+[
+  {
+    "productFamily": "h3c-hdm2",
+    "confidence": 0.54,
+    "evidence": [
+      "ws:/kvm"
+    ]
+  }
+]

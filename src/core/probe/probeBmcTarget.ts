@@ -2,6 +2,7 @@ import type { CaptureTarget } from '../capture-pack/types';
 import {
   detectKvmFamily,
   overlayPathEvidence,
+  tlsCommonNameFromCertificate,
   tlsOrganizationFromCertificate,
   type ProbeSignatureInput,
 } from '../signatures/detectKvmFamily';
@@ -38,6 +39,7 @@ export interface ProbeBmcTargetResult extends ProbeBmcBasicsResult {
     attempted: boolean;
     cookieNames: string[];
     paths: NonNullable<ProbeSignatureInput['paths']>;
+    pathDetails?: ProbeBmcBasicsResult['pathDetails'];
   };
 }
 
@@ -65,6 +67,7 @@ export async function probeBmcTarget(input: ProbeBmcTargetInput): Promise<ProbeB
       paths: basics.paths,
       tls: {
         organization: tlsOrganizationFromCertificate(tls.certificate),
+        commonName: tlsCommonNameFromCertificate(tls.certificate),
       },
     }),
   };
@@ -92,14 +95,16 @@ export function applyAuthenticatedProbe(
     familySignatures: detectKvmFamily({
       redfish: { vendor, product },
       paths,
-      tls: {
-        organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
-      },
+    tls: {
+      organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
+      commonName: tlsCommonNameFromCertificate(anonymous.tls.certificate),
+    },
     }),
     authenticated: {
       attempted: true,
       cookieNames: [...new Set(cookieNames.filter(Boolean))],
       paths: authenticated.paths,
+      pathDetails: authenticated.pathDetails,
     },
   };
 }

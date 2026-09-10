@@ -11,6 +11,7 @@ import { buildNetworkArtifacts } from '../network/buildNetworkArtifacts';
 import { buildOemProfileArtifacts } from '../profile/buildOemProfileArtifacts';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { overlayPathEvidence, scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
+import { detectProductHints } from '../signatures/detectProductHints';
 import { buildProbeArtifacts } from '../probe/buildProbeArtifacts';
 import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCapturePack';
 import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
@@ -86,6 +87,19 @@ export function assembleCapturePackForExport(
 
   pack.manifest.job.endedAt = input.endedAt;
   const familySignatures = scoreCapturedKvmFamily(input.probe, input.network);
+  const productHints = detectProductHints({
+    redfish: {
+      vendor: input.probe.basic.vendor,
+      product: input.probe.basic.product,
+    },
+    observed: operatorObserved,
+    traffic: {
+      httpUrls: input.network.httpRequests.map(request => request.url).filter(Boolean),
+      webSocketUrls: input.network.webSockets.map(socket => socket.url).filter(Boolean),
+      frameHeads: input.network.webSocketFrames.map(frame => frame.magic || frame.headHex).filter(Boolean),
+      frameHeadHexes: input.network.webSocketFrames.map(frame => frame.headHex).filter(Boolean),
+    },
+  });
   const probe = {
     ...input.probe,
     paths: overlayPathEvidence(input.probe.paths, input.probe.authenticated?.paths),
@@ -95,10 +109,15 @@ export function assembleCapturePackForExport(
     primary: familySignatures.primary,
     confidence: familySignatures.confidence,
     candidates: familySignatures.candidates,
+    productHints,
   };
 
   const artifacts = [
     ...buildProbeArtifacts(probe),
+    {
+      path: 'probe/product-hints.json',
+      content: JSON.stringify(productHints, null, 2),
+    },
     ...(operatorArtifact ? [operatorArtifact] : []),
     ...buildBrowserArtifacts(input.page),
     ...(input.screenshotArtifacts ?? []),

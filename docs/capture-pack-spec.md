@@ -16,12 +16,15 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 当前已导出但易被忽略的文件：
 
 - `probe/path-evidence.json`：各指纹路径是否命中（HTML 200 不算）。
+- `probe/path-details.json`：每个探测路径的状态码、内容类型、重定向和响应结构特征；401/403/405 只记录事实，不直接算命中。
+- `probe/product-hints.json`：H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy、未知 HTML5 KVM 等产品迹象。
 - `page/screenshots.json`：包内截图相对路径索引。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
 - 每个包都有根目录 `README.md`：给人与 AI 看的阅读地图和适配前裁定项。
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代采集桶。
+- `http/adapter-evidence.json`：登录链路、KVM 启动链路、WebSocket 升级和 HTTP/WS 关联索引，供离场实现 Adapter 时快速复盘。
 
 独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
 
@@ -35,11 +38,14 @@ capture-pack/
     bmc-basic.json
     family-signatures.json
     path-evidence.json
+    path-details.json
+    product-hints.json
     redfish.json
     operator-observed.json
   http/
     requests.jsonl
     har.json
+    adapter-evidence.json
   ws/
     frames.jsonl
     sockets.json
@@ -92,6 +98,13 @@ capture-pack/
   "family": {
     "primary": "ami-megarac",
     "confidence": 0.86,
+    "productHints": [
+      {
+        "productFamily": "unknown-h5",
+        "confidence": 0.8,
+        "evidence": ["HTML5 KVM viewer traffic"]
+      }
+    ],
     "candidates": [
       {
         "kvmFamily": "ami-megarac",
@@ -144,6 +157,17 @@ capture-pack/
     "bytes": 512,
     "redactedFields": ["CSRFToken"]
   },
+  "responseContentType": "application/json",
+  "redirectLocation": "",
+  "responseStructure": {
+    "bodyKind": "json-object",
+    "jsonKeys": ["CSRFToken", "QSESSIONID", "privilege"],
+    "jsonShape": {
+      "CSRFToken": "string",
+      "QSESSIONID": "string",
+      "privilege": "number"
+    }
+  },
   "tags": ["login"],
   "windowRole": "main"
 }
@@ -157,6 +181,13 @@ HTTP 资料必须脱敏：
 - JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
+
+`http/adapter-evidence.json` 从上述请求与 WebSocket 摘要派生，按链路聚合：
+
+- `loginChain`：登录、Session 创建、鉴权入口。
+- `kvmLaunchChain`：KVM Token、SetKvmKey、StartH5Kvm、viewer/console/IRC/VNC 入口。
+- `webSocketUpgrades`：KVM WebSocket URL、子协议、请求头名、首帧特征、窗口角色。
+- `correlations`：每条 KVM WebSocket 前最近的登录与 KVM 启动 HTTP 请求 id。
 
 ## 5. WebSocket 资料
 
@@ -196,6 +227,8 @@ HTTP 资料必须脱敏：
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
 `windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口）。未区分时可省略。
 
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。
+
 限制：
 
 - 不保存完整视频流。
@@ -232,6 +265,7 @@ HTTP 资料必须脱敏：
 - 包内相对路径与角色，例如 `{ "path": "page/screenshots/viewer.png", "role": "viewer" }`。
 - 角色：`login` / `home` / `kvm-entry` / `viewer` / `error` / `unknown`。
 - 离场清单 `page.viewer.screenshot` **只认 `role=viewer`**；登录页、菜单页、异常页或未标明 role 的截图不能让该项通过。
+- 自动 viewer 截图必须等正确 viewer target 收到可靠 KVM 证据后才生成，避免把 BMC 首页误当 KVM 画面。
 - 不得包含采集机绝对路径。
 
 `page/screenshots/`：
@@ -342,4 +376,3 @@ HTTP 资料必须脱敏：
 ## 12. 契约范围
 
 采集侧代码已收口。本规范与 `schema/`、`examples/sample-capture-pack/` 对齐当前导出物。`probe/operator-observed.json` 仅在现场填写了铭牌或备注时出现。`probe/authenticated.json` 仅在做过登录后复验时出现。若改了导出结构，请同步更新样例目录（`writeSampleCapturePack`，见 `src/core/delivery/createSampleCapturePack.ts`）；`npm test` 不会改盘上样例。
-

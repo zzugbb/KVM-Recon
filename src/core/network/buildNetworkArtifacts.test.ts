@@ -49,6 +49,7 @@ describe('buildNetworkArtifacts', () => {
     expect(artifacts.map(item => item.path)).toEqual([
       'http/requests.jsonl',
       'http/har.json',
+      'http/adapter-evidence.json',
       'ws/sockets.json',
       'ws/frames.jsonl',
     ]);
@@ -64,7 +65,23 @@ describe('buildNetworkArtifacts', () => {
         ],
       },
     });
-    expect(JSON.parse(artifacts[2].content)).toEqual(webSockets);
-    expect(artifacts[3].content).toContain('"headHex":"17000001"');
+    expect(JSON.parse(artifacts[2].content)).toMatchObject({
+      kvmLaunchChain: [
+        {
+          id: 'req-1',
+          status: 200,
+        },
+      ],
+      webSocketUpgrades: [
+        {
+          id: 'ws-1',
+          firstFrame: {
+            headHex: '17000001',
+          },
+        },
+      ],
+    });
+    expect(JSON.parse(artifacts[3].content)).toEqual(webSockets);
+    expect(artifacts[4].content).toContain('"headHex":"17000001"');
   });
 });

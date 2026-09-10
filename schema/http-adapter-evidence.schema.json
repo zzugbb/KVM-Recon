@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/http-adapter-evidence.schema.json",
+  "title": "KVM-Recon adapter evidence",
+  "type": "object",
+  "required": ["loginChain", "kvmLaunchChain", "webSocketUpgrades", "correlations"],
+  "properties": {
+    "loginChain": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/httpEvidence" }
+    },
+    "kvmLaunchChain": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/httpEvidence" }
+    },
+    "webSocketUpgrades": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "subProtocols", "requestHeaderNames", "binaryFrameCount", "textFrameCount", "tags"],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "subProtocols": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "requestHeaderNames": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "binaryFrameCount": { "type": "integer" },
+          "textFrameCount": { "type": "integer" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "windowRole": { "enum": ["main", "popup"] },
+          "firstFrame": { "type": "object" }
+        }
+      }
+    },
+    "correlations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["socketId"],
+        "properties": {
+          "socketId": { "type": "string" },
+          "likelyLoginHttpIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "likelyKvmLaunchHttpIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "httpEvidence": {
+      "type": "object",
+      "required": ["id", "method", "url", "status", "tags"],
+      "properties": {
+        "id": { "type": "string" },
+        "method": { "type": "string" },
+        "url": { "type": "string" },
+        "status": { "type": ["integer", "null"] },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requestHeaderNames": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "responseHeaderNames": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requestBodyKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "responseBodyKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "responseStructure": { "type": "object" },
+        "windowRole": { "enum": ["main", "popup"] }
+      }
+    }
+  }
+}

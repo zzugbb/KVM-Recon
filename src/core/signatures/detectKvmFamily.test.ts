@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { detectKvmFamily, scoreCapturedKvmFamily, trafficEvidenceFromNetwork } from './detectKvmFamily';
 
 describe('detectKvmFamily', () => {
-  it('detects AMI MegaRAC from /api paths but does not give 0.9 without matching HTTP traffic', () => {
+  it('keeps AMI path-only evidence below known-family confidence without matching HTTP traffic', () => {
     const result = detectKvmFamily({
       paths: {
         apiRandomtag: true,
@@ -14,7 +14,7 @@ describe('detectKvmFamily', () => {
     });
 
     expect(result.primary).toBe('ami-megarac');
-    expect(result.confidence).toBeLessThan(0.8);
+    expect(result.confidence).toBeLessThan(0.5);
     expect(result.candidates[0]).toMatchObject({
       kvmFamily: 'ami-megarac',
       evidence: ['/api/randomtag', '/api/session', '/api/kvm/token'],
@@ -133,7 +133,7 @@ describe('detectKvmFamily', () => {
     });
 
     expect(result.primary).toBe('openbmc-h5');
-    expect(result.candidates.map(item => item.kvmFamily)).toContain('huawei-ibmc');
+    expect(result.candidates.map(item => item.kvmFamily)).not.toContain('huawei-ibmc');
     expect(result.candidates.map(item => item.kvmFamily)).not.toContain('ami-megarac');
     expect(result.candidates[0].evidence).toEqual(
       expect.arrayContaining(['tls.O=OpenBMC', 'ws:/xyz/openbmc_project', 'ws:/kvm/video']),

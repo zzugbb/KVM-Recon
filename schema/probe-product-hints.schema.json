@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/probe-product-hints.schema.json",
+  "title": "KVM-Recon product hints",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["productFamily", "confidence", "evidence"],
+    "properties": {
+      "productFamily": {
+        "enum": [
+          "h3c-hdm2",
+          "dell-idrac-h5",
+          "hpe-ilo-h5",
+          "huawei-ibmc-legacy",
+          "unknown-h5"
+        ]
+      },
+      "confidence": { "type": "number" },
+      "evidence": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

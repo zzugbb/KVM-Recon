@@ -15,11 +15,13 @@ export interface ProbeSignatureInput {
   };
   tls?: {
     organization?: string;
+    commonName?: string;
   };
   traffic?: {
     httpUrls?: string[];
     webSocketUrls?: string[];
     frameHeads?: string[];
+    frameHeadHexes?: string[];
   };
 }
 
@@ -57,8 +59,35 @@ function frameHeads(input: ProbeSignatureInput): string[] {
   return input.traffic?.frameHeads || [];
 }
 
+function frameHeadHexes(input: ProbeSignatureInput): string[] {
+  return input.traffic?.frameHeadHexes || [];
+}
+
 function urlMatches(list: string[], pattern: RegExp) {
   return list.some(item => pattern.test(item));
+}
+
+function hasHdm2Traffic(input: ProbeSignatureInput) {
+  return (
+    urlMatches(urls(input), /SessionService\.CreateSession/i) ||
+    urlMatches(urls(input), /KvmService\.StartH5Kvm|\/h5Kvm|chunk-h5/i)
+  );
+}
+
+function hasDellTraffic(input: ProbeSignatureInput) {
+  const vendor = `${input.redfish?.vendor || ''} ${input.redfish?.product || ''}`;
+  return /dell|idrac|poweredge/i.test(vendor) || urlMatches(
+    [...urls(input), ...wsUrls(input)],
+    /\/sysmgmt\/2015\/bmc\/session|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/restgui\/html5viewer|idrac/i,
+  );
+}
+
+function hasHpeTraffic(input: ProbeSignatureInput) {
+  const vendor = `${input.redfish?.vendor || ''} ${input.redfish?.product || ''}`;
+  return /hpe?\b|proliant|ilo/i.test(vendor) || urlMatches(
+    [...urls(input), ...wsUrls(input)],
+    /\/json\/login_session|\/js\/irc(?:KeyboardMouse)?\.js|\/html\/irc_common\.html|\/wss\/ircport/i,
+  );
 }
 
 function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
@@ -69,17 +98,38 @@ function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   ].filter(Boolean);
   const trafficEvidence = [
     urlMatches(urls(input), /\/api\/randomtag(\/|\?|$)/i) ? 'http:/api/randomtag' : '',
-    urlMatches(urls(input), /\/api\/session(\/|\?|$)/i) ? 'http:/api/session' : '',
+    urlMatches(urls(input), /\/api\/(?:secure_session|session|session_encrypted)(\/|\?|$)/i)
+      ? 'http:/api/session'
+      : '',
     urlMatches(urls(input), /\/api\/kvm\/token(\/|\?|$)/i) ? 'http:/api/kvm/token' : '',
   ].filter(Boolean);
-  const evidence = [...pathEvidence, ...trafficEvidence];
-  if (evidence.length === 0) return null;
+  const strongTraffic =
+    trafficEvidence.includes('http:/api/kvm/token') &&
+    trafficEvidence.some(item => item === 'http:/api/session' || item === 'http:/api/randomtag');
+  if (
+    trafficEvidence.length === 0 &&
+    (hasHdm2Traffic(input) || hasDellTraffic(input) || hasHpeTraffic(input))
+  ) {
+    return null;
+  }
+
+  const evidence = [...(trafficEvidence.length ? pathEvidence : []), ...trafficEvidence];
+  if (evidence.length === 0) {
+    if (pathEvidence.length >= 2) {
+      return {
+        kvmFamily: 'ami-megarac',
+        confidence: 0.49,
+        evidence: pathEvidence,
+      };
+    }
+    return null;
+  }
 
   let confidence = 0.5 + 0.05 * Math.min(pathEvidence.length, 3);
-  if (trafficEvidence.length >= 2) {
+  if (strongTraffic) {
     confidence = 0.9;
   } else if (trafficEvidence.length === 1) {
-    confidence = 0.78;
+    confidence = 0.58;
   }
 
   return {
@@ -131,29 +181,45 @@ function detectOpenBmc(input: ProbeSignatureInput): KvmFamilyCandidate | null {
 function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const vendor = input.redfish?.vendor || '';
   const vendorHit = /huawei|华为/i.test(vendor);
+  const organization = `${input.tls?.organization || ''} ${input.tls?.commonName || ''}`;
+  const tlsHit = /huawei/i.test(organization);
+  const huaweiUiHttp = urlMatches(urls(input), /\/UI\/Rest\/Services\/KVM(?:\/GenerateStartupFile)?(?:\?|$)/i);
+  const legacyHttp = urlMatches(urls(input), /\/bmc\/pages\/remote\/kvm_by_html5\.html|\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i);
   const kvmServiceHttp = urlMatches(urls(input), /\/kvmservice(\/|\?|$)/i);
   const setKvmKeyHttp = urlMatches(urls(input), /setkvmkey|kvmservice\.setkvmkey/i);
+  const startH5KvmHttp = urlMatches(urls(input), /kvmservice\.starth5kvm/i);
+  const huaweiWs = urlMatches(wsUrls(input), /:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/i);
+  const huaweiFrame = frameHeadHexes(input).some(head => /^fef6/i.test(head));
   const kvmServicePath = Boolean(input.paths?.kvmService);
   const setKvmKeyPath = Boolean(input.paths?.setKvmKey);
 
   const evidence = [
     vendorHit ? `redfish.vendor=${vendor}` : '',
+    tlsHit ? `tls=${organization.trim()}` : '',
     kvmServicePath ? 'KvmService' : '',
     setKvmKeyPath ? 'SetKvmKey' : '',
+    huaweiUiHttp ? 'http:/UI/Rest/Services/KVM' : '',
+    legacyHttp ? 'http:huawei-legacy-kvm' : '',
     kvmServiceHttp ? 'http:KvmService' : '',
     setKvmKeyHttp ? 'http:SetKvmKey' : '',
+    huaweiWs ? 'ws:2198/websocket' : '',
+    huaweiFrame ? 'frame:FEF6' : '',
   ].filter(Boolean);
 
-  if (evidence.length === 0) return null;
+  if (startH5KvmHttp && !vendorHit && !tlsHit && !huaweiUiHttp && !huaweiWs && !huaweiFrame) {
+    return null;
+  }
+  const strongIdentity = vendorHit || tlsHit || huaweiUiHttp || legacyHttp || huaweiWs || huaweiFrame;
+  if (!strongIdentity) return null;
 
-  if (vendorHit && kvmServicePath && setKvmKeyPath) {
+  if ((vendorHit || tlsHit) && kvmServicePath && setKvmKeyPath) {
     return {
       kvmFamily: 'huawei-ibmc',
       confidence: 0.88,
       evidence,
     };
   }
-  if (kvmServiceHttp && setKvmKeyHttp) {
+  if (setKvmKeyHttp || (huaweiUiHttp && huaweiWs) || (legacyHttp && huaweiFrame)) {
     return {
       kvmFamily: 'huawei-ibmc',
       confidence: 0.88,
@@ -162,10 +228,15 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   }
 
   let score = 0.5;
-  if (vendorHit) score += 0.08;
-  if (kvmServicePath) score += 0.08;
-  if (setKvmKeyPath) score += 0.08;
-  if (kvmServiceHttp) score += 0.12;
+  if (vendorHit) score += 0.14;
+  if (tlsHit) score += 0.12;
+  if (huaweiUiHttp) score += 0.18;
+  if (legacyHttp) score += 0.12;
+  if (huaweiWs) score += 0.16;
+  if (huaweiFrame) score += 0.18;
+  if (strongIdentity && kvmServicePath) score += 0.04;
+  if (strongIdentity && setKvmKeyPath) score += 0.04;
+  if (strongIdentity && kvmServiceHttp) score += 0.06;
   if (setKvmKeyHttp) score += 0.14;
 
   return {
@@ -203,8 +274,11 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
     input.paths?.kvmVideo,
     input.paths?.kvmService,
     input.paths?.setKvmKey,
-    urlMatches(urls(input), /\/api\/kvm\/token|\/kvmservice|\/kvm\/video/i),
-    urlMatches(wsUrls(input), /\/kvm\//i),
+    hasHdm2Traffic(input),
+    hasDellTraffic(input),
+    hasHpeTraffic(input),
+    urlMatches(urls(input), /\/api\/kvm\/token|\/kvmservice|\/kvm\/video|\/html5viewer|\/vconsole|\/irc/i),
+    urlMatches(wsUrls(input), /\/kvm(?:\/|\?|$)|\/vnc\/vconsole|:5900\/|\/wss\/ircport|:2198\//i),
   ].some(Boolean);
 
   return {
@@ -228,6 +302,22 @@ export function tlsOrganizationFromCertificate(
   } | null,
 ): string {
   return partyOrganization(certificate?.subject) || partyOrganization(certificate?.issuer);
+}
+
+function partyCommonName(party?: Record<string, unknown>): string {
+  if (!party) return '';
+  const value = party.CN;
+  if (Array.isArray(value)) return value.filter(item => typeof item === 'string').join(',');
+  return typeof value === 'string' ? value : '';
+}
+
+export function tlsCommonNameFromCertificate(
+  certificate?: {
+    subject?: Record<string, unknown>;
+    issuer?: Record<string, unknown>;
+  } | null,
+): string {
+  return partyCommonName(certificate?.subject) || partyCommonName(certificate?.issuer);
 }
 
 function decodeHeadHex(headHex: string): string {
@@ -276,6 +366,9 @@ export function trafficEvidenceFromNetwork(network?: {
     frameHeads: (network?.webSocketFrames || [])
       .map(item => decodeHeadHex(item.headHex || ''))
       .filter(Boolean),
+    frameHeadHexes: (network?.webSocketFrames || [])
+      .map(item => item.headHex || '')
+      .filter(Boolean),
   };
 }
 
@@ -308,6 +401,7 @@ export function scoreCapturedKvmFamily(
     paths: overlayPathEvidence(probe.paths, probe.authenticated?.paths),
     tls: {
       organization: tlsOrganizationFromCertificate(probe.tls?.certificate),
+      commonName: tlsCommonNameFromCertificate(probe.tls?.certificate),
     },
     traffic: trafficEvidenceFromNetwork(network || undefined),
   });

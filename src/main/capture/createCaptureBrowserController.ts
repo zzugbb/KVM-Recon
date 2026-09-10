@@ -9,6 +9,7 @@ import {
   type SelectorCandidate,
 } from '../../core/browser/browserCaptureCore';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
+import { kvmWebSocketEvidence } from '../../core/readiness/buildReadinessChecklist';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface ChromiumAccessInfo {
@@ -35,7 +36,10 @@ export interface CaptureBrowserWindowHandle {
     sessionStorageKeys: string[];
   }>;
   collectSelectorCandidates(): Promise<SelectorCandidate[]>;
-  captureScreenshot(label: string): Promise<{
+  captureScreenshot(
+    label: string,
+    options?: { preferredWindowRole?: 'main' | 'popup' },
+  ): Promise<{
     packPath: string;
     sourcePath: string;
   }>;
@@ -100,17 +104,21 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     return timeline.toJSON().events.some(event => event.type === 'screenshot' && event.role === 'viewer');
   }
 
-  function hasKvmVideoFrames() {
-    return networkRecorder.toJSON().webSockets.some(
-      socket =>
-        socket.tags.includes('kvm-video') && socket.binaryFrameCount + socket.textFrameCount > 0,
-    );
+  function reliableKvmWindowRole(): 'main' | 'popup' | undefined {
+    const snapshot = networkRecorder.toJSON();
+    const socketIds = new Set(kvmWebSocketEvidence(snapshot));
+    return snapshot.webSockets.find(socket => socketIds.has(socket.id))?.windowRole;
+  }
+
+  function hasReliableKvmEvidence() {
+    return kvmWebSocketEvidence(networkRecorder.toJSON()).length > 0;
   }
 
   async function collectPageFactsNow(label: string) {
     if (!captureWindowsOpen || !windowHandle) return;
     const role = screenshotRoleFromLabel(label);
     if (role === 'viewer' && hasViewerScreenshot()) return;
+    if (role === 'viewer' && !hasReliableKvmEvidence()) return;
 
     try {
       if (paused) {
@@ -131,7 +139,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         sessionStorageAdded: sessionDiff.added,
         sessionStorageRemoved: sessionDiff.removed,
       });
-      const screenshot = await windowHandle.captureScreenshot(label);
+      const screenshot = await windowHandle.captureScreenshot(label, {
+        preferredWindowRole: role === 'viewer' ? reliableKvmWindowRole() : undefined,
+      });
       timeline.recordScreenshot(
         screenshot.packPath,
         screenshot.sourcePath,
@@ -158,7 +168,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
   }
 
   function maybeAutoCaptureViewer() {
-    if (paused || !captureWindowsOpen || hasViewerScreenshot() || !hasKvmVideoFrames()) {
+    if (paused || !captureWindowsOpen || hasViewerScreenshot() || !hasReliableKvmEvidence()) {
       return;
     }
     void collectPageFacts('viewer');
