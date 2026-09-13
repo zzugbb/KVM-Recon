@@ -63,6 +63,8 @@ export async function probeBmcTarget(input: ProbeBmcTargetInput): Promise<ProbeB
       redfish: {
         vendor: basics.basic.vendor,
         product: basics.basic.product,
+        oemKeys: basics.redfish?.oemKeys,
+        oemSoftwareName: basics.redfish?.oemSoftwareName,
       },
       paths: basics.paths,
       tls: {
@@ -93,7 +95,13 @@ export function applyAuthenticatedProbe(
     },
     paths,
     familySignatures: detectKvmFamily({
-      redfish: { vendor, product },
+      redfish: {
+        vendor,
+        product,
+        oemKeys: anonymous.redfish?.oemKeys || authenticated.redfish?.oemKeys,
+        oemSoftwareName:
+          anonymous.redfish?.oemSoftwareName || authenticated.redfish?.oemSoftwareName,
+      },
       paths,
     tls: {
       organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),

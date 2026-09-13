@@ -56,7 +56,11 @@ const completeNetwork = {
       requestHeaders: {},
       responseHeaders: {},
       requestBodySummary: { bytes: 32, redactedFields: ['Password'] },
-      responseBodySummary: { bytes: 64, redactedFields: ['CSRFToken'] },
+      responseBodySummary: {
+        bytes: 64,
+        redactedFields: ['CSRFToken'],
+        jsonKeys: ['CSRFToken'],
+      },
       tags: ['login' as const],
     },
     {
@@ -157,7 +161,7 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('NO');
   });
 
-  it('does not treat static login assets as login evidence but accepts Huawei legacy token PHP', () => {
+  it('does not treat static login assets or Huawei legacy gettoken as login evidence', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,
       page: pageWithScreenshot,
@@ -182,11 +186,37 @@ describe('buildReadinessChecklist', () => {
       redaction: { status: 'pass', redactedFields: 2 },
     });
 
-    expect(checklist.items.find(item => item.id === 'login.chain')?.evidence).toEqual([
-      'legacy-token',
-    ]);
+    expect(checklist.items.find(item => item.id === 'login.chain')?.evidence).toEqual([]);
     expect(checklist.items.find(item => item.id === 'page.kvm.entry')?.evidence).toContain(
       'legacy-token',
+    );
+  });
+
+  it.each([
+    ['GET session query', 'GET', 200],
+    ['DELETE session', 'DELETE', 204],
+    ['failed POST', 'POST', 401],
+    ['unfinished POST', 'POST', null],
+  ])('rejects %s as completed login evidence', (_label, method, status) => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[0],
+            method,
+            status,
+          },
+          completeNetwork.httpRequests[1],
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'login.chain')?.status).toBe(
+      'needs_user_action',
     );
   });
 
@@ -216,6 +246,29 @@ describe('buildReadinessChecklist', () => {
       evidence: [],
     });
     expect(checklist.readiness).toBe('NO');
+  });
+
+  it('does not accept a successful POST without session evidence', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[0],
+            responseHeaders: {},
+            responseBodySummary: { bytes: 2, redactedFields: [], sample: '{}' },
+          },
+          completeNetwork.httpRequests[1],
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'login.chain')?.status).toBe(
+      'needs_user_action',
+    );
   });
 
   it('marks an otherwise complete capture PARTIAL when network idle waiting times out', () => {
@@ -484,7 +537,7 @@ describe('buildReadinessChecklist', () => {
       probe: {
         ...completeProbe,
         basic: { ...completeProbe.basic, vendor: '', product: '' },
-        paths: { randomtag: true },
+        paths: { kvmService: true },
         familySignatures: {
           primary: 'unknown-h5',
           confidence: 0,

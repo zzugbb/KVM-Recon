@@ -8,8 +8,15 @@
       "binary"
     ],
     "requestHeaders": {},
+    "handshakeStatus": 101,
+    "responseHeaders": {
+      "sec-websocket-protocol": "binary"
+    },
+    "responseSubProtocol": "binary",
     "binaryFrameCount": 12,
     "textFrameCount": 0,
+    "sampledFrameCount": 1,
+    "droppedFrameCount": 11,
     "tags": [
       "kvm-video"
     ]

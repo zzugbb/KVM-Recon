@@ -221,7 +221,11 @@ describe('field capture regressions from existing on-site packs', () => {
   it('reclassifies Huawei legacy :2198/ traffic as Huawei and readiness can pass', () => {
     const network = {
       httpRequests: [
-        http('login-1', 'https://10.10.8.107/UI/Rest/Login', ['login']),
+        {
+          ...http('login-1', 'https://10.10.8.107/UI/Rest/Login', ['login']),
+          method: 'POST',
+          responseHeaders: { 'set-cookie': 'SessionId=<redacted:sha256:sample>' },
+        },
         http('token-1', 'https://10.10.8.107/bmc/php/gettoken.php', ['kvm-token']),
         http('kvm-1', 'https://10.10.8.107/bmc/pages/remote/kvm_by_html5.html', ['kvm-entry']),
         http('asset-1', 'https://10.10.8.107/bmc/resources/js/module/remote/html5/kvmclient.js', [

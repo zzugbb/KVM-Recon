@@ -17,6 +17,8 @@ describe('createEmptyCapturePack', () => {
     });
 
     expect(pack.manifest.schemaVersion).toBe('1.0.0');
+    expect(pack.manifest.tool.version).toBe('0.2.6');
+    expect(pack.manifest.tool.buildId).toBeTruthy();
     expect(pack.manifest.job.id).toBe('job-001');
     expect(pack.manifest.target.host).toBe('10.0.0.10');
     expect(pack.manifest.family.primary).toBe('unknown-h5');

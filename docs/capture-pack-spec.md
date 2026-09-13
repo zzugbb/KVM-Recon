@@ -78,7 +78,8 @@ capture-pack/
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.5"
+    "version": "0.2.6",
+    "buildId": "3d7a6e2c4f10"
   },
   "job": {
     "id": "2026-08-24T10-45-00Z-demo",
@@ -111,7 +112,7 @@ capture-pack/
       {
         "kvmFamily": "ami-megarac",
         "confidence": 0.86,
-        "evidence": ["/api/randomtag", "/api/session", "/api/kvm/token"]
+        "evidence": ["/api/randomtag", "http:/api/session", "http:/api/kvm/token"]
       }
     ]
   },
@@ -138,6 +139,9 @@ capture-pack/
 ```json
 {
   "id": "http-000123",
+  "networkRequestId": "12345.67",
+  "redirectHop": 0,
+  "redirectedToId": "http-000123::redirect-1",
   "timestamp": "2026-08-24T10:49:12.123+08:00",
   "method": "POST",
   "url": "https://10.0.0.10/api/session",
@@ -169,6 +173,8 @@ capture-pack/
   },
   "responseContentType": "application/json",
   "redirectLocation": "",
+  "streaming": false,
+  "responseBodyCaptured": true,
   "responseStructure": {
     "bodyKind": "json-object",
     "jsonKeys": ["CSRFToken", "QSESSIONID", "privilege"],
@@ -195,8 +201,11 @@ HTTP 资料必须脱敏：
 - JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
 - JSON 与 `application/x-www-form-urlencoded` 体可保留经过字段级处理的 `sample`，用于还原嵌套结构、表单参数和非敏感参数关系；敏感值写入 hash/长度掩码。
 - 短文本响应可保留有限长度 `sample`；HTML 页面和长视频/二进制流不落正文。
+- `data:` / `blob:` 不进入 HTTP 请求列表；图片、字体、媒体、样式、流式响应、二进制 MIME 与超过 1 MiB 的响应不读取正文，并在 `responseBodySkippedReason` 记录原因。
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
+- Chromium 重定向复用的 CDP `requestId` 会按 hop 拆成独立记录，并通过 `redirectedFromId` / `redirectedToId` 关联；每一跳保留方法、请求体、状态、Location 和响应头。
+- `requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` 中补充的 Cookie、Set-Cookie 等原始头会合并到对应请求 hop。
 
 `http/adapter-evidence.json` 从上述请求与 WebSocket 摘要派生，按链路聚合：
 
@@ -228,6 +237,8 @@ HTTP 资料必须脱敏：
   "responseSubProtocol": "binary",
   "binaryFrameCount": 128,
   "textFrameCount": 0,
+  "sampledFrameCount": 64,
+  "droppedFrameCount": 64,
   "tags": ["kvm-video"],
   "windowRole": "popup"
 }
@@ -255,8 +266,8 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 限制：
 
 - 不保存完整视频流。
-- 默认只保存前 N 帧或每类关键帧的 head hex。
-- 长时间持续图像帧只计数和采样。
+- 每条连接默认最多保存 64 条帧摘要，并额外保证首个上下行方向及新魔数能够留样。
+- 长时间持续图像帧只累计 `binaryFrameCount` / `textFrameCount`，采样与丢弃数量分别写入 `sampledFrameCount` / `droppedFrameCount`。
 
 ## 6. 页面资料
 

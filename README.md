@@ -46,7 +46,7 @@ Step-by-step field instructions (Chinese) are in `docs/offline-field-guide.md`.
 6. The tool records HTTP, WebSocket, page events, screenshots, storage keys, TLS, fingerprints, and the checklist.
 7. Export a Capture Pack. After leaving the room, read `README.md` inside the pack.
 
-The main window shows the current tool version (`vX.Y.Z`), matching `manifest.tool.version` in the exported pack.
+The main window shows the current tool version (`vX.Y.Z`). Exported packs also include `manifest.tool.buildId` so a field package can be traced to the exact build.
 
 ## Development
 

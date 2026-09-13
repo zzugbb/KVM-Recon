@@ -1,7 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { assembleCapturePackForExport } from './assembleCapturePackForExport';
+import {
+  assembleCapturePackForExport,
+  type AssembleCapturePackForExportInput,
+} from './assembleCapturePackForExport';
 import { buildCapturePackZip } from '../capture-pack/buildCapturePackZip';
 
 const sampleProbe = {
@@ -15,8 +18,20 @@ const sampleProbe = {
   },
   paths: {
     apiRandomtag: true,
-    apiSession: true,
-    apiKvmToken: true,
+  },
+  pathDetails: {
+    apiRandomtag: {
+      path: '/api/randomtag',
+      status: 200,
+      hit: true,
+      contentType: 'application/json',
+      redirected: false,
+      redirectLocation: '',
+      bodyKind: 'json-object' as const,
+      jsonKeys: ['encrypt_ctrl', 'random'],
+      jsonShape: { encrypt_ctrl: 'number', random: 'number' },
+      jsonPaths: { '$.encrypt_ctrl': 'number', '$.random': 'number' },
+    },
   },
   familySignatures: {
     primary: 'ami-megarac' as const,
@@ -25,7 +40,7 @@ const sampleProbe = {
       {
         kvmFamily: 'ami-megarac' as const,
         confidence: 0.9,
-        evidence: ['/api/randomtag', '/api/session', '/api/kvm/token'],
+        evidence: ['/api/randomtag'],
       },
     ],
   },
@@ -59,32 +74,54 @@ const sampleProbe = {
   },
 };
 
-const sampleNetwork = {
+const sampleNetwork: AssembleCapturePackForExportInput['network'] = {
   httpRequests: [
     {
       id: 'login-1',
+      networkRequestId: 'login-1',
+      redirectHop: 0,
       timestamp: '2026-08-24T13:55:00.000+08:00',
       method: 'POST',
       url: 'https://10.0.0.10/api/session',
       resourceType: 'xhr',
       status: 200,
       requestHeaders: {},
-      responseHeaders: {},
+      responseHeaders: {
+        'set-cookie': 'QSESSIONID=<redacted:sha256:sample>',
+      } as Record<string, string>,
       requestBodySummary: { bytes: 32, redactedFields: ['Password'] },
       responseBodySummary: { bytes: 64, redactedFields: ['CSRFToken'] },
+      responseContentType: 'application/json',
+      responseBodyCaptured: true,
+      responseStructure: {
+        bodyKind: 'json-object' as const,
+        jsonKeys: ['CSRFToken'],
+        jsonShape: { CSRFToken: 'string' },
+        jsonPaths: { '$.CSRFToken': 'string' },
+      },
       tags: ['login' as const],
     },
     {
       id: 'token-1',
+      networkRequestId: 'token-1',
+      redirectHop: 0,
       timestamp: '2026-08-24T13:55:02.000+08:00',
       method: 'GET',
       url: 'https://10.0.0.10/api/kvm/token',
       resourceType: 'xhr',
       status: 200,
       requestHeaders: {},
-      responseHeaders: {},
+      responseHeaders: {} as Record<string, string>,
       requestBodySummary: { bytes: 0, redactedFields: [] },
       responseBodySummary: { bytes: 32, redactedFields: ['token'] },
+      responseContentType: 'application/json',
+      responseBodyCaptured: true,
+      responseStructure: {
+        bodyKind: 'json-object' as const,
+        jsonKeys: ['token'],
+        jsonShape: { token: 'string' },
+        jsonPaths: { '$.token': 'string' },
+      },
       tags: ['kvm-token' as const],
     },
   ],
@@ -96,8 +133,13 @@ const sampleNetwork = {
       url: 'wss://10.0.0.10/kvm',
       subProtocols: ['binary'],
       requestHeaders: {},
+      handshakeStatus: 101,
+      responseHeaders: { 'sec-websocket-protocol': 'binary' },
+      responseSubProtocol: 'binary',
       binaryFrameCount: 12,
       textFrameCount: 0,
+      sampledFrameCount: 1,
+      droppedFrameCount: 11,
       tags: ['kvm-video' as const],
     },
   ],

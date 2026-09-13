@@ -9,7 +9,7 @@ source:
   firmwareVersion: 1.0.0
 amiMegaRac:
   cookieNames:
-    []
+    - QSESSIONID
   csrfNames:
     - CSRFToken
   tokenApi: /api/kvm/token
@@ -21,7 +21,5 @@ amiMegaRac:
     []
   loginFingerprint:
     - /api/randomtag
-    - /api/session
-    - /api/kvm/token
     - http:/api/session
     - http:/api/kvm/token

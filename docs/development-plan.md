@@ -14,15 +14,15 @@
 - 厂商/型号只作铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-08-25）
+## 3. 当前状态（2026-09-13）
 
-**采集侧代码已收口。本文件不是待办清单，默认不再新增采集功能。**
+**0.2.6 采集侧代码已完成回归验证，当前阶段是代表机小范围试采，试采通过前不开始批量补采。**
 
-已具备：探测与 TLS、手工登录采集、HTTP/WS（含 popup）、自动 KVM 画面截图、脱敏导出、YES / PARTIAL / NO 清单、暂停/多作业、登录后复验、现场铭牌、本地打开/对比 zip。每个导出包根目录有中文 `README.md`（阅读地图 + 适配前裁定）。
+已具备：无副作用探测与 TLS、手工登录采集、HTTP 重定向 hop/ExtraInfo/受控正文、WS 握手与有界帧采样（含 popup/OOPIF）、自动 KVM 画面截图、脱敏导出、YES / PARTIAL / NO 清单、暂停/多作业、登录后复验、现场铭牌、本地打开/对比 zip。每个导出包根目录有中文 `README.md`（阅读地图 + 适配前裁定），manifest 同时记录版本和 build ID。
 
 安装包由 GitHub Actions 构建：macOS 为 ad-hoc 签名，Windows 无 Authenticode。
 
-**下一步不在本仓库写代码：** 用真实 YES Capture Pack 出机房后做网关适配实验；缺什么再决定是否补采集字段。三族真机闸门与付费签名按产品安排，见第 5、8 节。
+**下一步：** 先用 H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 和真实 OpenBMC H5 代表机试采，当场核对版本/build ID、登录链、KVM 启动链、WS 帧和 viewer 截图；通过后再批量重采。三族真机闸门与付费签名按产品安排，见第 5、8 节。
 
 **产品边界止于导出脱敏 Capture Pack。** 自动写 Adapter、机房内 AI、MITM、自动登录、完整视频解码不属于本项目。
 

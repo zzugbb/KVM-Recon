@@ -21,6 +21,7 @@ export interface CaptureManifest {
   tool: {
     name: 'KVM-Recon';
     version: string;
+    buildId: string;
   };
   job: {
     id: string;

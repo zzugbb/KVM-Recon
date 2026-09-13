@@ -15,6 +15,7 @@ interface CreateNetworkRecorderOptions {
   frameHeadBytes: number;
   idleQuietMs?: number;
   idleTimeoutMs?: number;
+  maxFramesPerSocket?: number;
 }
 
 interface HttpRequestInput {
@@ -25,6 +26,9 @@ interface HttpRequestInput {
   resourceType: string;
   requestHeaders: HeaderMap;
   requestBody?: string;
+  networkRequestId?: string;
+  redirectHop?: number;
+  redirectedFromId?: string;
   windowRole?: 'main' | 'popup';
 }
 
@@ -46,6 +50,11 @@ export interface HttpRequestRecord {
   method: string;
   url: string;
   resourceType: string;
+  networkRequestId?: string;
+  redirectHop?: number;
+  redirectedFromId?: string;
+  redirectedToId?: string;
+  streaming?: boolean;
   status: number | null;
   requestHeaders: HeaderMap;
   responseHeaders: HeaderMap;
@@ -62,6 +71,8 @@ export interface HttpRequestRecord {
     sample?: StructuredBodySample;
   };
   responseContentType?: string;
+  responseBodyCaptured?: boolean;
+  responseBodySkippedReason?: string;
   redirectLocation?: string;
   responseStructure?: {
     bodyKind: 'json-object' | 'json-array' | 'form' | 'text' | 'html' | 'empty' | 'other';
@@ -113,6 +124,8 @@ export interface WebSocketRecord {
   responseSubProtocol?: string;
   binaryFrameCount: number;
   textFrameCount: number;
+  sampledFrameCount?: number;
+  droppedFrameCount?: number;
   tags: WebSocketTag[];
   windowRole?: 'main' | 'popup';
 }
@@ -163,18 +176,17 @@ function tagHttp(input: HttpRequestInput): HttpTag[] {
   const lower = input.url.toLowerCase();
   const isStaticAsset = /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(lower);
   const explicitLogin =
-    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|\/bmc\/php\/(?:dologin|login|gettoken)\.php/.test(
+    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|\/bmc\/php\/(?:dologin|login)\.php/.test(
       lower,
     );
   const genericLogin = /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/.test(lower);
-  const interactiveRequest =
-    input.method.toUpperCase() === 'POST' || /^(?:xhr|fetch)$/i.test(input.resourceType);
+  const loginSubmission = input.method.toUpperCase() === 'POST';
   const legacyKvmSupport =
     /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/.test(
       lower,
     ) && hasLegacyKvmReferer(input.requestHeaders);
   const tags: HttpTag[] = [];
-  if (!isStaticAsset && (explicitLogin || (genericLogin && interactiveRequest))) {
+  if (!isStaticAsset && loginSubmission && (explicitLogin || genericLogin)) {
     tags.push('login');
   }
   if (
@@ -202,6 +214,15 @@ function tagWebSocket(url: string): WebSocketTag[] {
   }
   if (/vm|media|cd-server/.test(lower)) return ['vmedia'];
   return ['unknown'];
+}
+
+function isLikelyStreamingRequest(input: Pick<HttpRequestInput, 'method' | 'url' | 'resourceType'>) {
+  if (/^(?:eventsource|websocket)$/i.test(input.resourceType)) return true;
+  return (
+    input.method.toUpperCase() === 'GET' &&
+    /^(?:xhr|fetch)$/i.test(input.resourceType) &&
+    /(?:^|[/_.-])(?:events?|eventstream|subscribe|longpoll|polling)(?:[/_.?#-]|$)/i.test(input.url)
+  );
 }
 
 function summarizeBody(body = '', contentType = '') {
@@ -421,6 +442,9 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const webSocketFrames: WebSocketFrameRecord[] = [];
   const pendingTasks = new Set<Promise<unknown>>();
   const inFlightHttpRequestIds = new Set<string>();
+  const sampledFrameCounts = new Map<string, number>();
+  const sampledFrameDirections = new Map<string, Set<'up' | 'down'>>();
+  const sampledFrameMagic = new Map<string, Set<string>>();
   let lastActivityAt = Date.now();
   let paused = false;
 
@@ -471,6 +495,15 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         markActivity();
       }
     },
+    mergeHttpRequestHeaders(id: string, headers: HeaderMap) {
+      const existing = httpRequests.get(id);
+      if (!existing) return;
+      existing.requestHeaders = {
+        ...existing.requestHeaders,
+        ...redactHeaders(headers),
+      };
+      markActivity();
+    },
     setPaused(next: boolean) {
       paused = next;
     },
@@ -480,19 +513,29 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     recordHttpRequest(input: HttpRequestInput) {
       if (paused) return;
       markActivity();
-      inFlightHttpRequestIds.add(input.id);
+      const streaming = isLikelyStreamingRequest(input);
+      if (!streaming) inFlightHttpRequestIds.add(input.id);
+      if (input.redirectedFromId) {
+        const previous = httpRequests.get(input.redirectedFromId);
+        if (previous) previous.redirectedToId = input.id;
+      }
       httpRequests.set(input.id, {
         id: input.id,
         timestamp: input.timestamp,
         method: input.method,
         url: redactUrl(input.url),
         resourceType: input.resourceType,
+        ...(input.networkRequestId ? { networkRequestId: input.networkRequestId } : {}),
+        ...(input.redirectHop != null ? { redirectHop: input.redirectHop } : {}),
+        ...(input.redirectedFromId ? { redirectedFromId: input.redirectedFromId } : {}),
+        ...(streaming ? { streaming: true } : {}),
         status: null,
         requestHeaders: redactHeaders(input.requestHeaders),
         responseHeaders: {},
         requestBodySummary: summarizeBody(input.requestBody, contentTypeFromHeaders(input.requestHeaders)),
         responseBodySummary: summarizeBody(),
         responseContentType: '',
+        responseBodyCaptured: false,
         redirectLocation: '',
         responseStructure: structureBody(),
         tags: tagHttp(input),
@@ -503,12 +546,22 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
       markActivity();
-      existing.status = input.status;
-      existing.responseHeaders = redactHeaders(input.responseHeaders);
-      existing.responseBodySummary = summarizeBody(input.responseBody, contentTypeFromHeaders(input.responseHeaders));
-      existing.responseContentType = responseContentType(input.responseHeaders);
-      existing.redirectLocation = responseRedirectLocation(input.responseHeaders);
-      existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
+      if (input.status > 0) existing.status = input.status;
+      existing.responseHeaders = {
+        ...existing.responseHeaders,
+        ...redactHeaders(input.responseHeaders),
+      };
+      existing.responseContentType = responseContentType(existing.responseHeaders);
+      existing.redirectLocation = responseRedirectLocation(existing.responseHeaders);
+      if (/text\/event-stream/i.test(existing.responseContentType)) {
+        existing.streaming = true;
+        inFlightHttpRequestIds.delete(input.id);
+      }
+      if (input.responseBody !== undefined) {
+        existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
+        existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
+        existing.responseBodyCaptured = true;
+      }
     },
     recordHttpResponseBody(input: HttpResponseBodyInput) {
       const existing = httpRequests.get(input.id);
@@ -516,6 +569,14 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       markActivity();
       existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
       existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
+      existing.responseBodyCaptured = true;
+      delete existing.responseBodySkippedReason;
+    },
+    markHttpResponseBodySkipped(id: string, reason: string) {
+      const existing = httpRequests.get(id);
+      if (!existing) return;
+      existing.responseBodyCaptured = false;
+      existing.responseBodySkippedReason = reason;
     },
     recordWebSocketCreated(input: WebSocketCreatedInput) {
       if (paused) return;
@@ -528,6 +589,8 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         responseHeaders: {},
         binaryFrameCount: 0,
         textFrameCount: 0,
+        sampledFrameCount: 0,
+        droppedFrameCount: 0,
         tags: tagWebSocket(input.url),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
       });
@@ -562,6 +625,26 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
 
       const bytes = payloadToBytes(input.payload);
       const magic = detectFrameMagic(input.payload);
+      const magicSampleKey =
+        magic === 'AMI_IVTP_BINARY' ? `${magic}:${toHex(bytes, 1)}` : magic;
+      const maxFrames = options.maxFramesPerSocket ?? 64;
+      const sampledCount = sampledFrameCounts.get(input.socketId) || 0;
+      const directions = sampledFrameDirections.get(input.socketId) || new Set();
+      const magicValues = sampledFrameMagic.get(input.socketId) || new Set<string>();
+      const shouldSample =
+        sampledCount < maxFrames ||
+        !directions.has(input.direction) ||
+        Boolean(magicSampleKey && !magicValues.has(magicSampleKey));
+      if (!shouldSample) {
+        if (socket) socket.droppedFrameCount = (socket.droppedFrameCount || 0) + 1;
+        return;
+      }
+      sampledFrameCounts.set(input.socketId, sampledCount + 1);
+      directions.add(input.direction);
+      sampledFrameDirections.set(input.socketId, directions);
+      if (magicSampleKey) magicValues.add(magicSampleKey);
+      sampledFrameMagic.set(input.socketId, magicValues);
+      if (socket) socket.sampledFrameCount = (socket.sampledFrameCount || 0) + 1;
       webSocketFrames.push({
         socketId: input.socketId,
         timestamp: input.timestamp,

@@ -8,10 +8,11 @@
     "schemaVersion": { "const": "1.0.0" },
     "tool": {
       "type": "object",
-      "required": ["name", "version"],
+      "required": ["name", "version", "buildId"],
       "properties": {
         "name": { "const": "KVM-Recon" },
-        "version": { "type": "string" }
+        "version": { "type": "string" },
+        "buildId": { "type": "string" }
       }
     },
     "job": {

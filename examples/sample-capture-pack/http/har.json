@@ -3,7 +3,7 @@
     "version": "1.2",
     "creator": {
       "name": "KVM-Recon",
-      "version": "0.2.5"
+      "version": "0.2.6"
     },
     "entries": [
       {
@@ -23,11 +23,16 @@
           "status": 200,
           "statusText": "",
           "httpVersion": "HTTP/1.1",
-          "headers": [],
+          "headers": [
+            {
+              "name": "set-cookie",
+              "value": "QSESSIONID=<redacted:sha256:sample>"
+            }
+          ],
           "cookies": [],
           "content": {
             "size": 64,
-            "mimeType": ""
+            "mimeType": "application/json"
           },
           "redirectURL": "",
           "headersSize": -1,
@@ -39,7 +44,7 @@
           "wait": -1,
           "receive": -1
         },
-        "comment": "{\"resourceType\":\"xhr\",\"tags\":[\"login\"]}"
+        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"login-1\",\"redirectHop\":0,\"tags\":[\"login\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"CSRFToken\"],\"jsonShape\":{\"CSRFToken\":\"string\"},\"jsonPaths\":{\"$.CSRFToken\":\"string\"}}}"
       },
       {
         "startedDateTime": "2026-08-24T13:55:02.000+08:00",
@@ -62,7 +67,7 @@
           "cookies": [],
           "content": {
             "size": 32,
-            "mimeType": ""
+            "mimeType": "application/json"
           },
           "redirectURL": "",
           "headersSize": -1,
@@ -74,7 +79,7 @@
           "wait": -1,
           "receive": -1
         },
-        "comment": "{\"resourceType\":\"xhr\",\"tags\":[\"kvm-token\"]}"
+        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"token-1\",\"redirectHop\":0,\"tags\":[\"kvm-token\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"token\"],\"jsonShape\":{\"token\":\"string\"},\"jsonPaths\":{\"$.token\":\"string\"}}}"
       }
     ]
   }

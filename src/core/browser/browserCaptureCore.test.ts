@@ -38,6 +38,12 @@ describe('browserCaptureCore', () => {
         url: 'https://other.example.com/login.html',
       }),
     ).toBe(false);
+    expect(
+      shouldAllowCertificateError({
+        targetHost: '2001:db8::10',
+        url: 'https://ibmc.local/login.html',
+      }),
+    ).toBe(true);
   });
 
   it('records navigation, hash changes, popup, storage, screenshot and selector events', () => {

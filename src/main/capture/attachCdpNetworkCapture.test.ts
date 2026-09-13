@@ -259,4 +259,144 @@ describe('attachCdpNetworkCapture', () => {
       responseSubProtocol: 'binary',
     });
   });
+
+  it('preserves every redirect hop and merges ExtraInfo headers', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const bodyCalls: string[] = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, params) {
+        if (command === 'Network.getResponseBody') {
+          bodyCalls.push(String(params?.requestId || ''));
+          return { body: '{"page":"home"}', base64Encoded: false };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-09-13T10:00:00.000+08:00',
+    });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'https://bmc.example/login',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        postData: 'username=admin&password=secret',
+      },
+    });
+    emit('Network.requestWillBeSentExtraInfo', {
+      requestId: 'login-chain',
+      headers: { Cookie: 'prelogin=one' },
+    });
+    emit('Network.responseReceivedExtraInfo', {
+      requestId: 'login-chain',
+      statusCode: 302,
+      headers: { 'Set-Cookie': 'QSESSIONID=secret', Location: '/home' },
+    });
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'Document',
+      redirectResponse: {
+        status: 302,
+        headers: { Location: '/home' },
+      },
+      request: {
+        method: 'GET',
+        url: 'https://bmc.example/home',
+        headers: {},
+      },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'login-chain',
+      response: {
+        status: 200,
+        mimeType: 'application/json',
+        headers: { 'content-type': 'application/json' },
+      },
+    });
+    emit('Network.loadingFinished', { requestId: 'login-chain', encodedDataLength: 15 });
+    await recorder.waitForIdle();
+
+    const requests = recorder.toJSON().httpRequests;
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({
+      id: 'login-chain',
+      method: 'POST',
+      status: 302,
+      redirectHop: 0,
+      redirectedToId: 'login-chain::redirect-1',
+      redirectLocation: '/home',
+      responseBodySkippedReason: 'redirect-response',
+    });
+    expect(requests[0]?.requestHeaders).toHaveProperty('Cookie');
+    expect(requests[0]?.responseHeaders).toHaveProperty('Set-Cookie');
+    expect(requests[1]).toMatchObject({
+      id: 'login-chain::redirect-1',
+      method: 'GET',
+      status: 200,
+      redirectHop: 1,
+      redirectedFromId: 'login-chain',
+      responseBodyCaptured: true,
+    });
+    expect(bodyCalls).toEqual(['login-chain']);
+  });
+
+  it('skips inline, binary, and oversized response bodies', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const bodyCalls: string[] = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, params) {
+        if (command === 'Network.getResponseBody') bodyCalls.push(String(params?.requestId || ''));
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'inline',
+      type: 'Image',
+      request: { method: 'GET', url: `data:image/png;base64,${'A'.repeat(1000)}`, headers: {} },
+    });
+    for (const [requestId, type, contentType, encodedDataLength] of [
+      ['image', 'Image', 'image/png', 2000],
+      ['large-json', 'XHR', 'application/json', 2 * 1024 * 1024],
+    ] as const) {
+      emit('Network.requestWillBeSent', {
+        requestId,
+        type,
+        request: { method: 'GET', url: `https://bmc.example/${requestId}`, headers: {} },
+      });
+      emit('Network.responseReceived', {
+        requestId,
+        response: { status: 200, mimeType: contentType, headers: { 'content-type': contentType } },
+      });
+      emit('Network.loadingFinished', { requestId, encodedDataLength });
+    }
+
+    expect(bodyCalls).toEqual([]);
+    const requests = recorder.toJSON().httpRequests;
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.responseBodySkippedReason).toBe('binary-resource:image');
+    expect(requests[1]?.responseBodySkippedReason).toBe(`response-too-large:${2 * 1024 * 1024}`);
+  });
 });

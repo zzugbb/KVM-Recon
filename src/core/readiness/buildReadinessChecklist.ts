@@ -87,22 +87,35 @@ function hasLegacyKvmReferer(request: HttpRequestRecord) {
 
 function isReliableLoginRequest(request: HttpRequestRecord) {
   if (isStaticAssetUrl(request.url)) return false;
-  const explicitLogin = urlContains(request.url, [
+  const loginUrl = urlContains(request.url, [
     /\/api\/(?:secure_session|session|session_encrypted)/i,
     /sessionservice\/sessions/i,
     /sessionservice\.createsession/i,
     /\/sysmgmt\/2015\/bmc\/session/i,
     /\/json\/login_session/i,
-    /\/bmc\/php\/(?:dologin|login|gettoken)\.php/i,
+    /\/bmc\/php\/(?:dologin|login)\.php/i,
+    /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/i,
   ]);
-  if (explicitLogin) return true;
-  const interactiveRequest =
-    request.method.toUpperCase() === 'POST' || /^(?:xhr|fetch)$/i.test(request.resourceType);
-  return (
-    interactiveRequest &&
-    (request.tags.includes('login') ||
-      urlContains(request.url, [/(?:^|\/)(?:login|signin)(?:[/?#.]|$)/i]))
-  );
+  if (!loginUrl && !request.tags.includes('login')) return false;
+  if (request.method.toUpperCase() !== 'POST') return false;
+  if (request.status == null || request.status < 200 || request.status >= 400) return false;
+
+  const hasSessionHeader = Object.entries(request.responseHeaders).some(([name, value]) => {
+    return /^(?:set-cookie|x-auth-token)$/i.test(name) && Boolean(value.trim());
+  });
+  const responseFields = [
+    ...(request.responseBodySummary.jsonKeys || []),
+    ...request.responseBodySummary.redactedFields,
+    ...Object.keys(request.responseStructure?.jsonPaths || {}),
+  ].join(' ');
+  const responseSample = JSON.stringify(request.responseBodySummary.sample ?? '');
+  const hasSessionStructure =
+    /racsession|csrf|session(?:id|_id|_key)?|uniqueid|x-auth-token|privilege|token/i.test(
+      responseFields,
+    );
+  const hasSuccessBody =
+    /success|authenticated|login[ _-]?ok|"cc"\s*:\s*0/i.test(responseSample);
+  return hasSessionHeader || hasSessionStructure || hasSuccessBody;
 }
 
 function isLegacyKvmSupportRequest(request: HttpRequestRecord) {

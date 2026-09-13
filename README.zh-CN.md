@@ -46,7 +46,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 6. 工具记录 HTTP、WebSocket、页面、截图、storage key、TLS、指纹和 checklist。
 7. 导出 Capture Pack。出机房后阅读包内 `README.md`。
 
-主窗口标题旁会显示当前工具版本（`vX.Y.Z`），与导出包 `manifest.tool.version` 一致。
+主窗口标题旁会显示当前工具版本（`vX.Y.Z`）；导出包还会写入 `manifest.tool.buildId`，用于确认现场包来自哪次构建。
 
 ## 开发
 

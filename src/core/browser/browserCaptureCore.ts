@@ -1,4 +1,3 @@
-import net from 'node:net';
 import type { CaptureTarget } from '../capture-pack/types';
 
 export type ScreenshotRole = 'login' | 'home' | 'kvm-entry' | 'viewer' | 'error' | 'unknown';
@@ -116,6 +115,23 @@ export function buildBmcUrl(target: CaptureTarget): string {
   return `${target.scheme}://${target.host}:${target.port}/`;
 }
 
+function isIpAddress(host: string) {
+  const value = host.replace(/^\[|\]$/g, '');
+  const ipv4 = value.split('.');
+  if (
+    ipv4.length === 4 &&
+    ipv4.every(part => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255)
+  ) {
+    return true;
+  }
+  if (!value.includes(':')) return false;
+  try {
+    return new URL(`http://[${value}]/`).hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function shouldAllowCertificateError(input: {
   targetHost: string;
   url: string;
@@ -125,7 +141,7 @@ export function shouldAllowCertificateError(input: {
     if (parsed.hostname === input.targetHost) return true;
     // 现场常用 IP 打开 BMC：证书 CN / 跳转主机名往往不是该 IP，Chrome 要点「高级」继续。
     // 采集窗口没有该拦截页，主机名对不上就会白屏。目标已是 IP 时放行该采集会话内的证书错误。
-    return net.isIP(input.targetHost) !== 0;
+    return isIpAddress(input.targetHost);
   } catch {
     return false;
   }

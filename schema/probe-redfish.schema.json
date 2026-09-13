@@ -18,6 +18,7 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "oemSoftwareName": { "type": "string" },
     "rootFields": {
       "type": "object",
       "additionalProperties": {

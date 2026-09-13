@@ -1,4 +1,4 @@
-import { APP_VERSION } from '../../version';
+import { APP_VERSION, BUILD_ID } from '../../version';
 import type {
   CaptureChecklist,
   CapturePackDraft,
@@ -41,6 +41,7 @@ export function createEmptyCapturePack(input: CreateEmptyCapturePackInput): Capt
       tool: {
         name: 'KVM-Recon',
         version: TOOL_VERSION,
+        buildId: BUILD_ID,
       },
       job: {
         id: input.jobId,

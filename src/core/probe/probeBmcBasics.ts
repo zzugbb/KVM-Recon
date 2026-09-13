@@ -42,6 +42,7 @@ export interface ProbeRedfishSummary {
   firmwareVersion: string;
   rootFields: Record<string, string | number | boolean>;
   oemKeys?: string[];
+  oemSoftwareName?: string;
 }
 
 export interface ProbePathEvidenceDetail {
@@ -68,13 +69,7 @@ interface ProbeBmcBasicsInput {
 
 const PATHS: Array<[keyof NonNullable<ProbeSignatureInput['paths']>, string]> = [
   ['apiRandomtag', '/api/randomtag'],
-  ['apiSession', '/api/session'],
-  ['apiKvmToken', '/api/kvm/token'],
   ['randomtag', '/randomtag'],
-  ['kvmVideo', '/kvm/video'],
-  ['sessionService', '/redfish/v1/SessionService'],
-  ['kvmService', '/redfish/v1/Managers/1/KvmService'],
-  ['setKvmKey', '/redfish/v1/Managers/1/KvmService/Actions/KvmService.SetKvmKey'],
 ];
 
 function isHtmlPayload(data: unknown): boolean {
@@ -261,6 +256,17 @@ function oemKeys(data: unknown): string[] {
   return Object.keys(oem);
 }
 
+function oemSoftwareName(data: unknown): string {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return '';
+  const oem = (data as Record<string, unknown>).Oem;
+  if (!oem || typeof oem !== 'object' || Array.isArray(oem)) return '';
+  const huawei = Object.entries(oem).find(([key]) => /^huawei$/i.test(key))?.[1];
+  if (!huawei || typeof huawei !== 'object' || Array.isArray(huawei)) return '';
+  const block = huawei as Record<string, unknown>;
+  const software = block.SoftwareName ?? block.SmsName;
+  return typeof software === 'string' ? software : '';
+}
+
 export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeBmcBasicsResult> {
   let redfishPath: ProbeRedfishSummary['path'] = '/redfish/v1';
   let redfish = await safeGet(input.httpClient, redfishPath);
@@ -297,6 +303,8 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
     redfish: {
       vendor,
       product,
+      oemKeys: oemKeys(redfish.data),
+      oemSoftwareName: oemSoftwareName(redfish.data),
     },
     paths,
   });
@@ -325,6 +333,7 @@ export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeB
       firmwareVersion,
       rootFields: primitiveRootFields(redfish.data),
       oemKeys: oemKeys(redfish.data),
+      oemSoftwareName: oemSoftwareName(redfish.data),
     },
   };
 }

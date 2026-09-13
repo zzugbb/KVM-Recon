@@ -17,9 +17,6 @@ const httpClient: ProbeHttpClient = {
     if (path === '/randomtag') {
       return { status: 200, data: { random: 1234, OemString: 'Public' } };
     }
-    if (path === '/kvm/video') {
-      return { status: 200, data: { ok: true } };
-    }
     return { status: 404 };
   },
 };
@@ -51,7 +48,7 @@ describe('probeBmcTarget', () => {
     expect(result.tls.reachable).toBe(true);
     expect(result.tls.protocol).toBe('TLSv1.3');
     expect(result.paths.randomtag).toBe(true);
-    expect(result.paths.kvmVideo).toBe(true);
+    expect(result.paths.kvmVideo).toBeUndefined();
     expect(result.familySignatures.primary).toBe('openbmc-h5');
   });
 
@@ -74,10 +71,8 @@ describe('probeBmcTarget', () => {
       target: { host: '10.0.0.10', port: 443, scheme: 'https' },
       httpClient: {
         async get(path) {
-          if (path === '/api/randomtag' || path === '/api/session' || path === '/api/kvm/token') {
-            if (path === '/api/randomtag') return { status: 200, data: { encrypt_ctrl: 1, random: 1234 } };
-            if (path === '/api/session') return { status: 200, data: { cc: 0, racsession_id: 'sid' } };
-            return { status: 200, data: { token: 'kvm-token', cc: 0 } };
+          if (path === '/api/randomtag') {
+            return { status: 200, data: { encrypt_ctrl: 1, random: 1234 } };
           }
           return { status: 404 };
         },
@@ -156,11 +151,11 @@ describe('probeBmcTarget', () => {
     });
 
     const merged = applyAuthenticatedProbe(anonymous, authenticated, ['SESSION']);
-    expect(merged.paths.apiSession).toBe(false);
+    expect(merged.paths.apiSession).toBeUndefined();
     expect(merged.paths.apiRandomtag).toBe(false);
-    expect(merged.paths.apiKvmToken).toBe(false);
+    expect(merged.paths.apiKvmToken).toBeUndefined();
     expect(merged.paths.randomtag).toBe(true);
-    expect(merged.paths.kvmService).toBe(true);
+    expect(merged.paths.kvmService).toBeUndefined();
     expect(merged.familySignatures.primary).not.toBe('ami-megarac');
   });
 });

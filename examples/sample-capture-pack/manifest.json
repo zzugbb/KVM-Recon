@@ -2,7 +2,8 @@
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.5"
+    "version": "0.2.6",
+    "buildId": "development"
   },
   "job": {
     "id": "sample-job",
@@ -30,8 +31,6 @@
         "confidence": 0.9,
         "evidence": [
           "/api/randomtag",
-          "/api/session",
-          "/api/kvm/token",
           "http:/api/session",
           "http:/api/kvm/token"
         ]

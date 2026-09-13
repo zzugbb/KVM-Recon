@@ -50,7 +50,7 @@ describe('buildLiveCaptureSnapshot', () => {
             resourceType: 'xhr',
             status: 200,
             requestHeaders: {},
-            responseHeaders: {},
+            responseHeaders: { 'set-cookie': 'QSESSIONID=<redacted:sha256:sample>' },
             requestBodySummary: { bytes: 8, redactedFields: ['Password'] },
             responseBodySummary: { bytes: 8, redactedFields: [] },
             tags: ['login'],

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { detectKvmFamily, scoreCapturedKvmFamily, trafficEvidenceFromNetwork } from './detectKvmFamily';
 
 describe('detectKvmFamily', () => {
-  it('keeps AMI path-only evidence below known-family confidence without matching HTTP traffic', () => {
+  it('treats a validated AMI randomtag as a strong standalone fingerprint', () => {
     const result = detectKvmFamily({
       paths: {
         apiRandomtag: true,
@@ -14,10 +14,10 @@ describe('detectKvmFamily', () => {
     });
 
     expect(result.primary).toBe('ami-megarac');
-    expect(result.confidence).toBeLessThan(0.5);
+    expect(result.confidence).toBe(0.9);
     expect(result.candidates[0]).toMatchObject({
       kvmFamily: 'ami-megarac',
-      evidence: ['/api/randomtag', '/api/session', '/api/kvm/token'],
+      evidence: ['/api/randomtag'],
     });
   });
 
@@ -49,7 +49,7 @@ describe('detectKvmFamily', () => {
     expect(result.candidates[0].evidence).toEqual(['/kvm/video', '/randomtag']);
   });
 
-  it('does not drop OpenBMC just because AMI /api path bits are set', () => {
+  it('uses the production AMI then OpenBMC priority when strong signals conflict', () => {
     const result = detectKvmFamily({
       paths: {
         apiRandomtag: true,
@@ -60,7 +60,21 @@ describe('detectKvmFamily', () => {
       },
     });
 
-    expect(result.candidates.map(item => item.kvmFamily)).toContain('openbmc-h5');
+    expect(result.primary).toBe('ami-megarac');
+    expect(result.candidates.map(item => item.kvmFamily)).toEqual([
+      'ami-megarac',
+      'openbmc-h5',
+    ]);
+  });
+
+  it('does not let an unvalidated AMI-looking URL outrank a strong OpenBMC fingerprint', () => {
+    const result = detectKvmFamily({
+      paths: { randomtag: true },
+      traffic: { httpUrls: ['https://bmc.example/api/session'] },
+    });
+
+    expect(result.primary).toBe('openbmc-h5');
+    expect(result.candidates.map(item => item.kvmFamily)).not.toContain('ami-megarac');
   });
 
   it('detects Huawei iBMC from Redfish vendor and KvmService evidence', () => {
@@ -96,15 +110,38 @@ describe('detectKvmFamily', () => {
     expect(result.candidates).toEqual([]);
   });
 
-  it('returns unknown-h5 when HTML5 paths exist but no known family matches', () => {
+  it('treats a validated OpenBMC randomtag as a known family', () => {
     const result = detectKvmFamily({
       paths: {
         randomtag: true,
       },
     });
 
-    expect(result.primary).toBe('unknown-h5');
-    expect(result.candidates).toEqual([]);
+    expect(result.primary).toBe('openbmc-h5');
+    expect(result.confidence).toBe(0.9);
+  });
+
+  it('detects AMI from the original vendor certificate', () => {
+    const result = detectKvmFamily({
+      tls: { organization: 'American Megatrends Inc', commonName: 'AMI' },
+    });
+
+    expect(result.primary).toBe('ami-megarac');
+    expect(result.confidence).toBe(0.9);
+  });
+
+  it('detects Huawei from Redfish Oem.Huawei SoftwareName', () => {
+    const result = detectKvmFamily({
+      redfish: {
+        oemKeys: ['Huawei'],
+        oemSoftwareName: 'iBMC V3',
+      },
+    });
+
+    expect(result.primary).toBe('huawei-ibmc');
+    expect(result.candidates[0]?.evidence).toEqual(
+      expect.arrayContaining(['redfish.Oem.Huawei', 'redfish.Oem.SoftwareName=iBMC V3']),
+    );
   });
 
   it('classifies OpenBMC-based H5 with Huawei-style KvmService traffic as openbmc-h5, not AMI', () => {

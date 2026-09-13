@@ -20,8 +20,6 @@
       "evidence": [
         "ami-megarac:0.9",
         "/api/randomtag",
-        "/api/session",
-        "/api/kvm/token",
         "http:/api/session",
         "http:/api/kvm/token"
       ],

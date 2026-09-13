@@ -7,8 +7,6 @@
       "confidence": 0.9,
       "evidence": [
         "/api/randomtag",
-        "/api/session",
-        "/api/kvm/token",
         "http:/api/session",
         "http:/api/kvm/token"
       ]

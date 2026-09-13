@@ -85,20 +85,116 @@ function scopedId(requestId: string, sessionId?: string) {
   return sessionId ? `${sessionId}::${requestId}` : requestId;
 }
 
+const MAX_RESPONSE_BODY_BYTES = 1024 * 1024;
+
+interface ResponseCaptureMetadata {
+  id: string;
+  url: string;
+  resourceType: string;
+  contentType: string;
+}
+
+interface RequestChainState {
+  hopIds: string[];
+  pendingRequestHeaders: HeaderMap[];
+  pendingResponseHeaders: Array<{ status: number; headers: HeaderMap }>;
+  requestExtraIndex: number;
+  responseExtraIndex: number;
+}
+
+function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBytes: number) {
+  if (!metadata) return 'missing-response-metadata';
+  if (/^(?:data|blob):/i.test(metadata.url)) return 'inline-or-blob-url';
+  if (encodedBytes > MAX_RESPONSE_BODY_BYTES) return `response-too-large:${encodedBytes}`;
+  if (/^(?:eventsource|websocket)$/i.test(metadata.resourceType)) return 'streaming-resource';
+  if (/^(?:image|media|font|stylesheet)$/i.test(metadata.resourceType)) {
+    return `binary-resource:${metadata.resourceType.toLowerCase()}`;
+  }
+  if (
+    /^(?:image|audio|video|font)\//i.test(metadata.contentType) ||
+    /application\/(?:octet-stream|pdf|zip|x-rar|wasm)/i.test(metadata.contentType) ||
+    /text\/event-stream/i.test(metadata.contentType)
+  ) {
+    return `unsupported-content-type:${metadata.contentType}`;
+  }
+  return '';
+}
+
 export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInput): Promise<void> {
   const now = input.now ?? (() => new Date().toISOString());
+  const requestChains = new Map<string, RequestChainState>();
+  const responseMetadata = new Map<string, ResponseCaptureMetadata>();
+  const ignoredRequestIds = new Set<string>();
 
-  async function recordResponseBody(requestId: string, sessionId?: string) {
-    const id = scopedId(requestId, sessionId);
+  function chainFor(baseId: string) {
+    const existing = requestChains.get(baseId);
+    if (existing) return existing;
+    const created: RequestChainState = {
+      hopIds: [],
+      pendingRequestHeaders: [],
+      pendingResponseHeaders: [],
+      requestExtraIndex: 0,
+      responseExtraIndex: 0,
+    };
+    requestChains.set(baseId, created);
+    return created;
+  }
+
+  function activeHopId(baseId: string) {
+    const ids = requestChains.get(baseId)?.hopIds || [];
+    return ids[ids.length - 1] || baseId;
+  }
+
+  function drainExtraInfo(baseId: string) {
+    const chain = chainFor(baseId);
+    while (
+      chain.pendingRequestHeaders.length > 0 &&
+      chain.requestExtraIndex < chain.hopIds.length
+    ) {
+      input.recorder.mergeHttpRequestHeaders(
+        chain.hopIds[chain.requestExtraIndex]!,
+        chain.pendingRequestHeaders.shift()!,
+      );
+      chain.requestExtraIndex += 1;
+    }
+    while (
+      chain.pendingResponseHeaders.length > 0 &&
+      chain.responseExtraIndex < chain.hopIds.length
+    ) {
+      const extra = chain.pendingResponseHeaders.shift()!;
+      const id = chain.hopIds[chain.responseExtraIndex]!;
+      input.recorder.recordHttpResponse({
+        id,
+        status: extra.status,
+        responseHeaders: extra.headers,
+      });
+      const metadata = responseMetadata.get(id);
+      if (metadata && !metadata.contentType) {
+        metadata.contentType =
+          Object.entries(extra.headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
+          '';
+      }
+      chain.responseExtraIndex += 1;
+    }
+  }
+
+  async function recordResponseBody(requestId: string, id: string, sessionId?: string) {
     try {
       const result = await input.cdp.sendCommand('Network.getResponseBody', { requestId }, sessionId);
+      const responseBody = decodeResponseBody(result);
+      const responseBytes = Buffer.byteLength(responseBody, 'utf8');
+      if (responseBytes > MAX_RESPONSE_BODY_BYTES) {
+        input.recorder.markHttpResponseBodySkipped(id, `response-too-large:${responseBytes}`);
+        return;
+      }
       input.recorder.recordHttpResponseBody({
         id,
-        responseBody: decodeResponseBody(result),
+        responseBody,
       });
     } catch {
       // 捕获响应体不可读取：可能由缓存、重定向、二进制流或 CDP 生命周期限制导致
       // 策略：保留请求/响应头和状态码，跳过 body 摘要，避免中断现场采集
+      input.recorder.markHttpResponseBodySkipped(id, 'get-response-body-failed');
     }
   }
 
@@ -128,39 +224,112 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     if (method === 'Network.requestWillBeSent') {
       const request = isRecord(params.request) ? params.request : {};
       const requestId = stringValue(params.requestId);
+      const baseId = scopedId(requestId, sessionId);
+      const url = stringValue(request.url);
+      if (/^(?:data|blob):/i.test(url)) {
+        ignoredRequestIds.add(baseId);
+        return;
+      }
+      const chain = chainFor(baseId);
+      const redirectResponse = isRecord(params.redirectResponse) ? params.redirectResponse : null;
+      const redirectedFromId = redirectResponse ? chain.hopIds[chain.hopIds.length - 1] : undefined;
+      if (redirectResponse && redirectedFromId) {
+        input.recorder.recordHttpResponse({
+          id: redirectedFromId,
+          status: numberValue(redirectResponse.status),
+          responseHeaders: headersValue(redirectResponse.headers),
+        });
+        input.recorder.markHttpResponseBodySkipped(redirectedFromId, 'redirect-response');
+        input.recorder.markHttpRequestFinished(redirectedFromId);
+      }
+      const redirectHop = chain.hopIds.length;
+      const id = redirectHop === 0 ? baseId : `${baseId}::redirect-${redirectHop}`;
+      chain.hopIds.push(id);
       input.recorder.recordHttpRequest({
-        id: scopedId(requestId, sessionId),
+        id,
         timestamp: now(),
         method: stringValue(request.method),
-        url: stringValue(request.url),
+        url,
         resourceType: stringValue(params.type),
         requestHeaders: headersValue(request.headers),
         requestBody: stringValue(request.postData),
+        networkRequestId: baseId,
+        redirectHop,
+        redirectedFromId,
         windowRole: input.windowRole,
       });
+      responseMetadata.set(id, {
+        id,
+        url,
+        resourceType: stringValue(params.type),
+        contentType: '',
+      });
+      drainExtraInfo(baseId);
+      return;
+    }
+
+    if (method === 'Network.requestWillBeSentExtraInfo') {
+      const baseId = scopedId(stringValue(params.requestId), sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      chainFor(baseId).pendingRequestHeaders.push(headersValue(params.headers));
+      drainExtraInfo(baseId);
       return;
     }
 
     if (method === 'Network.responseReceived') {
       const response = isRecord(params.response) ? params.response : {};
       const requestId = stringValue(params.requestId);
+      const baseId = scopedId(requestId, sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      const id = activeHopId(baseId);
+      const headers = headersValue(response.headers);
       input.recorder.recordHttpResponse({
-        id: scopedId(requestId, sessionId),
+        id,
         status: numberValue(response.status),
-        responseHeaders: headersValue(response.headers),
+        responseHeaders: headers,
       });
+      const metadata = responseMetadata.get(id);
+      if (metadata) {
+        metadata.contentType =
+          stringValue(response.mimeType) ||
+          Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
+          '';
+      }
+      return;
+    }
+
+    if (method === 'Network.responseReceivedExtraInfo') {
+      const baseId = scopedId(stringValue(params.requestId), sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      chainFor(baseId).pendingResponseHeaders.push({
+        status: numberValue(params.statusCode),
+        headers: headersValue(params.headers),
+      });
+      drainExtraInfo(baseId);
       return;
     }
 
     if (method === 'Network.loadingFinished') {
       const requestId = stringValue(params.requestId);
-      input.recorder.markHttpRequestFinished(scopedId(requestId, sessionId));
-      input.recorder.trackPending(recordResponseBody(requestId, sessionId));
+      const baseId = scopedId(requestId, sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      const id = activeHopId(baseId);
+      input.recorder.markHttpRequestFinished(id);
+      const reason = bodySkipReason(responseMetadata.get(id), numberValue(params.encodedDataLength));
+      if (reason) {
+        input.recorder.markHttpResponseBodySkipped(id, reason);
+      } else {
+        input.recorder.trackPending(recordResponseBody(requestId, id, sessionId));
+      }
       return;
     }
 
     if (method === 'Network.loadingFailed') {
-      input.recorder.markHttpRequestFinished(scopedId(stringValue(params.requestId), sessionId));
+      const baseId = scopedId(stringValue(params.requestId), sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      const id = activeHopId(baseId);
+      input.recorder.markHttpRequestFinished(id);
+      input.recorder.markHttpResponseBodySkipped(id, 'loading-failed');
       return;
     }
 

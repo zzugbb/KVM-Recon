@@ -244,7 +244,7 @@ describe('createNetworkRecorder', () => {
 
     const request = recorder.toJSON().httpRequests[0];
     expect(request).toMatchObject({
-      tags: ['login', 'kvm-token'],
+      tags: ['kvm-token'],
       requestBodySummary: {
         jsonKeys: ['user', 'authParam', 'method'],
         sample: {
@@ -333,7 +333,7 @@ describe('createNetworkRecorder', () => {
     expect(records[0]?.tags).toEqual([]);
     expect(records[1]?.tags).toEqual([]);
     expect(records[2]?.tags).toEqual(['login']);
-    expect(records[3]?.tags).toEqual(['login', 'kvm-token']);
+    expect(records[3]?.tags).toEqual(['kvm-token']);
   });
 
   it('only tags Huawei legacy property calls from the KVM viewer context', () => {
@@ -563,5 +563,57 @@ describe('createNetworkRecorder', () => {
     expect(snapshot.webSockets.map(item => item.id)).toEqual(['ws-1']);
     expect(snapshot.webSockets[0]?.closedAt).toBe('2026-08-24T12:00:05.000+08:00');
     expect(snapshot.webSocketFrames).toHaveLength(0);
+  });
+
+  it('keeps total WebSocket frame counts while bounding sampled frame metadata', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, maxFramesPerSocket: 2 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-bounded',
+      timestamp: '2026-09-13T10:00:00.000+08:00',
+      url: 'wss://bmc.example/kvm',
+      subProtocols: ['binary'],
+      requestHeaders: {},
+    });
+    for (let index = 0; index < 6; index += 1) {
+      recorder.recordWebSocketFrame({
+        socketId: 'ws-bounded',
+        timestamp: `2026-09-13T10:00:0${index}.000+08:00`,
+        direction: index === 5 ? 'up' : 'down',
+        opcode: 'binary',
+        payload: new Uint8Array([0x17, index, 0, 1]),
+      });
+    }
+
+    const snapshot = recorder.toJSON();
+    expect(snapshot.webSockets[0]).toMatchObject({
+      binaryFrameCount: 6,
+      sampledFrameCount: 3,
+      droppedFrameCount: 3,
+    });
+    expect(snapshot.webSocketFrames).toHaveLength(3);
+    expect(snapshot.webSocketFrames.at(-1)?.direction).toBe('up');
+  });
+
+  it('does not let EventSource or recognized long polling block network idle', async () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, idleQuietMs: 1, idleTimeoutMs: 30 });
+    recorder.recordHttpRequest({
+      id: 'events',
+      timestamp: '2026-09-13T10:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://bmc.example/api/events',
+      resourceType: 'EventSource',
+      requestHeaders: {},
+    });
+    recorder.recordHttpRequest({
+      id: 'long-poll',
+      timestamp: '2026-09-13T10:00:01.000+08:00',
+      method: 'GET',
+      url: 'https://bmc.example/api/longpoll',
+      resourceType: 'XHR',
+      requestHeaders: {},
+    });
+
+    await expect(recorder.waitForIdle()).resolves.toMatchObject({ timedOut: false });
+    expect(recorder.toJSON().httpRequests.every(request => request.streaming)).toBe(true);
   });
 });

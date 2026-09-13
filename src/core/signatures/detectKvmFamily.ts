@@ -2,6 +2,8 @@ export interface ProbeSignatureInput {
   redfish?: {
     vendor?: string;
     product?: string;
+    oemKeys?: string[];
+    oemSoftwareName?: string;
   };
   paths?: {
     apiRandomtag?: boolean;
@@ -91,11 +93,9 @@ function hasHpeTraffic(input: ProbeSignatureInput) {
 }
 
 function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
-  const pathEvidence = [
-    input.paths?.apiRandomtag ? '/api/randomtag' : '',
-    input.paths?.apiSession ? '/api/session' : '',
-    input.paths?.apiKvmToken ? '/api/kvm/token' : '',
-  ].filter(Boolean);
+  const organization = input.tls?.organization || '';
+  const commonName = input.tls?.commonName || '';
+  const certHit = /american megatrends/i.test(organization) || /^ami$/i.test(commonName.trim());
   const trafficEvidence = [
     urlMatches(urls(input), /\/api\/randomtag(\/|\?|$)/i) ? 'http:/api/randomtag' : '',
     urlMatches(urls(input), /\/api\/(?:secure_session|session|session_encrypted)(\/|\?|$)/i)
@@ -113,28 +113,17 @@ function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
     return null;
   }
 
-  const evidence = [...(trafficEvidence.length ? pathEvidence : []), ...trafficEvidence];
-  if (evidence.length === 0) {
-    if (pathEvidence.length >= 2) {
-      return {
-        kvmFamily: 'ami-megarac',
-        confidence: 0.49,
-        evidence: pathEvidence,
-      };
-    }
-    return null;
-  }
-
-  let confidence = 0.5 + 0.05 * Math.min(pathEvidence.length, 3);
-  if (strongTraffic) {
-    confidence = 0.9;
-  } else if (trafficEvidence.length === 1) {
-    confidence = 0.58;
-  }
+  const evidence = [
+    input.paths?.apiRandomtag ? '/api/randomtag' : '',
+    certHit ? `tls.O=${organization};CN=${commonName}` : '',
+    ...trafficEvidence,
+  ].filter(Boolean);
+  const strongIdentity = Boolean(input.paths?.apiRandomtag) || certHit || strongTraffic;
+  if (!strongIdentity) return null;
 
   return {
     kvmFamily: 'ami-megarac',
-    confidence: roundConfidence(confidence),
+    confidence: 0.9,
     evidence,
   };
 }
@@ -156,7 +145,7 @@ function detectOpenBmc(input: ProbeSignatureInput): KvmFamilyCandidate | null {
     input.paths?.sessionService ? '/redfish/v1/SessionService' : '',
   ].filter(Boolean);
 
-  const strong = tlsOpenBmc || xyzSubscribe || wsKvmVideo;
+  const strong = tlsOpenBmc || xyzSubscribe || wsKvmVideo || Boolean(input.paths?.randomtag);
   const pathPair =
     Boolean(input.paths?.kvmVideo && (input.paths.randomtag || input.paths.sessionService)) ||
     Boolean(input.paths?.randomtag && input.paths?.sessionService);
@@ -168,7 +157,7 @@ function detectOpenBmc(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   if (wsKvmVideo) score += 0.22;
   if (wsSubscribe) score += 0.08;
   if (input.paths?.kvmVideo) score += 0.42;
-  if (input.paths?.randomtag) score += 0.28;
+  if (input.paths?.randomtag) score += 0.9;
   if (input.paths?.sessionService) score += 0.18;
 
   return {
@@ -183,6 +172,9 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const vendorHit = /huawei|华为/i.test(vendor);
   const organization = `${input.tls?.organization || ''} ${input.tls?.commonName || ''}`;
   const tlsHit = /huawei/i.test(organization);
+  const oemHuawei = (input.redfish?.oemKeys || []).some(key => /^huawei$/i.test(key));
+  const oemSoftware = input.redfish?.oemSoftwareName || '';
+  const oemSoftwareHit = /ibmc/i.test(oemSoftware);
   const huaweiUiHttp = urlMatches(urls(input), /\/UI\/Rest\/Services\/KVM(?:\/GenerateStartupFile)?(?:\?|$)/i);
   const legacyHttp = urlMatches(urls(input), /\/bmc\/pages\/remote\/kvm_by_html5\.html|\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i);
   const kvmServiceHttp = urlMatches(urls(input), /\/kvmservice(\/|\?|$)/i);
@@ -196,6 +188,8 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const evidence = [
     vendorHit ? `redfish.vendor=${vendor}` : '',
     tlsHit ? `tls=${organization.trim()}` : '',
+    oemHuawei ? 'redfish.Oem.Huawei' : '',
+    oemSoftwareHit ? `redfish.Oem.SoftwareName=${oemSoftware}` : '',
     kvmServicePath ? 'KvmService' : '',
     setKvmKeyPath ? 'SetKvmKey' : '',
     huaweiUiHttp ? 'http:/UI/Rest/Services/KVM' : '',
@@ -206,13 +200,30 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
     huaweiFrame ? 'frame:FEF6' : '',
   ].filter(Boolean);
 
-  if (startH5KvmHttp && !vendorHit && !tlsHit && !huaweiUiHttp && !huaweiWs && !huaweiFrame) {
+  if (
+    startH5KvmHttp &&
+    !vendorHit &&
+    !tlsHit &&
+    !oemHuawei &&
+    !oemSoftwareHit &&
+    !huaweiUiHttp &&
+    !huaweiWs &&
+    !huaweiFrame
+  ) {
     return null;
   }
-  const strongIdentity = vendorHit || tlsHit || huaweiUiHttp || legacyHttp || huaweiWs || huaweiFrame;
+  const strongIdentity =
+    vendorHit ||
+    tlsHit ||
+    oemHuawei ||
+    oemSoftwareHit ||
+    huaweiUiHttp ||
+    legacyHttp ||
+    huaweiWs ||
+    huaweiFrame;
   if (!strongIdentity) return null;
 
-  if ((vendorHit || tlsHit) && kvmServicePath && setKvmKeyPath) {
+  if ((vendorHit || tlsHit || oemHuawei || oemSoftwareHit) && kvmServicePath && setKvmKeyPath) {
     return {
       kvmFamily: 'huawei-ibmc',
       confidence: 0.88,
@@ -230,6 +241,8 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   let score = 0.5;
   if (vendorHit) score += 0.14;
   if (tlsHit) score += 0.12;
+  if (oemHuawei) score += 0.16;
+  if (oemSoftwareHit) score += 0.16;
   if (huaweiUiHttp) score += 0.18;
   if (legacyHttp) score += 0.12;
   if (huaweiWs) score += 0.16;
@@ -249,14 +262,9 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
 export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionResult {
   const candidates: KvmFamilyCandidate[] = [];
 
-  pushCandidate(candidates, detectHuawei(input));
   pushCandidate(candidates, detectAmi(input));
   pushCandidate(candidates, detectOpenBmc(input));
-
-  candidates.sort((left, right) => {
-    if (right.confidence !== left.confidence) return right.confidence - left.confidence;
-    return right.evidence.length - left.evidence.length;
-  });
+  pushCandidate(candidates, detectHuawei(input));
 
   const primary = candidates[0];
   if (primary) {
@@ -375,6 +383,7 @@ export function trafficEvidenceFromNetwork(network?: {
 export function scoreCapturedKvmFamily(
   probe?: {
     basic?: { vendor?: string; product?: string };
+    redfish?: { oemKeys?: string[]; oemSoftwareName?: string };
     paths?: ProbeSignatureInput['paths'];
     tls?: {
       certificate?: {
@@ -397,6 +406,8 @@ export function scoreCapturedKvmFamily(
     redfish: {
       vendor: probe.basic?.vendor,
       product: probe.basic?.product,
+      oemKeys: probe.redfish?.oemKeys,
+      oemSoftwareName: probe.redfish?.oemSoftwareName,
     },
     paths: overlayPathEvidence(probe.paths, probe.authenticated?.paths),
     tls: {

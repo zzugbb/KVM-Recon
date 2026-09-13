@@ -19,6 +19,8 @@
     "responseSubProtocol": { "type": "string" },
     "binaryFrameCount": { "type": "integer" },
     "textFrameCount": { "type": "integer" },
+    "sampledFrameCount": { "type": "integer" },
+    "droppedFrameCount": { "type": "integer" },
     "tags": {
       "type": "array",
       "items": { "enum": ["kvm-video", "vmedia", "unknown"] }

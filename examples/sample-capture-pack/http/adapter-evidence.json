@@ -5,6 +5,10 @@
       "method": "POST",
       "url": "https://10.0.0.10/api/session",
       "status": 200,
+      "contentType": "application/json",
+      "redirectHop": 0,
+      "redirectedFromId": "",
+      "redirectedToId": "",
       "requestJsonKeys": [],
       "responseJsonKeys": [],
       "redactedFields": [
@@ -12,7 +16,19 @@
         "CSRFToken"
       ],
       "requestBodySample": null,
-      "responseBodySample": null
+      "responseBodySample": null,
+      "responseStructure": {
+        "bodyKind": "json-object",
+        "jsonKeys": [
+          "CSRFToken"
+        ],
+        "jsonShape": {
+          "CSRFToken": "string"
+        },
+        "jsonPaths": {
+          "$.CSRFToken": "string"
+        }
+      }
     }
   ],
   "kvmLaunchChain": [
@@ -21,11 +37,27 @@
       "method": "GET",
       "url": "https://10.0.0.10/api/kvm/token",
       "status": 200,
+      "contentType": "application/json",
+      "redirectHop": 0,
+      "redirectedFromId": "",
+      "redirectedToId": "",
       "tags": [
         "kvm-token"
       ],
       "requestBodySample": null,
-      "responseBodySample": null
+      "responseBodySample": null,
+      "responseStructure": {
+        "bodyKind": "json-object",
+        "jsonKeys": [
+          "token"
+        ],
+        "jsonShape": {
+          "token": "string"
+        },
+        "jsonPaths": {
+          "$.token": "string"
+        }
+      }
     }
   ],
   "webSocketUpgrades": [
@@ -36,11 +68,15 @@
         "binary"
       ],
       "requestHeaderNames": [],
-      "handshakeStatus": null,
-      "responseHeaderNames": [],
-      "responseSubProtocol": "",
+      "handshakeStatus": 101,
+      "responseHeaderNames": [
+        "sec-websocket-protocol"
+      ],
+      "responseSubProtocol": "binary",
       "binaryFrameCount": 12,
       "textFrameCount": 0,
+      "sampledFrameCount": 1,
+      "droppedFrameCount": 11,
       "tags": [
         "kvm-video"
       ],

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { probeBmcBasics, type ProbeHttpClient } from './probeBmcBasics';
 
-function createHttpClient(responses: Record<string, { status: number; data?: unknown }>): ProbeHttpClient {
+function createHttpClient(
+  responses: Record<string, { status: number; data?: unknown }>,
+  calls: string[] = [],
+): ProbeHttpClient {
   return {
     async get(path) {
+      calls.push(path);
       return responses[path] ?? { status: 404 };
     },
   };
@@ -25,10 +29,9 @@ describe('probeBmcBasics', () => {
             Vendor: 'Huawei',
             Product: 'iBMC',
             FirmwareVersion: '1.0.0',
+            Oem: { Huawei: { SoftwareName: 'iBMC V5' } },
           },
         },
-        '/redfish/v1/Managers/1/KvmService': { status: 200, data: { Id: 'KvmService' } },
-        '/redfish/v1/Managers/1/KvmService/Actions/KvmService.SetKvmKey': { status: 405 },
       }),
     });
 
@@ -52,36 +55,45 @@ describe('probeBmcBasics', () => {
         Product: 'iBMC',
         FirmwareVersion: '1.0.0',
       },
+      oemKeys: ['Huawei'],
+      oemSoftwareName: 'iBMC V5',
     });
-    expect(result.paths.kvmService).toBe(true);
-    expect(result.paths.setKvmKey).toBe(false);
+    expect(result.paths.kvmService).toBeUndefined();
+    expect(result.paths.setKvmKey).toBeUndefined();
     expect(result.familySignatures.primary).toBe('huawei-ibmc');
   });
 
-  it('treats AMI /api evidence as stronger than generic /kvm/video', async () => {
+  it('uses only side-effect-free production probes and recognizes AMI randomtag', async () => {
+    const calls: string[] = [];
     const result = await probeBmcBasics({
       target: {
         host: '10.0.0.11',
         port: 443,
         scheme: 'https',
       },
-      httpClient: createHttpClient({
-        '/api/randomtag': { status: 200, data: { encrypt_ctrl: 1, random: 1234 } },
-        '/api/session': { status: 200, data: { cc: 0, racsession_id: 'sid' } },
-        '/api/kvm/token': { status: 200, data: { token: 'kvm-token', cc: 0 } },
-        '/kvm/video': { status: 200, data: { stream: true } },
-      }),
+      httpClient: createHttpClient(
+        {
+          '/api/randomtag': { status: 200, data: { encrypt_ctrl: 1, random: 1234 } },
+          '/api/session': { status: 200, data: { cc: 0, racsession_id: 'sid' } },
+          '/api/kvm/token': { status: 200, data: { token: 'kvm-token', cc: 0 } },
+        },
+        calls,
+      ),
     });
 
     expect(result.paths.apiRandomtag).toBe(true);
-    expect(result.paths.apiSession).toBe(true);
-    expect(result.paths.apiKvmToken).toBe(true);
-    expect(result.paths.kvmVideo).toBe(true);
+    expect(result.paths.apiSession).toBeUndefined();
+    expect(result.paths.apiKvmToken).toBeUndefined();
     expect(result.familySignatures.primary).toBe('ami-megarac');
-    expect(result.familySignatures.confidence).toBeLessThan(0.8);
+    expect(result.familySignatures.confidence).toBe(0.9);
+    expect(calls).not.toContain('/api/session');
+    expect(calls).not.toContain('/api/kvm/token');
+    expect(calls).not.toContain(
+      '/redfish/v1/Managers/1/KvmService/Actions/KvmService.SetKvmKey',
+    );
   });
 
-  it('does not treat GET /kvm/video 401 as OpenBMC path evidence', async () => {
+  it('treats a validated OpenBMC randomtag as a strong standalone fingerprint', async () => {
     const result = await probeBmcBasics({
       target: {
         host: '10.0.0.13',
@@ -89,13 +101,12 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/kvm/video': { status: 401 },
         '/randomtag': { status: 200, data: { random: 'x' } },
       }),
     });
 
-    expect(result.paths.kvmVideo).toBe(false);
     expect(result.paths.randomtag).toBe(true);
+    expect(result.familySignatures.primary).toBe('openbmc-h5');
   });
 
   it('does not treat SPA HTML 200 as AMI /api evidence', async () => {
@@ -108,16 +119,12 @@ describe('probeBmcBasics', () => {
       },
       httpClient: createHttpClient({
         '/api/randomtag': { status: 200, data: html },
-        '/api/session': { status: 200, data: html },
-        '/api/kvm/token': { status: 200, data: html },
-        '/redfish/v1/Managers/1/KvmService': { status: 200, data: { Id: 'KvmService' } },
       }),
     });
 
     expect(result.paths.apiRandomtag).toBe(false);
-    expect(result.paths.apiSession).toBe(false);
-    expect(result.paths.apiKvmToken).toBe(false);
-    expect(result.paths.kvmService).toBe(true);
+    expect(result.paths.apiSession).toBeUndefined();
+    expect(result.paths.apiKvmToken).toBeUndefined();
     expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
 
@@ -130,15 +137,13 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/api/session': { status: 200, data: html },
         '/api/randomtag': { status: 200, data: html },
-        '/api/kvm/token': { status: 200, data: html },
       }),
     });
 
-    expect(result.paths.apiSession).toBe(false);
+    expect(result.paths.apiSession).toBeUndefined();
     expect(result.paths.apiRandomtag).toBe(false);
-    expect(result.paths.apiKvmToken).toBe(false);
+    expect(result.paths.apiKvmToken).toBeUndefined();
     expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
 
