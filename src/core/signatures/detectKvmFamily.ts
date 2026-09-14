@@ -170,8 +170,8 @@ function detectOpenBmc(input: ProbeSignatureInput): KvmFamilyCandidate | null {
 function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const vendor = input.redfish?.vendor || '';
   const vendorHit = /huawei|华为/i.test(vendor);
-  const organization = `${input.tls?.organization || ''} ${input.tls?.commonName || ''}`;
-  const tlsHit = /huawei/i.test(organization);
+  const commonName = input.tls?.commonName || '';
+  const tlsHit = /huawei/i.test(commonName);
   const oemHuawei = (input.redfish?.oemKeys || []).some(key => /^huawei$/i.test(key));
   const oemSoftware = input.redfish?.oemSoftwareName || '';
   const oemSoftwareHit = /ibmc/i.test(oemSoftware);
@@ -187,7 +187,7 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
 
   const evidence = [
     vendorHit ? `redfish.vendor=${vendor}` : '',
-    tlsHit ? `tls=${organization.trim()}` : '',
+    tlsHit ? `tls.CN=${commonName}` : '',
     oemHuawei ? 'redfish.Oem.Huawei' : '',
     oemSoftwareHit ? `redfish.Oem.SoftwareName=${oemSoftware}` : '',
     kvmServicePath ? 'KvmService' : '',
@@ -309,7 +309,7 @@ export function tlsOrganizationFromCertificate(
     issuer?: Record<string, unknown>;
   } | null,
 ): string {
-  return partyOrganization(certificate?.subject) || partyOrganization(certificate?.issuer);
+  return partyOrganization(certificate?.subject);
 }
 
 function partyCommonName(party?: Record<string, unknown>): string {
@@ -325,7 +325,7 @@ export function tlsCommonNameFromCertificate(
     issuer?: Record<string, unknown>;
   } | null,
 ): string {
-  return partyCommonName(certificate?.subject) || partyCommonName(certificate?.issuer);
+  return partyCommonName(certificate?.subject);
 }
 
 function decodeHeadHex(headHex: string): string {

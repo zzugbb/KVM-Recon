@@ -103,10 +103,10 @@ export function applyAuthenticatedProbe(
           anonymous.redfish?.oemSoftwareName || authenticated.redfish?.oemSoftwareName,
       },
       paths,
-    tls: {
-      organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
-      commonName: tlsCommonNameFromCertificate(anonymous.tls.certificate),
-    },
+      tls: {
+        organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
+        commonName: tlsCommonNameFromCertificate(anonymous.tls.certificate),
+      },
     }),
     authenticated: {
       attempted: true,

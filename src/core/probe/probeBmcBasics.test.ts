@@ -23,7 +23,7 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/redfish/v1': {
+        '/redfish/v1/': {
           status: 200,
           data: {
             Vendor: 'Huawei',
@@ -44,7 +44,7 @@ describe('probeBmcBasics', () => {
       firmwareVersion: '1.0.0',
     });
     expect(result.redfish).toMatchObject({
-      path: '/redfish/v1',
+      path: '/redfish/v1/',
       status: 200,
       reachable: true,
       vendor: 'Huawei',
@@ -147,7 +147,7 @@ describe('probeBmcBasics', () => {
     expect(result.familySignatures.primary).not.toBe('ami-megarac');
   });
 
-  it('falls back to /redfish/v1/ when the slashless Redfish root is not usable', async () => {
+  it('falls back to /redfish/v1 when the production Redfish root is not usable', async () => {
     const result = await probeBmcBasics({
       target: {
         host: '10.0.0.15',
@@ -155,8 +155,8 @@ describe('probeBmcBasics', () => {
         scheme: 'https',
       },
       httpClient: createHttpClient({
-        '/redfish/v1': { status: 404 },
-        '/redfish/v1/': {
+        '/redfish/v1/': { status: 404 },
+        '/redfish/v1': {
           status: 200,
           data: {
             Vendor: 'OpenBMC',
@@ -167,10 +167,44 @@ describe('probeBmcBasics', () => {
     });
 
     expect(result.redfish).toMatchObject({
-      path: '/redfish/v1/',
+      path: '/redfish/v1',
       reachable: true,
       vendor: 'OpenBMC',
       product: 'Test BMC',
+    });
+  });
+
+  it('starts Redfish and both randomtag probes before waiting for any response', async () => {
+    const calls: string[] = [];
+    let resolveRedfish: ((value: { status: number; data: unknown }) => void) | undefined;
+    const resultPromise = probeBmcBasics({
+      target: {
+        host: '10.0.0.16',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: {
+        get(path) {
+          calls.push(path);
+          if (path === '/redfish/v1/') {
+            return new Promise(resolve => {
+              resolveRedfish = resolve;
+            });
+          }
+          return Promise.resolve({ status: 404 });
+        },
+      },
+    });
+
+    await Promise.resolve();
+    expect(calls).toEqual(
+      expect.arrayContaining(['/redfish/v1/', '/api/randomtag', '/randomtag']),
+    );
+    expect(calls).not.toContain('/redfish/v1');
+
+    resolveRedfish?.({ status: 200, data: { Vendor: 'OpenBMC' } });
+    await expect(resultPromise).resolves.toMatchObject({
+      redfish: { path: '/redfish/v1/', reachable: true },
     });
   });
 });

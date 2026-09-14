@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectKvmFamily, scoreCapturedKvmFamily, trafficEvidenceFromNetwork } from './detectKvmFamily';
+import {
+  detectKvmFamily,
+  scoreCapturedKvmFamily,
+  tlsCommonNameFromCertificate,
+  tlsOrganizationFromCertificate,
+  trafficEvidenceFromNetwork,
+} from './detectKvmFamily';
 
 describe('detectKvmFamily', () => {
   it('treats a validated AMI randomtag as a strong standalone fingerprint', () => {
@@ -128,6 +134,38 @@ describe('detectKvmFamily', () => {
 
     expect(result.primary).toBe('ami-megarac');
     expect(result.confidence).toBe(0.9);
+  });
+
+  it('uses only the certificate subject when extracting protocol-family identity', () => {
+    const issuerOnlyCertificate = {
+      issuer: { O: 'OpenBMC', CN: 'Huawei iBMC' },
+    };
+    const subjectCertificate = {
+      subject: { O: 'Independent BMC', CN: 'bmc.local' },
+      issuer: { O: 'OpenBMC', CN: 'Huawei iBMC' },
+    };
+
+    expect(tlsOrganizationFromCertificate(issuerOnlyCertificate)).toBe('');
+    expect(tlsCommonNameFromCertificate(issuerOnlyCertificate)).toBe('');
+    expect(tlsOrganizationFromCertificate(subjectCertificate)).toBe('Independent BMC');
+    expect(tlsCommonNameFromCertificate(subjectCertificate)).toBe('bmc.local');
+  });
+
+  it('does not classify Huawei from subject organization alone', () => {
+    const result = detectKvmFamily({
+      tls: { organization: 'Huawei Technologies', commonName: 'bmc.local' },
+    });
+
+    expect(result.primary).toBe('not-h5');
+  });
+
+  it('classifies Huawei from the certificate subject common name', () => {
+    const result = detectKvmFamily({
+      tls: { organization: 'Independent CA', commonName: 'Huawei iBMC' },
+    });
+
+    expect(result.primary).toBe('huawei-ibmc');
+    expect(result.candidates[0]?.evidence).toContain('tls.CN=Huawei iBMC');
   });
 
   it('detects Huawei from Redfish Oem.Huawei SoftwareName', () => {

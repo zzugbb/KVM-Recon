@@ -5,7 +5,7 @@ import type { ProbeHttpClient } from './probeBmcBasics';
 
 const httpClient: ProbeHttpClient = {
   async get(path) {
-    if (path === '/redfish/v1') {
+    if (path === '/redfish/v1/') {
       return {
         status: 200,
         data: {
@@ -22,6 +22,46 @@ const httpClient: ProbeHttpClient = {
 };
 
 describe('probeBmcTarget', () => {
+  it('starts TLS, Redfish, and both randomtag signals concurrently', async () => {
+    const started: string[] = [];
+    let resolveRedfish: ((value: { status: number; data: unknown }) => void) | undefined;
+    const resultPromise = probeBmcTarget({
+      target: {
+        host: '10.0.0.19',
+        port: 443,
+        scheme: 'https',
+      },
+      httpClient: {
+        get(path) {
+          started.push(path);
+          if (path === '/redfish/v1/') {
+            return new Promise(resolve => {
+              resolveRedfish = resolve;
+            });
+          }
+          return Promise.resolve({ status: 404 });
+        },
+      },
+      tlsConnector: async () => {
+        started.push('tls');
+        return {
+          authorized: false,
+          protocol: 'TLSv1.3',
+          cipher: null,
+          certificate: null,
+        };
+      },
+    });
+
+    await Promise.resolve();
+    expect(started).toEqual(
+      expect.arrayContaining(['tls', '/redfish/v1/', '/api/randomtag', '/randomtag']),
+    );
+
+    resolveRedfish?.({ status: 404, data: null });
+    await resultPromise;
+  });
+
   it('combines basic info, TLS info, path evidence, and family signatures', async () => {
     const result = await probeBmcTarget({
       target: {

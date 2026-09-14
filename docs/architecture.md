@@ -58,7 +58,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 注意：WebSocket 只记录元数据和有界帧样本，不保存完整视频流；每条连接持续累计帧总数、采样数和丢弃数。HTTP JSON 与 URL-encoded 表单请求/响应会保留字段级脱敏后的结构化样本，短文本响应保留有限长度样本，便于离场后复原嵌套字段、表单参数和非敏感参数关系。图片、字体、媒体、样式、流式响应、二进制 MIME、`data:` / `blob:` 和超限正文不会读取。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
 
-HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP ExtraInfo 事件中的 Cookie / Set-Cookie 等头会合并到对应 hop。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待，避免持续连接把完整采集误降为 `PARTIAL`。
+HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP ExtraInfo 事件中的 Cookie / Set-Cookie 等头会结合 `redirectHasExtraInfo` / `hasExtraInfo` 合并到对应 hop，不会因某一跳缺少 ExtraInfo 而错位。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待，避免持续连接把完整采集误降为 `PARTIAL`。
 
 ### 3.4 Probe Engine
 
@@ -67,7 +67,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 无副作用探测项：
 
 - TLS 证书、协议版本、cipher、自签信息。
-- `/redfish/v1` 基础信息。
+- TLS、`/redfish/v1/`、`/api/randomtag` 和 `/randomtag` 四路同时开始；仅在带斜杠的 Redfish 根不可用时兼容回退 `/redfish/v1`。
 - AMI MegaRAC 指纹：正文验证后的 `/api/randomtag`，以及证书 `O=American Megatrends` / `CN=AMI`。
 - OpenBMC H5 指纹：正文验证后的 `/randomtag`，以及 OpenBMC 证书信息。
 - 华为 iBMC 指纹：Redfish `Vendor`、`Oem.Huawei`、`SoftwareName=iBMC` / `SmsName=iBMC` 与证书身份。
@@ -76,7 +76,7 @@ Recon 不主动请求 `/api/session`、`/api/kvm/token`、`KvmService`、`SetKvm
 
 路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为结构化 JSON 或明确的短非 HTML 指纹文本；`text/plain` 但正文为 JSON 的响应按 JSON 解析；Redfish 根同时兼容 `/redfish/v1` 与 `/redfish/v1/`。401/403/405 只记录为路径事实，不再直接算接口命中。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。探测结果同时导出 `probe/path-details.json`，保留每个路径的状态码、内容类型、重定向和响应结构特征。
 
-已知族判定与 InManage NodeServer 的 adapter-registry 语义对齐：优先级为 AMI、OpenBMC、Huawei；AMI/OpenBMC 的 randomtag 需要看到对应 JSON 字段，单独命中已验证 `/randomtag` 即是 OpenBMC 强指纹，通用鉴权墙不算；Huawei 需要 Redfish/OEM/TLS/legacy UI/WS/帧头等强身份信号，不能只因通用 `KvmService` 字段命中就归入华为。H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 与未知 HTML5 KVM 会作为产品迹象写入 `probe/product-hints.json` 和 manifest；H3C/Huawei 品牌仅作辅助，HDM2/legacy 提示必须有对应协议路径、资源或帧证据。
+已知族判定与 InManage NodeServer 的 adapter-registry 语义对齐：优先级为 AMI、OpenBMC、Huawei；TLS 身份只读取证书 subject，其中 AMI 使用 subject O/CN、OpenBMC 使用 subject O、Huawei 使用 subject CN，不以 issuer 或 Huawei subject O 判定；AMI/OpenBMC 的 randomtag 需要看到对应 JSON 字段，单独命中已验证 `/randomtag` 即是 OpenBMC 强指纹，通用鉴权墙不算；Huawei 需要 Redfish/OEM/TLS/legacy UI/WS/帧头等强身份信号，不能只因通用 `KvmService` 字段命中就归入华为。H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 与未知 HTML5 KVM 会作为产品迹象写入 `probe/product-hints.json` 和 manifest；H3C/Huawei 品牌仅作辅助，HDM2/legacy 提示必须有对应协议路径、资源或帧证据。
 
 探测实现以当前仓库的 Node probe 与登录后会话复验为准。不要把一次性手工调试脚本直接做进产品主流程。无头批量复验、从调试脚本抽公共库，都不是本项目目标。
 

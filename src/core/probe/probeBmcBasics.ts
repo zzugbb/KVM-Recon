@@ -268,27 +268,35 @@ function oemSoftwareName(data: unknown): string {
 }
 
 export async function probeBmcBasics(input: ProbeBmcBasicsInput): Promise<ProbeBmcBasicsResult> {
-  let redfishPath: ProbeRedfishSummary['path'] = '/redfish/v1';
-  let redfish = await safeGet(input.httpClient, redfishPath);
+  let redfishPath: ProbeRedfishSummary['path'] = '/redfish/v1/';
+  const redfishPromise = safeGet(input.httpClient, redfishPath);
+  const pathPromises = PATHS.map(async ([key, path]) => {
+    const response = await safeGet(input.httpClient, path);
+    return { key, detail: buildPathDetail(key, path, response) };
+  });
+  const [primaryRedfish, pathResults] = await Promise.all([
+    redfishPromise,
+    Promise.all(pathPromises),
+  ]);
+  let redfish = primaryRedfish;
   if (!(is2xx(redfish.status) && !isHtmlPayload(redfish.data) && Boolean(redfish.data))) {
-    const slashPath = '/redfish/v1/';
-    const slashRedfish = await safeGet(input.httpClient, slashPath);
-    if (is2xx(slashRedfish.status) && !isHtmlPayload(slashRedfish.data) && Boolean(slashRedfish.data)) {
-      redfishPath = slashPath;
-      redfish = slashRedfish;
+    const fallbackPath = '/redfish/v1';
+    const fallbackRedfish = await safeGet(input.httpClient, fallbackPath);
+    if (
+      is2xx(fallbackRedfish.status) &&
+      !isHtmlPayload(fallbackRedfish.data) &&
+      Boolean(fallbackRedfish.data)
+    ) {
+      redfishPath = fallbackPath;
+      redfish = fallbackRedfish;
     }
   }
   const paths: NonNullable<ProbeSignatureInput['paths']> = {};
   const pathDetails: ProbePathDetails = {};
-
-  await Promise.all(
-    PATHS.map(async ([key, path]) => {
-      const response = await safeGet(input.httpClient, path);
-      const detail = buildPathDetail(key, path, response);
-      pathDetails[key] = detail;
-      paths[key] = detail.hit;
-    }),
-  );
+  for (const { key, detail } of pathResults) {
+    pathDetails[key] = detail;
+    paths[key] = detail.hit;
+  }
 
   const vendor = readStringField(redfish.data, ['Vendor', 'vendor']);
   const product = readStringField(redfish.data, ['Product', 'product', 'Model', 'model']);

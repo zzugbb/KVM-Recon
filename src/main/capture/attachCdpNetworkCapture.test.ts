@@ -308,6 +308,7 @@ describe('attachCdpNetworkCapture', () => {
     emit('Network.requestWillBeSent', {
       requestId: 'login-chain',
       type: 'Document',
+      redirectHasExtraInfo: true,
       redirectResponse: {
         status: 302,
         headers: { Location: '/home' },
@@ -320,6 +321,7 @@ describe('attachCdpNetworkCapture', () => {
     });
     emit('Network.responseReceived', {
       requestId: 'login-chain',
+      hasExtraInfo: false,
       response: {
         status: 200,
         mimeType: 'application/json',
@@ -351,6 +353,79 @@ describe('attachCdpNetworkCapture', () => {
       responseBodyCaptured: true,
     });
     expect(bodyCalls).toEqual(['login-chain']);
+  });
+
+  it('uses CDP ExtraInfo flags to skip redirect hops without raw response headers', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'https://bmc.example/login',
+        headers: {},
+      },
+    });
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'Document',
+      redirectHasExtraInfo: false,
+      redirectResponse: {
+        status: 302,
+        headers: { Location: '/home' },
+      },
+      request: {
+        method: 'GET',
+        url: 'https://bmc.example/home',
+        headers: {},
+      },
+    });
+    emit('Network.responseReceivedExtraInfo', {
+      requestId: 'login-chain',
+      statusCode: 200,
+      headers: { 'Set-Cookie': 'QSESSIONID=final-session' },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'login-chain',
+      hasExtraInfo: true,
+      response: {
+        status: 200,
+        mimeType: 'text/html',
+        headers: { 'content-type': 'text/html' },
+      },
+    });
+
+    const requests = recorder.toJSON().httpRequests;
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({
+      id: 'login-chain',
+      status: 302,
+      redirectLocation: '/home',
+    });
+    expect(requests[0]?.responseHeaders).not.toHaveProperty('Set-Cookie');
+    expect(requests[1]).toMatchObject({
+      id: 'login-chain::redirect-1',
+      status: 200,
+    });
+    expect(requests[1]?.responseHeaders).toHaveProperty(
+      'Set-Cookie',
+      expect.stringMatching(/^QSESSIONID=<redacted:/),
+    );
   });
 
   it('skips inline, binary, and oversized response bodies', async () => {
