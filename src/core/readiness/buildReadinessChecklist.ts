@@ -185,24 +185,30 @@ function isKnownKvmSocketUrl(url: string) {
   ]);
 }
 
-function hasKnownKvmFrame(frames: WebSocketFrameRecord[]) {
+function hasStrongKvmFrame(frames: WebSocketFrameRecord[]) {
   return frames.some(frame => {
     const text = decodeHeadHex(frame.headHex);
     return (
       frame.magic === 'AMI_IVTP_CONNECTION_ALLOWED' ||
-      frame.magic === 'AMI_IVTP_BINARY' ||
       frame.magic === 'DELL_APCP' ||
       frame.magic === 'HUAWEI_KVM_FEF6' ||
       /^RFB 003\./.test(frame.magic || text) ||
-      /\/xyz\/openbmc_project/i.test(text) ||
       /^41504350/i.test(frame.headHex) ||
-      /^fef6/i.test(frame.headHex) ||
-      /^(13|14|17|22|35|3a|50|53)[0-9a-f]{6}/i.test(frame.headHex)
+      /^fef6/i.test(frame.headHex)
     );
   });
 }
 
+function hasWeakAmiFrame(frames: WebSocketFrameRecord[]) {
+  return frames.some(
+    frame =>
+      frame.magic === 'AMI_IVTP_BINARY' ||
+      /^(13|14|17|22|35|3a|50|53)[0-9a-f]{6}/i.test(frame.headHex),
+  );
+}
+
 export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined): string[] {
+  const hasKvmLaunchChain = keyHttpEvidence(network).length > 0;
   const framesBySocket = new Map<string, WebSocketFrameRecord[]>();
   for (const frame of network?.webSocketFrames || []) {
     const frames = framesBySocket.get(frame.socketId) || [];
@@ -215,17 +221,26 @@ export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined
       const frameCount = socket.binaryFrameCount + socket.textFrameCount;
       if (frameCount <= 0) return false;
       const frames = framesBySocket.get(socket.id) || [];
-      const knownFrame = hasKnownKvmFrame(frames);
-      if (knownFrame) return true;
-      return socket.binaryFrameCount > 0 && (socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url));
+      if (hasStrongKvmFrame(frames)) return true;
+      if (socket.binaryFrameCount <= 0) return false;
+      const hasKvmContext =
+        socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url) || hasKvmLaunchChain;
+      if (!hasKvmContext) return false;
+      return hasWeakAmiFrame(frames) || socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url);
     })
     .map(socket => socket.id);
 }
 
 function probeConnectionEvidence(probe: ProbeBmcTargetResult | null | undefined): string[] {
   if (!probe) return [];
+  const httpResponses = [
+    probe.redfish?.status || 0,
+    ...Object.values(probe.pathDetails || {}).map(detail => detail?.status || 0),
+  ].filter(status => status > 0);
+  if (!probe.tls.reachable && httpResponses.length === 0) return [];
   const evidence = [`${probe.basic.scheme}://${probe.basic.host}:${probe.basic.port}`];
   if (probe.tls.reachable) evidence.push(`tls:${probe.tls.protocol || 'reachable'}`);
+  if (httpResponses.length > 0) evidence.push(`http:${httpResponses.join(',')}`);
   return evidence;
 }
 

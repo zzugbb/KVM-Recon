@@ -161,6 +161,98 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('NO');
   });
 
+  it('does not treat an unknown /websocket binary event as an AMI KVM frame', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-generic-websocket', events: [] },
+      network: {
+        httpRequests: [completeNetwork.httpRequests[0]],
+        webSockets: [
+          {
+            id: 'ws-generic',
+            createdAt: '2026-09-14T10:00:00.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-generic',
+            timestamp: '2026-09-14T10:00:00.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+  });
+
+  it('does not report a connection when every active probe failed before receiving a response', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        redfish: {
+          path: '/redfish/v1/' as const,
+          status: 0,
+          reachable: false,
+          vendor: '',
+          product: '',
+          firmwareVersion: '',
+          rootFields: {},
+        },
+        pathDetails: {
+          apiRandomtag: {
+            path: '/api/randomtag',
+            status: 0,
+            hit: false,
+            contentType: '',
+            redirected: false,
+            redirectLocation: '',
+            bodyKind: 'empty' as const,
+            jsonKeys: [],
+            jsonShape: {},
+            jsonPaths: {},
+          },
+          randomtag: {
+            path: '/randomtag',
+            status: 0,
+            hit: false,
+            contentType: '',
+            redirected: false,
+            redirectLocation: '',
+            bodyKind: 'empty' as const,
+            jsonKeys: [],
+            jsonShape: {},
+            jsonPaths: {},
+          },
+        },
+        tls: { ...completeProbe.tls, reachable: false },
+      },
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'bmc.connection')).toMatchObject({
+      status: 'missing',
+      evidence: [],
+    });
+  });
+
   it('does not treat static login assets or Huawei legacy gettoken as login evidence', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,

@@ -6,6 +6,7 @@ import type { ScreenshotRole } from '../core/browser/browserCaptureCore';
 import type { CaptureJobSummary } from '../core/delivery/captureJob';
 import { MAX_CAPTURE_JOBS } from '../core/delivery/captureJob';
 import { createEmptyCapturePack } from '../core/capture-pack/createEmptyCapturePack';
+import { parseCapturePort } from '../core/capture-pack/parseCapturePort';
 import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
 import { APP_VERSION } from '../version';
 import {
@@ -172,13 +173,22 @@ export function App() {
   }, [jobId, jobs.length]);
 
   async function startCapture() {
-    const numericPort = Number(port) || 443;
+    const numericPort = parseCapturePort(port);
     setError(null);
     if (!host.trim()) {
       setError({
         title: '未填写 BMC 地址',
         impact: '无法开始采集。',
         action: '请输入目标 BMC 的 IP 或主机名后再新建采集作业。',
+        detail: '',
+      });
+      return;
+    }
+    if (numericPort === null) {
+      setError({
+        title: '端口无效',
+        impact: '无法建立正确的 BMC 连接。',
+        action: '请输入 1 到 65535 之间的整数端口。',
         detail: '',
       });
       return;
@@ -442,7 +452,14 @@ export function App() {
             </label>
             <label>
               端口
-              <input value={port} onChange={event => setPort(event.target.value)} />
+              <input
+                type="number"
+                min="1"
+                max="65535"
+                step="1"
+                value={port}
+                onChange={event => setPort(event.target.value)}
+              />
             </label>
           </div>
           <div className="field-row field-row-pair">

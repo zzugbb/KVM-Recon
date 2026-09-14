@@ -5,11 +5,12 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["role", "selector", "confidence"],
+    "required": ["role", "selector", "confidence", "windowRole"],
     "properties": {
       "role": { "enum": ["login", "kvm-entry", "viewer", "unknown"] },
       "selector": { "type": "string" },
-      "confidence": { "type": "number" }
+      "confidence": { "type": "number" },
+      "windowRole": { "enum": ["main", "popup"] }
     }
   }
 }

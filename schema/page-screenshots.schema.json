@@ -5,10 +5,11 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["path", "role"],
+    "required": ["path", "role", "windowRole"],
     "properties": {
       "path": { "type": "string" },
-      "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] }
+      "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
+      "windowRole": { "enum": ["main", "popup"] }
     }
   }
 }

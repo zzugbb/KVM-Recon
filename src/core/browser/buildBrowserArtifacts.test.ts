@@ -38,9 +38,18 @@ describe('buildBrowserArtifacts', () => {
       localStorageRemoved: [],
       sessionStorageAdded: [],
       sessionStorageRemoved: [],
+      windowRole: 'main',
     });
     expect(JSON.parse(artifacts.find(artifact => artifact.path === 'page/screenshots.json')!.content)).toEqual([
-      { path: 'page/screenshots/login.png', role: 'unknown' },
+      { path: 'page/screenshots/login.png', role: 'unknown', windowRole: 'main' },
+    ]);
+    expect(JSON.parse(artifacts.find(artifact => artifact.path === 'page/selectors.json')!.content)).toEqual([
+      {
+        role: 'kvm-entry',
+        selector: 'button[data-testid="kvm"]',
+        confidence: 0.8,
+        windowRole: 'main',
+      },
     ]);
     expect(artifacts.find(artifact => artifact.path === 'page/timeline.jsonl')!.content).not.toContain(
       '/tmp/kvm-recon/login.png',

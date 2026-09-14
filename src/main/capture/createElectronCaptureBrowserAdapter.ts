@@ -6,6 +6,7 @@ import type {
   CaptureBrowserAdapter,
   CaptureBrowserAdapterOptions,
   CaptureBrowserWindowHandle,
+  CapturePageTarget,
 } from './createCaptureBrowserController';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
@@ -100,6 +101,22 @@ export function createElectronCaptureBrowserAdapter(
         return next;
       }
 
+      function pageTarget(targetWindow: BrowserWindow): CapturePageTarget {
+        return {
+          windowId: String(targetWindow.webContents.id),
+          windowRole: windowRoles.get(targetWindow) || 'main',
+        };
+      }
+
+      function targetWindow(target?: CapturePageTarget) {
+        if (!target) return activeWindow();
+        const matched = [...windows].find(
+          candidate => windowAlive(candidate) && String(candidate.webContents.id) === target.windowId,
+        );
+        if (!matched) throw new Error(`Capture window ${target.windowId} is no longer available`);
+        return matched;
+      }
+
       async function windowHasKvmSurface(targetWindow: BrowserWindow) {
         try {
           return Boolean(
@@ -122,6 +139,16 @@ export function createElectronCaptureBrowserAdapter(
           candidate => !options?.preferredWindowRole || windowRoles.get(candidate) === options.preferredWindowRole,
         );
         const ordered = [...preferred, ...alive.filter(candidate => !preferred.includes(candidate))];
+        if (!options?.requireKvmSurface) {
+          if (
+            windowAlive(foreground) &&
+            (!options?.preferredWindowRole ||
+              windowRoles.get(foreground) === options.preferredWindowRole)
+          ) {
+            return foreground;
+          }
+          return ordered[0] || activeWindow();
+        }
         if (
           windowAlive(foreground) &&
           (!options?.preferredWindowRole || windowRoles.get(foreground) === options.preferredWindowRole) &&
@@ -168,7 +195,7 @@ export function createElectronCaptureBrowserAdapter(
           }
         });
         targetWindow.webContents.on('did-navigate', (_event, url) => {
-          options.onNavigation(url);
+          options.onNavigation({ url, windowRole: windowRoles.get(targetWindow) || 'main' });
         });
         targetWindow.webContents.session.setCertificateVerifyProc((_request, callback) => {
           callback(0);
@@ -182,7 +209,7 @@ export function createElectronCaptureBrowserAdapter(
           },
         );
         targetWindow.webContents.on('did-navigate-in-page', (_event, url) => {
-          options.onHashChange(url);
+          options.onHashChange({ url, windowRole: windowRoles.get(targetWindow) || 'main' });
         });
         targetWindow.webContents.on('did-finish-load', () => {
           options.onChromiumAccess({ reachable: true, authorizationError: '' });
@@ -221,6 +248,7 @@ export function createElectronCaptureBrowserAdapter(
           options.onPopup({
             url: details.url,
             disposition: details.disposition,
+            windowRole: windowRoles.get(targetWindow) || 'main',
           });
           return {
             action: 'allow',
@@ -274,8 +302,13 @@ export function createElectronCaptureBrowserAdapter(
             throw error;
           }
         },
-        async collectStorageKeys() {
-          return activeWindow().webContents.executeJavaScript(
+        async selectPageTarget(targetOptions) {
+          const selected = await pickScreenshotWindow(targetOptions);
+          if (!selected) throw new Error('No KVM viewer surface is ready for page capture');
+          return pageTarget(selected);
+        },
+        async collectStorageKeys(targetOptions) {
+          return targetWindow(targetOptions?.target).webContents.executeJavaScript(
             `({
               localStorageKeys: Object.keys(window.localStorage || {}),
               sessionStorageKeys: Object.keys(window.sessionStorage || {})
@@ -283,15 +316,17 @@ export function createElectronCaptureBrowserAdapter(
             true,
           );
         },
-        async collectSelectorCandidates() {
-          return activeWindow().webContents.executeJavaScript(selectorScript, true);
+        async collectSelectorCandidates(targetOptions) {
+          return targetWindow(targetOptions?.target).webContents.executeJavaScript(selectorScript, true);
         },
         async captureScreenshot(label, screenshotOptions) {
           const requireKvmSurface = /^viewer/i.test(label);
-          const current = await pickScreenshotWindow({
-            requireKvmSurface,
-            preferredWindowRole: screenshotOptions?.preferredWindowRole,
-          });
+          const current = screenshotOptions?.target
+            ? targetWindow(screenshotOptions.target)
+            : await pickScreenshotWindow({
+                requireKvmSurface,
+                preferredWindowRole: screenshotOptions?.preferredWindowRole,
+              });
           if (!current) {
             throw new Error('No KVM viewer surface is ready for screenshot');
           }
@@ -304,17 +339,22 @@ export function createElectronCaptureBrowserAdapter(
           return {
             packPath: `page/screenshots/${fileName}`,
             sourcePath: filePath,
+            ...pageTarget(current),
           };
         },
-        async drainClicks() {
+        async drainClicks(targetOptions) {
           try {
-            return await activeWindow().webContents.executeJavaScript(
+            const current = targetWindow(targetOptions?.target);
+            const clicks = await current.webContents.executeJavaScript(
               `(() => {
                 const items = window.__kvmReconClicks || [];
                 window.__kvmReconClicks = [];
                 return items;
               })()`,
               true,
+            );
+            return (clicks as Array<{ selector: string; text: string; tagName: string }>).map(
+              click => ({ ...click, windowRole: windowRoles.get(current) || 'main' }),
             );
           } catch (error) {
             // 捕获点击摘要读取失败：窗口可能已关闭
@@ -323,9 +363,9 @@ export function createElectronCaptureBrowserAdapter(
             return [];
           }
         },
-        async collectSessionCookies() {
+        async collectSessionCookies(targetUrl) {
           try {
-            const cookies = await captureSession.cookies.get({});
+            const cookies = await captureSession.cookies.get({ url: targetUrl });
             return cookies.map(cookie => ({
               name: String(cookie.name || ''),
               value: String(cookie.value || ''),

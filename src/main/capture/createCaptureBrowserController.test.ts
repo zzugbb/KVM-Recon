@@ -27,11 +27,12 @@ describe('createCaptureBrowserController', () => {
         return {
           async loadURL(url) {
             loadedUrls.push(url);
-            nextOptions.onNavigation(url);
-            nextOptions.onHashChange(`${url}#/kvm`);
+            nextOptions.onNavigation({ url, windowRole: 'main' });
+            nextOptions.onHashChange({ url: `${url}#/kvm`, windowRole: 'main' });
             nextOptions.onPopup({
               url: `${url}kvm.html`,
               disposition: 'new-window',
+              windowRole: 'main',
             });
           },
           async collectStorageKeys() {
@@ -131,7 +132,7 @@ describe('createCaptureBrowserController', () => {
       },
     };
     let focused: 'main' | 'popup' = 'main';
-    let mainAlive = true;
+    const factWindowIds: string[] = [];
 
     const adapter: CaptureBrowserAdapter = {
       async createWindow(nextOptions) {
@@ -142,25 +143,28 @@ describe('createCaptureBrowserController', () => {
         });
         return {
           async loadURL(url) {
-            nextOptions.onNavigation(url);
+            nextOptions.onNavigation({ url, windowRole: 'main' });
             nextOptions.onPopup({
               url: `${url}kvm.html`,
               disposition: 'new-window',
+              windowRole: 'main',
             });
             await nextOptions.onNetworkDebugger(popupCdp);
-            focused = 'popup';
-            mainAlive = false;
+            focused = 'main';
           },
-          async collectStorageKeys() {
-            if (focused === 'main' && !mainAlive) {
-              throw new Error('main window closed');
-            }
+          async selectPageTarget(options) {
+            expect(options).toMatchObject({ requireKvmSurface: true, preferredWindowRole: 'popup' });
+            return { windowId: 'popup-window', windowRole: 'popup' };
+          },
+          async collectStorageKeys(options) {
+            factWindowIds.push(options?.target?.windowId || focused);
             return {
-              localStorageKeys: focused === 'popup' ? ['VIEWER'] : ['LOCAL_USERNAME'],
+              localStorageKeys: options?.target?.windowRole === 'popup' ? ['VIEWER'] : ['LOCAL_USERNAME'],
               sessionStorageKeys: [],
             };
           },
-          async collectSelectorCandidates() {
+          async collectSelectorCandidates(options) {
+            factWindowIds.push(options?.target?.windowId || focused);
             return [
               {
                 role: 'viewer' as const,
@@ -169,14 +173,18 @@ describe('createCaptureBrowserController', () => {
               },
             ];
           },
-          async captureScreenshot(label) {
+          async captureScreenshot(label, options) {
+            factWindowIds.push(options?.target?.windowId || focused);
             return {
               packPath: `page/screenshots/${label}.png`,
               sourcePath: `/tmp/${label}.png`,
+              windowId: options?.target?.windowId,
+              windowRole: options?.target?.windowRole,
             };
           },
-          async drainClicks() {
-            return focused === 'popup'
+          async drainClicks(options) {
+            factWindowIds.push(options?.target?.windowId || focused);
+            return options?.target?.windowRole === 'popup'
               ? [{ selector: 'canvas', text: 'viewer', tagName: 'canvas' }]
               : [];
           },
@@ -226,8 +234,20 @@ describe('createCaptureBrowserController', () => {
       expect.objectContaining({
         type: 'click',
         selector: 'canvas',
+        windowRole: 'popup',
       }),
     );
+    expect(factWindowIds).toEqual([
+      'popup-window',
+      'popup-window',
+      'popup-window',
+      'popup-window',
+    ]);
+    expect(
+      controller.timeline().events
+        .filter(event => ['click', 'storage-snapshot', 'screenshot', 'selector-candidates'].includes(event.type))
+        .every(event => event.windowRole === 'popup'),
+    ).toBe(true);
     expect(JSON.stringify(controller.timeline())).not.toMatch(/\/Users\//);
   });
 
@@ -368,7 +388,7 @@ describe('createCaptureBrowserController', () => {
     expect(screenshotLabels).toEqual(['viewer']);
   });
 
-  it('waits past H3C home /websocket text frames before auto-capturing the viewer', async () => {
+  it('waits past H3C home /websocket text and generic binary frames before capturing the viewer', async () => {
     const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const cdp: CdpDebuggerLike = {
       async attach() {},
@@ -428,6 +448,13 @@ describe('createCaptureBrowserController', () => {
         response: {
           opcode: 1,
           payloadData: '{"event":"alarm","message":"home"}',
+        },
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-home',
+        response: {
+          opcode: 2,
+          payloadData: Buffer.from([0x17, 0x00, 0x00, 0x01]).toString('base64'),
         },
       });
     }
@@ -533,6 +560,7 @@ describe('createCaptureBrowserController', () => {
 
   it('clears live windows but can still read session cookies after the operator closes them', async () => {
     let capturedOptions: CaptureBrowserAdapterOptions | undefined;
+    let cookieTargetUrl = '';
     const adapter: CaptureBrowserAdapter = {
       async createWindow(nextOptions) {
         capturedOptions = nextOptions;
@@ -553,7 +581,8 @@ describe('createCaptureBrowserController', () => {
           async drainClicks() {
             return [];
           },
-          async collectSessionCookies() {
+          async collectSessionCookies(targetUrl) {
+            cookieTargetUrl = targetUrl;
             return [{ name: 'QSESSIONID', value: 'session-secret' }];
           },
           async close() {},
@@ -580,6 +609,7 @@ describe('createCaptureBrowserController', () => {
     await expect(controller.readSessionCookies()).resolves.toEqual([
       { name: 'QSESSIONID', value: 'session-secret' },
     ]);
+    expect(cookieTargetUrl).toBe('https://10.0.0.10:443/');
     expect(JSON.stringify(controller.timeline())).not.toContain('session-secret');
   });
 
@@ -600,7 +630,7 @@ describe('createCaptureBrowserController', () => {
         await nextOptions.onNetworkDebugger(cdp);
         return {
           async loadURL(url) {
-            nextOptions.onNavigation(url);
+            nextOptions.onNavigation({ url, windowRole: 'main' });
           },
           async collectStorageKeys() {
             return { localStorageKeys: [], sessionStorageKeys: [] };
@@ -653,7 +683,7 @@ describe('createCaptureBrowserController', () => {
     controller.pause();
     expect(controller.isPaused()).toBe(true);
     expect(controller.windowsOpen()).toBe(true);
-    capturedOptions?.onNavigation('https://10.0.0.10/kvm');
+    capturedOptions?.onNavigation({ url: 'https://10.0.0.10/kvm', windowRole: 'main' });
     await controller.ingestLiveEvents();
     for (const listener of cdpListeners) {
       listener({}, 'Network.requestWillBeSent', {

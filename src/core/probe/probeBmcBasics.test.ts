@@ -109,6 +109,19 @@ describe('probeBmcBasics', () => {
     expect(result.familySignatures.primary).toBe('openbmc-h5');
   });
 
+  it.each([201, 204, 206])('requires HTTP 200 for randomtag evidence, not %s', async status => {
+    const result = await probeBmcBasics({
+      target: { host: '10.0.0.13', port: 443, scheme: 'https' },
+      httpClient: createHttpClient({
+        '/api/randomtag': { status, data: { encrypt_ctrl: 1, random: 'ami' } },
+        '/randomtag': { status, data: { random: 'openbmc' } },
+      }),
+    });
+
+    expect(result.paths.apiRandomtag).toBe(false);
+    expect(result.paths.randomtag).toBe(false);
+  });
+
   it('does not treat SPA HTML 200 as AMI /api evidence', async () => {
     const html = '<!doctype html><html><head></head><body>app</body></html>';
     const result = await probeBmcBasics({

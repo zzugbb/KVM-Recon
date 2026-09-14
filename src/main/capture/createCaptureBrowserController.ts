@@ -6,6 +6,7 @@ import {
   screenshotRoleFromLabel,
   shouldAllowCertificateError,
   type ClickSummary,
+  type CaptureWindowRole,
   type SelectorCandidate,
 } from '../../core/browser/browserCaptureCore';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
@@ -21,30 +22,45 @@ export interface CaptureBrowserAdapterOptions {
   partition: string;
   targetHost: string;
   allowCertificateError(url: string): boolean;
-  onNavigation(url: string): void;
-  onHashChange(url: string): void;
-  onPopup(input: { url: string; disposition: string }): void;
+  onNavigation(input: { url: string; windowRole: CaptureWindowRole }): void;
+  onHashChange(input: { url: string; windowRole: CaptureWindowRole }): void;
+  onPopup(input: { url: string; disposition: string; windowRole: CaptureWindowRole }): void;
   onNetworkDebugger(cdp: CdpDebuggerLike): Promise<void>;
   onChromiumAccess(info: ChromiumAccessInfo): void;
   onAllWindowsClosed(): void;
 }
 
+export interface CapturePageTarget {
+  windowId: string;
+  windowRole: CaptureWindowRole;
+}
+
+interface PageTargetOptions {
+  target?: CapturePageTarget;
+}
+
 export interface CaptureBrowserWindowHandle {
   loadURL(url: string): Promise<void>;
-  collectStorageKeys(): Promise<{
+  selectPageTarget?(options?: {
+    requireKvmSurface?: boolean;
+    preferredWindowRole?: CaptureWindowRole;
+  }): Promise<CapturePageTarget>;
+  collectStorageKeys(options?: PageTargetOptions): Promise<{
     localStorageKeys: string[];
     sessionStorageKeys: string[];
   }>;
-  collectSelectorCandidates(): Promise<SelectorCandidate[]>;
+  collectSelectorCandidates(options?: PageTargetOptions): Promise<SelectorCandidate[]>;
   captureScreenshot(
     label: string,
-    options?: { preferredWindowRole?: 'main' | 'popup' },
+    options?: PageTargetOptions & { preferredWindowRole?: CaptureWindowRole },
   ): Promise<{
     packPath: string;
     sourcePath: string;
+    windowId?: string;
+    windowRole?: CaptureWindowRole;
   }>;
-  drainClicks(): Promise<ClickSummary[]>;
-  collectSessionCookies(): Promise<Array<{ name: string; value: string }>>;
+  drainClicks(options?: PageTargetOptions): Promise<ClickSummary[]>;
+  collectSessionCookies(targetUrl: string): Promise<Array<{ name: string; value: string }>>;
   close(): Promise<void>;
 }
 
@@ -65,14 +81,15 @@ function buildPartition(jobId: string) {
 async function recordClicks(
   windowHandle: CaptureBrowserWindowHandle,
   timeline: ReturnType<typeof createBrowserTimeline>,
+  target?: CapturePageTarget,
 ) {
-  const clicks = await windowHandle.drainClicks();
+  const clicks = await windowHandle.drainClicks({ target });
   for (const click of clicks) {
     timeline.recordClick({
       selector: click.selector,
       text: click.text.slice(0, 80),
       tagName: click.tagName,
-    });
+    }, click.windowRole || target?.windowRole || 'main');
   }
 }
 
@@ -84,8 +101,10 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     reachable: false,
     authorizationError: '',
   };
-  let previousLocalStorage: string[] = [];
-  let previousSessionStorage: string[] = [];
+  const previousStorageByWindow = new Map<
+    string,
+    { localStorageKeys: string[]; sessionStorageKeys: string[] }
+  >();
   let captureWindowsOpen = false;
   let debuggerCount = 0;
   let paused = false;
@@ -121,16 +140,37 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     if (role === 'viewer' && !hasReliableKvmEvidence()) return;
 
     try {
-      if (paused) {
-        await windowHandle.drainClicks();
-      } else {
-        await recordClicks(windowHandle, timeline);
+      const preferredWindowRole = role === 'viewer' ? reliableKvmWindowRole() : undefined;
+      const target = await windowHandle.selectPageTarget?.({
+        requireKvmSurface: role === 'viewer',
+        preferredWindowRole,
+      });
+      const windowRole = target?.windowRole || preferredWindowRole || 'main';
+      const clicks = await windowHandle.drainClicks({ target });
+      const storage = await windowHandle.collectStorageKeys({ target });
+      const screenshot = await windowHandle.captureScreenshot(label, {
+        target,
+        preferredWindowRole,
+      });
+      const selectors = await windowHandle.collectSelectorCandidates({ target });
+
+      if (!paused) {
+        for (const click of clicks) {
+          timeline.recordClick(
+            {
+              selector: click.selector,
+              text: click.text.slice(0, 80),
+              tagName: click.tagName,
+            },
+            click.windowRole || windowRole,
+          );
+        }
       }
-      const storage = await windowHandle.collectStorageKeys();
-      const localDiff = diffKeyLists(previousLocalStorage, storage.localStorageKeys);
-      const sessionDiff = diffKeyLists(previousSessionStorage, storage.sessionStorageKeys);
-      previousLocalStorage = storage.localStorageKeys;
-      previousSessionStorage = storage.sessionStorageKeys;
+      const storageKey = target?.windowId || windowRole;
+      const previousStorage = previousStorageByWindow.get(storageKey);
+      const localDiff = diffKeyLists(previousStorage?.localStorageKeys, storage.localStorageKeys);
+      const sessionDiff = diffKeyLists(previousStorage?.sessionStorageKeys, storage.sessionStorageKeys);
+      previousStorageByWindow.set(storageKey, storage);
       timeline.recordStorageSnapshot({
         localStorageKeys: storage.localStorageKeys,
         sessionStorageKeys: storage.sessionStorageKeys,
@@ -138,16 +178,15 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         localStorageRemoved: localDiff.removed,
         sessionStorageAdded: sessionDiff.added,
         sessionStorageRemoved: sessionDiff.removed,
-      });
-      const screenshot = await windowHandle.captureScreenshot(label, {
-        preferredWindowRole: role === 'viewer' ? reliableKvmWindowRole() : undefined,
+        windowRole,
       });
       timeline.recordScreenshot(
         screenshot.packPath,
         screenshot.sourcePath,
         screenshotRoleFromLabel(label),
+        screenshot.windowRole || windowRole,
       );
-      timeline.recordSelectorCandidates(await windowHandle.collectSelectorCandidates());
+      timeline.recordSelectorCandidates(selectors, windowRole);
     } catch (error) {
       // 捕获页面事实采集失败：窗口可能已被用户关掉或截图目录不可写
       // 策略：跳过本次截图/storage，保留已有时间线与网络记录，便于关窗后仍能导出
@@ -202,8 +241,8 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
             targetHost: input.target.host,
             url,
           }),
-        onNavigation: unlessPaused(url => timeline.recordNavigation(url)),
-        onHashChange: unlessPaused(url => timeline.recordHashChange(url)),
+        onNavigation: unlessPaused(event => timeline.recordNavigation(event.url, event.windowRole)),
+        onHashChange: unlessPaused(event => timeline.recordHashChange(event.url, event.windowRole)),
         onPopup: unlessPaused(popup => timeline.recordPopup(popup)),
         onNetworkDebugger: cdp =>
           attachCdpNetworkCapture({
@@ -245,7 +284,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     async readSessionCookies() {
       if (!windowHandle) return [];
       try {
-        return await windowHandle.collectSessionCookies();
+        return await windowHandle.collectSessionCookies(buildBmcUrl(input.target));
       } catch (error) {
         // 捕获读取浏览器 Cookie 失败：窗口可能已销毁或分区已清理
         // 策略：返回空列表，匿名 probe 结果仍可用于导出，不把 Cookie 值写入日志

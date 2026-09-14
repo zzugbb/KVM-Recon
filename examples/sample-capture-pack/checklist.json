@@ -8,7 +8,8 @@
       "severity": "blocking",
       "evidence": [
         "https://10.0.0.10:443",
-        "tls:TLSv1.2"
+        "tls:TLSv1.2",
+        "http:200,200"
       ],
       "userAction": ""
     },

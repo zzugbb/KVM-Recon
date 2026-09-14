@@ -4,5 +4,6 @@
   "localStorageAdded": [],
   "localStorageRemoved": [],
   "sessionStorageAdded": [],
-  "sessionStorageRemoved": []
+  "sessionStorageRemoved": [],
+  "windowRole": "main"
 }

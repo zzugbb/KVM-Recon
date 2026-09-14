@@ -5,6 +5,8 @@ import type { CaptureTarget } from '../capture-pack/types';
 import type { ProbeHttpClient, ProbeHttpResponse } from './probeBmcBasics';
 import { tlsServerName } from './tlsServerName';
 
+export const MAX_PROBE_RESPONSE_BYTES = 1024 * 1024;
+
 function parseResponseBody(buffer: Buffer, contentType: string): unknown {
   const text = buffer.toString('utf8');
   const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 128).toLowerCase();
@@ -37,6 +39,12 @@ export function createNodeProbeHttpClient(
           : undefined;
 
       return new Promise((resolve, reject) => {
+        let settled = false;
+        const rejectOnce = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
         const request = transport.request(
           {
             hostname: target.host,
@@ -46,7 +54,6 @@ export function createNodeProbeHttpClient(
             agent,
             timeout: 8000,
             headers: {
-              Host: target.host,
               Accept: 'application/json, */*;q=0.1',
               ...options.extraHeaders,
             },
@@ -54,10 +61,30 @@ export function createNodeProbeHttpClient(
           },
           response => {
             const chunks: Buffer[] = [];
+            let receivedBytes = 0;
+            const declaredBytes = Number(response.headers['content-length'] || 0);
+            if (Number.isFinite(declaredBytes) && declaredBytes > MAX_PROBE_RESPONSE_BYTES) {
+              response.destroy();
+              rejectOnce(
+                new Error(`Probe GET ${path} response exceeds ${MAX_PROBE_RESPONSE_BYTES} bytes`),
+              );
+              return;
+            }
             response.on('data', chunk => {
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+              const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              receivedBytes += buffer.length;
+              if (receivedBytes > MAX_PROBE_RESPONSE_BYTES) {
+                response.destroy();
+                rejectOnce(
+                  new Error(`Probe GET ${path} response exceeds ${MAX_PROBE_RESPONSE_BYTES} bytes`),
+                );
+                return;
+              }
+              chunks.push(buffer);
             });
             response.on('end', () => {
+              if (settled) return;
+              settled = true;
               resolve({
                 status: response.statusCode || 0,
                 headers: response.headers as Record<string, string | string[] | undefined>,
@@ -79,7 +106,7 @@ export function createNodeProbeHttpClient(
         request.on('timeout', () => {
           request.destroy(new Error(`Probe GET ${path} timed out`));
         });
-        request.on('error', reject);
+        request.on('error', rejectOnce);
         request.end();
       });
     },

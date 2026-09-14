@@ -1,17 +1,20 @@
 import type { CaptureTarget } from '../capture-pack/types';
 
 export type ScreenshotRole = 'login' | 'home' | 'kvm-entry' | 'viewer' | 'error' | 'unknown';
+export type CaptureWindowRole = 'main' | 'popup';
 
 type BrowserTimelineEvent =
   | {
       type: 'navigation' | 'hash-change';
       url: string;
+      windowRole: CaptureWindowRole;
       timestamp: string;
     }
   | {
       type: 'popup';
       url: string;
       disposition: string;
+      windowRole: CaptureWindowRole;
       timestamp: string;
     }
   | {
@@ -22,6 +25,7 @@ type BrowserTimelineEvent =
       localStorageRemoved: string[];
       sessionStorageAdded: string[];
       sessionStorageRemoved: string[];
+      windowRole: CaptureWindowRole;
       timestamp: string;
     }
   | {
@@ -29,11 +33,13 @@ type BrowserTimelineEvent =
       path: string;
       sourcePath?: string;
       role: ScreenshotRole;
+      windowRole: CaptureWindowRole;
       timestamp: string;
     }
   | {
       type: 'selector-candidates';
       candidates: SelectorCandidate[];
+      windowRole: CaptureWindowRole;
       timestamp: string;
     }
   | {
@@ -41,6 +47,7 @@ type BrowserTimelineEvent =
       selector: string;
       text: string;
       tagName: string;
+      windowRole: CaptureWindowRole;
       timestamp: string;
     };
 
@@ -52,6 +59,7 @@ interface BrowserTimelineJson {
 interface PopupEventInput {
   url: string;
   disposition: string;
+  windowRole?: CaptureWindowRole;
 }
 
 interface StorageSnapshotInput {
@@ -61,12 +69,14 @@ interface StorageSnapshotInput {
   localStorageRemoved?: string[];
   sessionStorageAdded?: string[];
   sessionStorageRemoved?: string[];
+  windowRole?: CaptureWindowRole;
 }
 
 export interface ClickSummary {
   selector: string;
   text: string;
   tagName: string;
+  windowRole?: CaptureWindowRole;
 }
 
 export function screenshotRoleFromLabel(label: string): ScreenshotRole {
@@ -151,17 +161,19 @@ export function createBrowserTimeline(jobId: string) {
   const events: BrowserTimelineEvent[] = [];
 
   return {
-    recordNavigation(url: string) {
+    recordNavigation(url: string, windowRole: CaptureWindowRole = 'main') {
       events.push({
         type: 'navigation',
         url,
+        windowRole,
         timestamp: nowIso(),
       });
     },
-    recordHashChange(url: string) {
+    recordHashChange(url: string, windowRole: CaptureWindowRole = 'main') {
       events.push({
         type: 'hash-change',
         url,
+        windowRole,
         timestamp: nowIso(),
       });
     },
@@ -170,6 +182,7 @@ export function createBrowserTimeline(jobId: string) {
         type: 'popup',
         url: input.url,
         disposition: input.disposition,
+        windowRole: input.windowRole || 'main',
         timestamp: nowIso(),
       });
     },
@@ -182,31 +195,43 @@ export function createBrowserTimeline(jobId: string) {
         localStorageRemoved: input.localStorageRemoved || [],
         sessionStorageAdded: input.sessionStorageAdded || [],
         sessionStorageRemoved: input.sessionStorageRemoved || [],
+        windowRole: input.windowRole || 'main',
         timestamp: nowIso(),
       });
     },
-    recordScreenshot(path: string, sourcePath?: string, role: ScreenshotRole = 'unknown') {
+    recordScreenshot(
+      path: string,
+      sourcePath?: string,
+      role: ScreenshotRole = 'unknown',
+      windowRole: CaptureWindowRole = 'main',
+    ) {
       events.push({
         type: 'screenshot',
         path,
         role,
+        windowRole,
         ...(sourcePath ? { sourcePath } : {}),
         timestamp: nowIso(),
       });
     },
-    recordClick(input: ClickSummary) {
+    recordClick(input: ClickSummary, windowRole: CaptureWindowRole = input.windowRole || 'main') {
       events.push({
         type: 'click',
         selector: input.selector,
         text: input.text,
         tagName: input.tagName,
+        windowRole,
         timestamp: nowIso(),
       });
     },
-    recordSelectorCandidates(candidates: SelectorCandidate[]) {
+    recordSelectorCandidates(
+      candidates: SelectorCandidate[],
+      windowRole: CaptureWindowRole = 'main',
+    ) {
       events.push({
         type: 'selector-candidates',
         candidates,
+        windowRole,
         timestamp: nowIso(),
       });
     },

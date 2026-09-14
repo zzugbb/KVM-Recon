@@ -7,6 +7,7 @@ import {
   summarizeCapturePackZip,
 } from '../core/capture-pack/summarizeCapturePack';
 import type { CaptureTarget } from '../core/capture-pack/types';
+import { parseCapturePort } from '../core/capture-pack/parseCapturePort';
 import { canAddCaptureJob, type CaptureJobSummary } from '../core/delivery/captureJob';
 import { exportCaptureJob, type CaptureExportJob } from '../core/delivery/exportCaptureJob';
 import { normalizeOperatorObserved, type OperatorObservedAsset } from '../core/delivery/operatorObserved';
@@ -147,9 +148,13 @@ function registerCaptureHandlers() {
           }),
         };
       }
+      const port = parseCapturePort(payload.port);
+      if (port === null) {
+        throw new Error('端口必须是 1 到 65535 之间的整数。');
+      }
       const target: CaptureTarget = {
         host: String(payload.host || '').trim(),
-        port: payload.port,
+        port,
         scheme: payload.scheme,
       };
       const jobId = `job-${Date.now()}`;

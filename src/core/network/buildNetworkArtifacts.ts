@@ -102,6 +102,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         redirectHop: request.redirectHop ?? 0,
         redirectedFromId: request.redirectedFromId || '',
         redirectedToId: request.redirectedToId || '',
+        tags: request.tags,
         requestJsonKeys: request.requestBodySummary.jsonKeys || [],
         responseJsonKeys: request.responseBodySummary.jsonKeys || [],
         redactedFields: [
@@ -144,7 +145,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         sampledFrameCount: socket.sampledFrameCount ?? 0,
         droppedFrameCount: socket.droppedFrameCount ?? 0,
         tags: socket.tags,
-        windowRole: socket.windowRole || '',
+        ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
         firstFrame: firstFrame
           ? {
               direction: firstFrame.direction,

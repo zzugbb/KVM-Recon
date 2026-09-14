@@ -155,6 +155,7 @@ function hasAnyKey(data: unknown, keys: string[]) {
 }
 
 function isApiPathHit(key: keyof NonNullable<ProbeSignatureInput['paths']>, status: number, data: unknown): boolean {
+  if ((key === 'apiRandomtag' || key === 'randomtag') && status !== 200) return false;
   if (!is2xx(status)) return false;
   if (isHtmlPayload(data)) return false;
   if (isGenericAuthWall(data)) return false;

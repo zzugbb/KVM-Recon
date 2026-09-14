@@ -29,6 +29,7 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     localStorageRemoved: [],
     sessionStorageAdded: [],
     sessionStorageRemoved: [],
+    windowRole: 'main',
   };
   const latestSelectorEvent = selectorEvents.at(-1);
   const selectors = (latestSelectorEvent?.candidates || []) as SelectorCandidate[];
@@ -39,9 +40,10 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
       return {
         path,
         role: typeof event.role === 'string' ? event.role : 'unknown',
+        windowRole: event.windowRole === 'popup' ? 'popup' : 'main',
       };
     })
-    .filter((item): item is { path: string; role: string } => Boolean(item));
+    .filter((item): item is { path: string; role: string; windowRole: string } => Boolean(item));
 
   return [
     {
@@ -49,10 +51,15 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
       content:
         timeline.events
           .map(event => {
-            if (event.type !== 'screenshot') return JSON.stringify(event);
+            const normalized = {
+              ...event,
+              windowRole: event.windowRole === 'popup' ? 'popup' : 'main',
+            };
+            if (event.type !== 'screenshot') return JSON.stringify(normalized);
             const { sourcePath: _sourcePath, ...rest } = event;
             return JSON.stringify({
               ...rest,
+              windowRole: normalized.windowRole,
               path: typeof rest.path === 'string' ? toPackScreenshotPath(rest.path) : rest.path,
             });
           })
@@ -67,11 +74,17 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
         localStorageRemoved: latestStorage.localStorageRemoved || [],
         sessionStorageAdded: latestStorage.sessionStorageAdded || [],
         sessionStorageRemoved: latestStorage.sessionStorageRemoved || [],
+        windowRole: latestStorage.windowRole === 'popup' ? 'popup' : 'main',
       }),
     },
     {
       path: 'page/selectors.json',
-      content: stringify(selectors),
+      content: stringify(
+        selectors.map(candidate => ({
+          ...candidate,
+          windowRole: latestSelectorEvent?.windowRole === 'popup' ? 'popup' : 'main',
+        })),
+      ),
     },
     {
       path: 'page/screenshots.json',

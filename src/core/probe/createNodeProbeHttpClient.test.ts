@@ -3,7 +3,10 @@ import { AddressInfo } from 'node:net';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createNodeProbeHttpClient } from './createNodeProbeHttpClient';
+import {
+  createNodeProbeHttpClient,
+  MAX_PROBE_RESPONSE_BYTES,
+} from './createNodeProbeHttpClient';
 
 let server: Server | null = null;
 
@@ -78,6 +81,29 @@ describe('createNodeProbeHttpClient', () => {
 
     await expect(client.get('/api/kvm/token')).resolves.toMatchObject({ status: 401 });
     expect(seen[0]).toBe('QSESSIONID=abc123');
+  });
+
+  it('includes a non-default target port in the generated Host header', async () => {
+    let seenHost = '';
+    const { port } = await startServer((request, response) => {
+      seenHost = String(request.headers.host || '');
+      response.end('{}');
+    });
+    const client = createNodeProbeHttpClient({ host: '127.0.0.1', port, scheme: 'http' });
+
+    await client.get('/redfish/v1/');
+
+    expect(seenHost).toBe(`127.0.0.1:${port}`);
+  });
+
+  it('rejects a probe response larger than the capture limit', async () => {
+    const { port } = await startServer((_request, response) => {
+      response.write(Buffer.alloc(MAX_PROBE_RESPONSE_BYTES, 'a'));
+      response.end('b');
+    });
+    const client = createNodeProbeHttpClient({ host: '127.0.0.1', port, scheme: 'http' });
+
+    await expect(client.get('/redfish/v1/')).rejects.toThrow(/exceeds 1048576 bytes/);
   });
 
   it('parses JSON returned as text/plain when the body is not HTML', async () => {

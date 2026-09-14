@@ -2,7 +2,7 @@
 
 本目录是 Capture Pack 的独立 JSON Schema，方便出机房后用任意校验器核对 zip 内文件。
 
-权威实现仍是 TypeScript 类型与导出代码（`src/core/capture-pack/`）。Schema 与类型冲突时，以导出代码和本仓库单测为准，再回改 Schema。运行时校验仍用轻量必填字段检查，不引入 ajv。
+权威实现仍是 TypeScript 类型与导出代码（`src/core/capture-pack/`）。Schema 与类型冲突时，以导出代码和本仓库单测为准，再回改 Schema。运行时仍使用轻量必填字段检查；单元测会用 Ajv 验证样例包与全部 Schema 持续一致。
 
 | 文件 | 对应包内路径 |
 | --- | --- |

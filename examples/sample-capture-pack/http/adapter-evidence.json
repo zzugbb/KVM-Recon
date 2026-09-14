@@ -9,6 +9,9 @@
       "redirectHop": 0,
       "redirectedFromId": "",
       "redirectedToId": "",
+      "tags": [
+        "login"
+      ],
       "requestJsonKeys": [],
       "responseJsonKeys": [],
       "redactedFields": [
@@ -80,7 +83,6 @@
       "tags": [
         "kvm-video"
       ],
-      "windowRole": "",
       "firstFrame": {
         "direction": "down",
         "opcode": "binary",

@@ -261,7 +261,7 @@ HTTP 资料必须脱敏：
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
 `windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口）。未区分时可省略。
 
-KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳或告警帧不作为可靠 KVM 证据。
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳、告警帧或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据；弱 AMI 帧还必须有可信 KVM URL、WebSocket 标签或 KVM 启动 HTTP 链路。
 
 限制：
 
@@ -280,12 +280,14 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 - popup/new window。
 - 截图时间点（包内相对路径）。
 - 点击事件摘要（选择器或短文案，不含敏感值）。
+- 每条事件的 `windowRole`（`main` / `popup`）。
 
 `page/storage.json`：
 
 - localStorage/sessionStorage key 列表。
 - 不导出敏感值原文。
 - 写入前后 key 增减（`localStorageAdded` / `Removed` 等）。
+- 保存该快照所属的 `windowRole`。
 
 `page/selectors.json`：
 
@@ -293,13 +295,15 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 - KVM 菜单候选。
 - HTML5 KVM 按钮候选。
 - viewer 容器候选。
+- 每个候选保存来源 `windowRole`。
 
 `page/screenshots.json`：
 
-- 包内相对路径与角色，例如 `{ "path": "page/screenshots/viewer.png", "role": "viewer" }`。
+- 包内相对路径、语义角色与窗口角色，例如 `{ "path": "page/screenshots/viewer.png", "role": "viewer", "windowRole": "popup" }`。
 - 角色：`login` / `home` / `kvm-entry` / `viewer` / `error` / `unknown`。
 - 离场清单 `page.viewer.screenshot` **只认 `role=viewer`**；登录页、菜单页、异常页或未标明 role 的截图不能让该项通过。
 - 自动 viewer 截图必须等正确 viewer target 收到可靠 KVM 证据后才生成，避免把 BMC 首页误当 KVM 画面。
+- 同一次页面事实中的点击、storage、截图与 selector 必须绑定同一 `windowId`，并导出一致的 `windowRole`。
 - 不得包含采集机绝对路径。
 
 `page/screenshots/`：

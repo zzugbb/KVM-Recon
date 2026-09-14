@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+- 收紧 KVM WebSocket 可靠帧判定，通用二进制 `/websocket` 不再误触发 Viewer 截图或就绪。
+- Popup 页面的点击、storage、截图与 selector 绑定同一窗口，导出物增加 `windowRole`；登录后复验仅读取目标 BMC Cookie。
+- 对齐 randomtag `200` 命中语义、非默认端口 Host 和基础连接判定，并限制主动探测正文为 1 MiB。
+- 修复 Adapter evidence 与 Schema 不一致，新增 Ajv 样例包契约测试和 `1–65535` 端口双重校验。
+
 ## [0.2.6] - 2026-09-13
 
 - 探测改为无副作用路径，不再主动领取 AMI 一次性 KVM Token 或调用 KVM Action。

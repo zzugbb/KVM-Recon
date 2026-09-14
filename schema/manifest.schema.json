@@ -39,7 +39,7 @@
       "required": ["host", "port", "scheme"],
       "properties": {
         "host": { "type": "string" },
-        "port": { "type": "integer" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "scheme": { "enum": ["http", "https"] }
       }
     },

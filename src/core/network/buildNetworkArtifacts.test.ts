@@ -17,7 +17,7 @@ describe('buildNetworkArtifacts', () => {
         responseHeaders: {},
         requestBodySummary: { bytes: 0, redactedFields: [] },
         responseBodySummary: { bytes: 21, redactedFields: ['token'] },
-        tags: ['kvm-token'],
+        tags: ['login', 'kvm-token'],
       },
     ];
     const webSockets: WebSocketRecord[] = [
@@ -53,7 +53,7 @@ describe('buildNetworkArtifacts', () => {
       'ws/sockets.json',
       'ws/frames.jsonl',
     ]);
-    expect(artifacts[0].content).toContain('"tags":["kvm-token"]');
+    expect(artifacts[0].content).toContain('"tags":["login","kvm-token"]');
     expect(JSON.parse(artifacts[1].content)).toMatchObject({
       log: {
         version: '1.2',
@@ -65,7 +65,14 @@ describe('buildNetworkArtifacts', () => {
         ],
       },
     });
-    expect(JSON.parse(artifacts[2].content)).toMatchObject({
+    const adapterEvidence = JSON.parse(artifacts[2].content);
+    expect(adapterEvidence).toMatchObject({
+      loginChain: [
+        {
+          id: 'req-1',
+          tags: ['login', 'kvm-token'],
+        },
+      ],
       kvmLaunchChain: [
         {
           id: 'req-1',
@@ -87,6 +94,7 @@ describe('buildNetworkArtifacts', () => {
         },
       ],
     });
+    expect(adapterEvidence.webSocketUpgrades[0]).not.toHaveProperty('windowRole');
     expect(JSON.parse(artifacts[3].content)).toEqual(webSockets);
     expect(artifacts[4].content).toContain('"headHex":"17000001"');
   });
