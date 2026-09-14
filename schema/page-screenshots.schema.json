@@ -9,7 +9,8 @@
     "properties": {
       "path": { "type": "string" },
       "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
-      "windowRole": { "enum": ["main", "popup"] }
+      "windowRole": { "enum": ["main", "popup"] },
+      "operatorConfirmed": { "type": "boolean" }
     }
   }
 }

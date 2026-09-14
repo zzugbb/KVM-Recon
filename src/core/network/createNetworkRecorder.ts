@@ -198,7 +198,11 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
   ) {
     tags.push('kvm-token');
   }
-  if (/kvm|console|viewer|vconsole|ircport|\/irc\.js|\/wss\/irc|\/vnc\//.test(lower) && !tags.includes('kvm-token')) {
+  if (
+    !isStaticAsset &&
+    /kvm|console|viewer|vconsole|ircport|\/wss\/irc|\/vnc\//.test(lower) &&
+    !tags.includes('kvm-token')
+  ) {
     tags.push('kvm-entry');
   }
   return tags;

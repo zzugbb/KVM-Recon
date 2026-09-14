@@ -19,8 +19,10 @@ function sanitizeLabel(label: string) {
   return label.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'page';
 }
 
-const selectorScript = `
+function selectorScript(includeAnyFrame: boolean) {
+  return `
 (() => {
+  const includeAnyFrame = ${JSON.stringify(includeAnyFrame)};
   const items = [];
   const push = (role, node, confidence) => {
     const id = node.id ? '#' + CSS.escape(node.id) : '';
@@ -43,9 +45,25 @@ const selectorScript = `
   for (const node of viewers.slice(0, 8)) {
     push('viewer', node, 0.65);
   }
+  const frames = Array.from(document.querySelectorAll('iframe'));
+  for (const node of frames.slice(0, 8)) {
+    const hint = [node.src, node.name, node.id, node.className, node.title].join(' ');
+    let containsViewer = false;
+    try {
+      containsViewer = Boolean(node.contentDocument && node.contentDocument.querySelector(
+        'canvas, video, embed, object, [id*="kvm" i], [class*="kvm" i], [id*="viewer" i], [class*="viewer" i]'
+      ));
+    } catch (_error) {
+      containsViewer = false;
+    }
+    if (includeAnyFrame || containsViewer || /kvm|console|viewer|vnc|irc|remote/i.test(hint)) {
+      push('viewer', node, containsViewer ? 0.7 : (includeAnyFrame ? 0.5 : 0.62));
+    }
+  }
   return items.slice(0, 30);
 })()
 `;
+}
 
 const clickProbeScript = `
 (() => {
@@ -121,7 +139,20 @@ export function createElectronCaptureBrowserAdapter(
         try {
           return Boolean(
             await targetWindow.webContents.executeJavaScript(
-              `Boolean(document.querySelector('canvas, video, embed, object, [id*="kvm" i], [class*="kvm" i], [id*="viewer" i], [class*="viewer" i]'))`,
+              `(() => {
+                if (document.querySelector('canvas, video, embed, object, [id*="kvm" i], [class*="kvm" i], [id*="viewer" i], [class*="viewer" i]')) return true;
+                return Array.from(document.querySelectorAll('iframe')).some(frame => {
+                  const hint = [frame.src, frame.name, frame.id, frame.className, frame.title].join(' ');
+                  if (/kvm|console|viewer|vnc|irc|remote/i.test(hint)) return true;
+                  try {
+                    return Boolean(frame.contentDocument && frame.contentDocument.querySelector(
+                      'canvas, video, embed, object, [id*="kvm" i], [class*="kvm" i], [id*="viewer" i], [class*="viewer" i]'
+                    ));
+                  } catch (_error) {
+                    return false;
+                  }
+                });
+              })()`,
               true,
             ),
           );
@@ -160,6 +191,9 @@ export function createElectronCaptureBrowserAdapter(
           if (candidate !== foreground && (await windowHasKvmSurface(candidate))) {
             return candidate;
           }
+        }
+        if (options?.requireKvmSurface && options.preferredWindowRole && preferred.length > 0) {
+          return preferred[0];
         }
         if (options?.requireKvmSurface) return null;
         return activeWindow();
@@ -317,7 +351,10 @@ export function createElectronCaptureBrowserAdapter(
           );
         },
         async collectSelectorCandidates(targetOptions) {
-          return targetWindow(targetOptions?.target).webContents.executeJavaScript(selectorScript, true);
+          return targetWindow(targetOptions?.target).webContents.executeJavaScript(
+            selectorScript(targetOptions?.expectedRole === 'viewer'),
+            true,
+          );
         },
         async captureScreenshot(label, screenshotOptions) {
           const requireKvmSurface = /^viewer/i.test(label);

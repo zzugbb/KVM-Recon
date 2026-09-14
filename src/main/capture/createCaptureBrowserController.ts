@@ -37,6 +37,15 @@ export interface CapturePageTarget {
 
 interface PageTargetOptions {
   target?: CapturePageTarget;
+  expectedRole?: ReturnType<typeof screenshotRoleFromLabel>;
+}
+
+export interface PageCaptureResult {
+  captured: boolean;
+  reason: string;
+  operatorConfirmed: boolean;
+  windowRole?: CaptureWindowRole;
+  path?: string;
 }
 
 export interface CaptureBrowserWindowHandle {
@@ -133,26 +142,37 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     return kvmWebSocketEvidence(networkRecorder.toJSON()).length > 0;
   }
 
-  async function collectPageFactsNow(label: string) {
-    if (!captureWindowsOpen || !windowHandle) return;
+  async function collectPageFactsNow(
+    label: string,
+    options: { operatorConfirmed?: boolean } = {},
+  ): Promise<PageCaptureResult> {
+    const operatorConfirmed = Boolean(options.operatorConfirmed);
+    if (!captureWindowsOpen || !windowHandle) {
+      return { captured: false, reason: 'capture-window-closed', operatorConfirmed };
+    }
     const role = screenshotRoleFromLabel(label);
-    if (role === 'viewer' && hasViewerScreenshot()) return;
-    if (role === 'viewer' && !hasReliableKvmEvidence()) return;
+    if (role === 'viewer' && !operatorConfirmed && hasViewerScreenshot()) {
+      return { captured: false, reason: 'viewer-already-captured', operatorConfirmed };
+    }
+    if (role === 'viewer' && !operatorConfirmed && !hasReliableKvmEvidence()) {
+      return { captured: false, reason: 'reliable-kvm-evidence-missing', operatorConfirmed };
+    }
 
     try {
       const preferredWindowRole = role === 'viewer' ? reliableKvmWindowRole() : undefined;
       const target = await windowHandle.selectPageTarget?.({
-        requireKvmSurface: role === 'viewer',
+        requireKvmSurface: role === 'viewer' && !operatorConfirmed,
         preferredWindowRole,
       });
       const windowRole = target?.windowRole || preferredWindowRole || 'main';
-      const clicks = await windowHandle.drainClicks({ target });
-      const storage = await windowHandle.collectStorageKeys({ target });
+      const pageTargetOptions = { target, expectedRole: role };
+      const clicks = await windowHandle.drainClicks(pageTargetOptions);
+      const storage = await windowHandle.collectStorageKeys(pageTargetOptions);
       const screenshot = await windowHandle.captureScreenshot(label, {
-        target,
+        ...pageTargetOptions,
         preferredWindowRole,
       });
-      const selectors = await windowHandle.collectSelectorCandidates({ target });
+      const selectors = await windowHandle.collectSelectorCandidates(pageTargetOptions);
 
       if (!paused) {
         for (const click of clicks) {
@@ -179,24 +199,37 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         sessionStorageAdded: sessionDiff.added,
         sessionStorageRemoved: sessionDiff.removed,
         windowRole,
+        captureRole: role,
       });
       timeline.recordScreenshot(
         screenshot.packPath,
         screenshot.sourcePath,
         screenshotRoleFromLabel(label),
         screenshot.windowRole || windowRole,
+        operatorConfirmed,
       );
-      timeline.recordSelectorCandidates(selectors, windowRole);
+      timeline.recordSelectorCandidates(selectors, windowRole, role);
+      return {
+        captured: true,
+        reason: '',
+        operatorConfirmed,
+        windowRole: screenshot.windowRole || windowRole,
+        path: screenshot.packPath,
+      };
     } catch (error) {
       // 捕获页面事实采集失败：窗口可能已被用户关掉或截图目录不可写
-      // 策略：跳过本次截图/storage，保留已有时间线与网络记录，便于关窗后仍能导出
-      void error;
+      // 策略：返回未采集及原因，保留已有时间线与网络记录供重试
+      return {
+        captured: false,
+        reason: error instanceof Error ? error.message : String(error),
+        operatorConfirmed,
+      };
     }
   }
 
-  function collectPageFacts(label: string) {
+  function collectPageFacts(label: string, options: { operatorConfirmed?: boolean } = {}) {
     pageFactsPending += 1;
-    const run = pageFactsChain.then(() => collectPageFactsNow(label));
+    const run = pageFactsChain.then(() => collectPageFactsNow(label, options));
     pageFactsChain = run.then(
       () => undefined,
       () => undefined,
@@ -281,10 +314,11 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     },
     collectPageFacts,
 
-    async readSessionCookies() {
+    async readSessionCookies(path = '/') {
       if (!windowHandle) return [];
       try {
-        return await windowHandle.collectSessionCookies(buildBmcUrl(input.target));
+        const targetUrl = new URL(path, buildBmcUrl(input.target)).toString();
+        return await windowHandle.collectSessionCookies(targetUrl);
       } catch (error) {
         // 捕获读取浏览器 Cookie 失败：窗口可能已销毁或分区已清理
         // 策略：返回空列表，匿名 probe 结果仍可用于导出，不把 Cookie 值写入日志

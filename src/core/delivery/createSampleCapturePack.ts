@@ -163,6 +163,7 @@ const samplePage = {
       type: 'selector-candidates',
       candidates: [{ role: 'kvm-entry', selector: '#kvm', confidence: 0.8 }],
       windowRole: 'main' as const,
+      captureRole: 'kvm-entry' as const,
       timestamp: '2026-08-24T13:55:01.000+08:00',
     },
   ],

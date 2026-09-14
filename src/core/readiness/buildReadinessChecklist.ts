@@ -145,33 +145,38 @@ function loginEvidence(network: NetworkSnapshot | null | undefined): string[] {
     .map(request => request.id);
 }
 
+function isSuccessfulKvmLaunchRequest(request: HttpRequestRecord) {
+  if (isStaticAssetUrl(request.url)) return false;
+  if (request.status == null || request.status < 200 || request.status >= 400) return false;
+  return (
+    (request.tags.includes('kvm-token') &&
+      (!urlContains(request.url, [
+        /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
+      ]) ||
+        isLegacyKvmSupportRequest(request))) ||
+    request.tags.includes('kvm-entry') ||
+    isLegacyKvmSupportRequest(request) ||
+    urlContains(request.url, [
+      /\/api\/kvm\/token/i,
+      /kvmservice/i,
+      /setkvmkey/i,
+      /starth5kvm/i,
+      /\/kvm\/video/i,
+      /\/vnc\/vconsole/i,
+      /\/restgui\/(?:html5viewer|views\/configuration\/vconsole)/i,
+      /\/wss\/ircport/i,
+      /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
+      /\/bmc\/php\/gettoken\.php/i,
+    ])
+  );
+}
+
+function keyHttpRequests(network: NetworkSnapshot | null | undefined): HttpRequestRecord[] {
+  return (network?.httpRequests || []).filter(isSuccessfulKvmLaunchRequest);
+}
+
 function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] {
-  return (network?.httpRequests || [])
-    .filter(
-      request =>
-        (request.tags.includes('kvm-token') &&
-          (!urlContains(request.url, [
-            /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
-          ]) ||
-            isLegacyKvmSupportRequest(request))) ||
-        request.tags.includes('kvm-entry') ||
-        isLegacyKvmSupportRequest(request) ||
-        urlContains(request.url, [
-          /\/api\/kvm\/token/i,
-          /kvmservice/i,
-          /setkvmkey/i,
-          /starth5kvm/i,
-          /\/kvm\/video/i,
-          /\/vnc\/vconsole/i,
-          /\/restgui\/(?:html5viewer|views\/configuration\/vconsole)/i,
-          /\/wss\/ircport/i,
-          /\/js\/irc(?:KeyboardMouse)?\.js/i,
-          /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
-          /\/bmc\/resources\/js\/module\/remote\/html5\/kvmclient\.js/i,
-          /\/bmc\/php\/gettoken\.php/i,
-        ]),
-    )
-    .map(request => request.id);
+  return keyHttpRequests(network).map(request => request.id);
 }
 
 function isKnownKvmSocketUrl(url: string) {
@@ -207,8 +212,26 @@ function hasWeakAmiFrame(frames: WebSocketFrameRecord[]) {
   );
 }
 
+const KVM_LAUNCH_ASSOCIATION_MS = 120_000;
+
+function hasCorrelatedKvmLaunch(requests: HttpRequestRecord[], socket: WebSocketRecord) {
+  const socketTime = Date.parse(socket.createdAt);
+  if (!Number.isFinite(socketTime)) return false;
+  return requests.some(request => {
+    if (!request.windowRole || !socket.windowRole || request.windowRole !== socket.windowRole) {
+      return false;
+    }
+    const requestTime = Date.parse(request.timestamp);
+    return (
+      Number.isFinite(requestTime) &&
+      requestTime <= socketTime &&
+      socketTime - requestTime <= KVM_LAUNCH_ASSOCIATION_MS
+    );
+  });
+}
+
 export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined): string[] {
-  const hasKvmLaunchChain = keyHttpEvidence(network).length > 0;
+  const launchRequests = keyHttpRequests(network);
   const framesBySocket = new Map<string, WebSocketFrameRecord[]>();
   for (const frame of network?.webSocketFrames || []) {
     const frames = framesBySocket.get(frame.socketId) || [];
@@ -224,7 +247,9 @@ export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined
       if (hasStrongKvmFrame(frames)) return true;
       if (socket.binaryFrameCount <= 0) return false;
       const hasKvmContext =
-        socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url) || hasKvmLaunchChain;
+        socket.tags.includes('kvm-video') ||
+        isKnownKvmSocketUrl(socket.url) ||
+        hasCorrelatedKvmLaunch(launchRequests, socket);
       if (!hasKvmContext) return false;
       return hasWeakAmiFrame(frames) || socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url);
     })

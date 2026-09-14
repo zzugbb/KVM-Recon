@@ -3,6 +3,7 @@
     "role": "kvm-entry",
     "selector": "#kvm",
     "confidence": 0.8,
-    "windowRole": "main"
+    "windowRole": "main",
+    "captureRole": "kvm-entry"
   }
 ]

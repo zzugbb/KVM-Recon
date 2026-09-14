@@ -50,7 +50,7 @@ export interface ExportConfirmSummary {
 
 interface ExportCaptureJobInput {
   job: CaptureExportJob;
-  collectPageFacts(label: string): Promise<void>;
+  collectPageFacts(label: string): Promise<unknown>;
   getPage(): BrowserTimelineJson;
   getNetwork(): NetworkSnapshot;
   waitForNetworkIdle?(): Promise<NetworkIdleResult | void>;

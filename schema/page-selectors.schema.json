@@ -5,12 +5,13 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["role", "selector", "confidence", "windowRole"],
+    "required": ["role", "selector", "confidence", "windowRole", "captureRole"],
     "properties": {
       "role": { "enum": ["login", "kvm-entry", "viewer", "unknown"] },
       "selector": { "type": "string" },
       "confidence": { "type": "number" },
-      "windowRole": { "enum": ["main", "popup"] }
+      "windowRole": { "enum": ["main", "popup"] },
+      "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] }
     }
   }
 }

@@ -164,7 +164,18 @@ describe('buildReadinessChecklist', () => {
   it('does not treat an unknown /websocket binary event as an AMI KVM frame', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,
-      page: { jobId: 'job-generic-websocket', events: [] },
+      page: {
+        jobId: 'job-generic-websocket',
+        events: [
+          {
+            type: 'screenshot',
+            path: 'page/screenshots/viewer-operator-confirmed.png',
+            role: 'viewer',
+            windowRole: 'main',
+            operatorConfirmed: true,
+          },
+        ],
+      },
       network: {
         httpRequests: [completeNetwork.httpRequests[0]],
         webSockets: [
@@ -183,6 +194,152 @@ describe('buildReadinessChecklist', () => {
           {
             socketId: 'ws-generic',
             timestamp: '2026-09-14T10:00:00.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+  });
+
+  it('does not correlate a static kvm.js asset with a generic binary WebSocket', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-static-kvm-script', events: [] },
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[1],
+            id: 'static-kvm-script',
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            url: 'https://10.0.0.10/js/kvm.js',
+            resourceType: 'script',
+            status: 200,
+            tags: ['kvm-entry' as const],
+            windowRole: 'main' as const,
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-generic',
+            createdAt: '2026-09-14T10:00:01.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'main' as const,
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-generic',
+            timestamp: '2026-09-14T10:00:01.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+  });
+
+  it('accepts a weak AMI frame only when a successful launch request is recent and in the same window', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-correlated-launch', events: [] },
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[1],
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            windowRole: 'popup' as const,
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-generic',
+            createdAt: '2026-09-14T10:00:02.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'popup' as const,
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-generic',
+            timestamp: '2026-09-14T10:00:02.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'pass',
+      evidence: ['ws-generic'],
+    });
+  });
+
+  it('does not correlate a weak AMI frame with a launch request from another window', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-wrong-window-launch', events: [] },
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[1],
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            windowRole: 'main' as const,
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-generic',
+            createdAt: '2026-09-14T10:00:02.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'popup' as const,
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-generic',
+            timestamp: '2026-09-14T10:00:02.100+08:00',
             direction: 'down' as const,
             opcode: 'binary' as const,
             bytes: 4,

@@ -388,6 +388,67 @@ describe('createCaptureBrowserController', () => {
     expect(screenshotLabels).toEqual(['viewer']);
   });
 
+  it('allows an operator-confirmed viewer screenshot without promoting unknown WebSocket evidence', async () => {
+    const screenshotLabels: string[] = [];
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow() {
+        return {
+          async loadURL() {},
+          async selectPageTarget(options) {
+            expect(options?.requireKvmSurface).toBe(false);
+            return { windowId: 'main-window', windowRole: 'main' };
+          },
+          async collectStorageKeys() {
+            return { localStorageKeys: ['UNKNOWN_VIEWER'], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [{ role: 'viewer', selector: 'iframe', confidence: 0.5 }];
+          },
+          async captureScreenshot(label) {
+            screenshotLabels.push(label);
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+              windowId: 'main-window',
+              windowRole: 'main',
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+    const controller = createCaptureBrowserController({
+      jobId: 'job-operator-viewer',
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      adapter,
+    });
+
+    await controller.start();
+    const automatic = await controller.collectPageFacts('viewer');
+    const manual = await controller.collectPageFacts('viewer', { operatorConfirmed: true });
+
+    expect(automatic).toMatchObject({
+      captured: false,
+      reason: 'reliable-kvm-evidence-missing',
+    });
+    expect(manual).toMatchObject({ captured: true, operatorConfirmed: true });
+    expect(screenshotLabels).toEqual(['viewer']);
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'screenshot',
+        role: 'viewer',
+        operatorConfirmed: true,
+      }),
+    );
+    expect(controller.network().webSockets).toEqual([]);
+  });
+
   it('waits past H3C home /websocket text and generic binary frames before capturing the viewer', async () => {
     const cdpListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const cdp: CdpDebuggerLike = {
@@ -606,10 +667,10 @@ describe('createCaptureBrowserController', () => {
     expect(controller.windowsOpen()).toBe(false);
     await controller.collectPageFacts('viewer');
     expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');
-    await expect(controller.readSessionCookies()).resolves.toEqual([
+    await expect(controller.readSessionCookies('/api/randomtag')).resolves.toEqual([
       { name: 'QSESSIONID', value: 'session-secret' },
     ]);
-    expect(cookieTargetUrl).toBe('https://10.0.0.10:443/');
+    expect(cookieTargetUrl).toBe('https://10.0.0.10/api/randomtag');
     expect(JSON.stringify(controller.timeline())).not.toContain('session-secret');
   });
 

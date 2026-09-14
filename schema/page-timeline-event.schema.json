@@ -26,7 +26,7 @@
     },
     {
       "type": "object",
-      "required": ["type", "windowRole", "timestamp"],
+      "required": ["type", "windowRole", "captureRole", "timestamp"],
       "properties": {
         "type": { "const": "storage-snapshot" },
         "localStorageKeys": { "type": "array", "items": { "type": "string" } },
@@ -36,6 +36,7 @@
         "sessionStorageAdded": { "type": "array", "items": { "type": "string" } },
         "sessionStorageRemoved": { "type": "array", "items": { "type": "string" } },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "timestamp": { "type": "string" }
       }
     },
@@ -48,12 +49,13 @@
         "sourcePath": { "type": "string" },
         "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "windowRole": { "enum": ["main", "popup"] },
+        "operatorConfirmed": { "type": "boolean" },
         "timestamp": { "type": "string" }
       }
     },
     {
       "type": "object",
-      "required": ["type", "candidates", "windowRole", "timestamp"],
+      "required": ["type", "candidates", "windowRole", "captureRole", "timestamp"],
       "properties": {
         "type": { "const": "selector-candidates" },
         "candidates": {
@@ -61,6 +63,7 @@
           "items": { "$ref": "#/definitions/selectorCandidate" }
         },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "timestamp": { "type": "string" }
       }
     },

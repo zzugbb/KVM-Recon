@@ -83,6 +83,14 @@ interface LiveCaptureSnapshot {
   jobs?: CaptureJobSummary[];
 }
 
+interface PageCaptureResult {
+  captured: boolean;
+  reason: string;
+  operatorConfirmed: boolean;
+  windowRole?: 'main' | 'popup';
+  path?: string;
+}
+
 type StartCaptureResult =
   | {
       ok: true;
@@ -119,6 +127,7 @@ type SnapshotResult =
       windowsOpen: boolean;
       paused?: boolean;
       jobs?: CaptureJobSummary[];
+      pageCapture?: PageCaptureResult;
     } & LiveCaptureSnapshot)
   | {
       ok: false;

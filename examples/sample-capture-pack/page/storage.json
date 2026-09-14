@@ -5,5 +5,7 @@
   "localStorageRemoved": [],
   "sessionStorageAdded": [],
   "sessionStorageRemoved": [],
-  "windowRole": "main"
+  "windowRole": "main",
+  "windowRoles": [],
+  "snapshots": []
 }

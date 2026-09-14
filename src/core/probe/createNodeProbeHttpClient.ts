@@ -26,10 +26,13 @@ function parseResponseBody(buffer: Buffer, contentType: string): unknown {
 
 export function createNodeProbeHttpClient(
   target: CaptureTarget,
-  options: { extraHeaders?: Record<string, string> } = {},
+  options: {
+    extraHeaders?: Record<string, string>;
+    extraHeadersForPath?: (path: string) => Promise<Record<string, string>>;
+  } = {},
 ): ProbeHttpClient {
   return {
-    get(path: string): Promise<ProbeHttpResponse> {
+    async get(path: string): Promise<ProbeHttpResponse> {
       const transport = target.scheme === 'https' ? https : http;
       const agent =
         target.scheme === 'https'
@@ -37,6 +40,7 @@ export function createNodeProbeHttpClient(
               rejectUnauthorized: false,
             })
           : undefined;
+      const pathHeaders = (await options.extraHeadersForPath?.(path)) || {};
 
       return new Promise((resolve, reject) => {
         let settled = false;
@@ -56,6 +60,7 @@ export function createNodeProbeHttpClient(
             headers: {
               Accept: 'application/json, */*;q=0.1',
               ...options.extraHeaders,
+              ...pathHeaders,
             },
             servername: tlsServerName(target.host),
           },

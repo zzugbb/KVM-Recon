@@ -88,9 +88,26 @@ function missingSessionResult() {
 
 async function refreshAuthenticatedProbe(session: CaptureSession) {
   try {
-    const cookies = await session.controller.readSessionCookies();
-    const cookieNames = cookies.map(cookie => cookie.name).filter(Boolean);
-    if (cookieNames.length === 0) {
+    const cookieNames = new Set<string>();
+    const authenticated = await probeBmcTarget({
+      target: session.target,
+      httpClient: createNodeProbeHttpClient(session.target, {
+        extraHeadersForPath: async path => {
+          const cookies = await session.controller.readSessionCookies(path);
+          for (const cookie of cookies) {
+            if (cookie.name) cookieNames.add(cookie.name);
+          }
+          const header = cookies
+            .filter(cookie => cookie.name && cookie.value)
+            .map(cookie => `${cookie.name}=${cookie.value}`)
+            .join('; ');
+          const headers: Record<string, string> = {};
+          if (header) headers.Cookie = header;
+          return headers;
+        },
+      }),
+    });
+    if (cookieNames.size === 0) {
       if (!session.probe.authenticated) {
         session.probe = {
           ...session.probe,
@@ -103,20 +120,11 @@ async function refreshAuthenticatedProbe(session: CaptureSession) {
       }
       return;
     }
-    const header = cookies
-      .filter(cookie => cookie.name && cookie.value)
-      .map(cookie => `${cookie.name}=${cookie.value}`)
-      .join('; ');
-    const authenticated = await probeBmcTarget({
-      target: session.target,
-      httpClient: createNodeProbeHttpClient(session.target, {
-        extraHeaders: { Cookie: header },
-      }),
-    });
-    session.probe = applyAuthenticatedProbe(session.probe, authenticated, cookieNames);
+    const capturedCookieNames = [...cookieNames];
+    session.probe = applyAuthenticatedProbe(session.probe, authenticated, capturedCookieNames);
     logger.info('authenticated-probe', {
       jobId: session.jobId,
-      cookieCount: cookieNames.length,
+      cookieCount: capturedCookieNames.length,
       family: session.probe.familySignatures.primary,
     });
   } catch (error) {
@@ -376,9 +384,21 @@ function registerCaptureHandlers() {
       }
       const screenshotRole = typeof role === 'string' && role ? role : 'login';
       logger.info('collect-page', { jobId, role: screenshotRole });
-      await session.controller.collectPageFacts(screenshotRole);
+      const pageCapture = await session.controller.collectPageFacts(screenshotRole, {
+        operatorConfirmed: screenshotRole === 'viewer',
+      });
+      if (!pageCapture.captured) {
+        return {
+          ok: false as const,
+          error: formatCaptureError({
+            code: 'UNKNOWN',
+            detail: `当前画面未采集：${pageCapture.reason || '未知原因'}`,
+          }),
+        };
+      }
       return {
         ok: true as const,
+        pageCapture,
         ...sessionSnapshot(session),
         jobs: listJobSummaries(),
       };

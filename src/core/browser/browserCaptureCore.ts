@@ -26,6 +26,7 @@ type BrowserTimelineEvent =
       sessionStorageAdded: string[];
       sessionStorageRemoved: string[];
       windowRole: CaptureWindowRole;
+      captureRole: ScreenshotRole;
       timestamp: string;
     }
   | {
@@ -34,12 +35,14 @@ type BrowserTimelineEvent =
       sourcePath?: string;
       role: ScreenshotRole;
       windowRole: CaptureWindowRole;
+      operatorConfirmed?: boolean;
       timestamp: string;
     }
   | {
       type: 'selector-candidates';
       candidates: SelectorCandidate[];
       windowRole: CaptureWindowRole;
+      captureRole: ScreenshotRole;
       timestamp: string;
     }
   | {
@@ -70,6 +73,7 @@ interface StorageSnapshotInput {
   sessionStorageAdded?: string[];
   sessionStorageRemoved?: string[];
   windowRole?: CaptureWindowRole;
+  captureRole?: ScreenshotRole;
 }
 
 export interface ClickSummary {
@@ -196,6 +200,7 @@ export function createBrowserTimeline(jobId: string) {
         sessionStorageAdded: input.sessionStorageAdded || [],
         sessionStorageRemoved: input.sessionStorageRemoved || [],
         windowRole: input.windowRole || 'main',
+        captureRole: input.captureRole || 'unknown',
         timestamp: nowIso(),
       });
     },
@@ -204,12 +209,14 @@ export function createBrowserTimeline(jobId: string) {
       sourcePath?: string,
       role: ScreenshotRole = 'unknown',
       windowRole: CaptureWindowRole = 'main',
+      operatorConfirmed = false,
     ) {
       events.push({
         type: 'screenshot',
         path,
         role,
         windowRole,
+        ...(operatorConfirmed ? { operatorConfirmed: true } : {}),
         ...(sourcePath ? { sourcePath } : {}),
         timestamp: nowIso(),
       });
@@ -227,11 +234,13 @@ export function createBrowserTimeline(jobId: string) {
     recordSelectorCandidates(
       candidates: SelectorCandidate[],
       windowRole: CaptureWindowRole = 'main',
+      captureRole: ScreenshotRole = 'unknown',
     ) {
       events.push({
         type: 'selector-candidates',
         candidates,
         windowRole,
+        captureRole,
         timestamp: nowIso(),
       });
     },

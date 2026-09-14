@@ -7,8 +7,10 @@
 
 ## [Unreleased]
 
-- 收紧 KVM WebSocket 可靠帧判定，通用二进制 `/websocket` 不再误触发 Viewer 截图或就绪。
-- Popup 页面的点击、storage、截图与 selector 绑定同一窗口，导出物增加 `windowRole`；登录后复验仅读取目标 BMC Cookie。
+- 收紧 KVM WebSocket 可靠帧判定：静态 KVM 资源不再作为启动链，通用二进制 `/websocket` 的弱 AMI 帧必须关联同窗口、短时间内的成功 KVM 启动请求。
+- 手动补拍新协议 Viewer 时记录 `operatorConfirmed`并返回实际采集结果，操作员确认不会自动让 WebSocket 证据通过。
+- Popup 页面的点击、storage、截图与 selector 绑定同一窗口；按窗口和页面角色聚合全部 storage/selector 快照，并支持 iframe/OOPIF Viewer 候选。
+- 登录后复验按每个实际探测 URL 读取符合 domain/path 的 BMC Cookie，不再丢失 `/api` 或 `/redfish` 路径 Cookie。
 - 对齐 randomtag `200` 命中语义、非默认端口 Host 和基础连接判定，并限制主动探测正文为 1 MiB。
 - 修复 Adapter evidence 与 Schema 不一致，新增 Ajv 样例包契约测试和 `1–65535` 端口双重校验。
 

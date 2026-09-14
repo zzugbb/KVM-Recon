@@ -83,6 +83,33 @@ describe('createNodeProbeHttpClient', () => {
     expect(seen[0]).toBe('QSESSIONID=abc123');
   });
 
+  it('builds authentication headers separately for each probe path', async () => {
+    const seen: Record<string, string> = {};
+    const requestedPaths: string[] = [];
+    const { port } = await startServer((request, response) => {
+      seen[String(request.url)] = String(request.headers.cookie || '');
+      response.end('{}');
+    });
+    const client = createNodeProbeHttpClient(
+      { host: '127.0.0.1', port, scheme: 'http' },
+      {
+        extraHeadersForPath: async path => {
+          requestedPaths.push(path);
+          return { Cookie: path.startsWith('/api/') ? 'API_SESSION=1' : 'REDFISH_SESSION=2' };
+        },
+      },
+    );
+
+    await client.get('/api/randomtag');
+    await client.get('/redfish/v1/');
+
+    expect(requestedPaths).toEqual(['/api/randomtag', '/redfish/v1/']);
+    expect(seen).toEqual({
+      '/api/randomtag': 'API_SESSION=1',
+      '/redfish/v1/': 'REDFISH_SESSION=2',
+    });
+  });
+
   it('includes a non-default target port in the generated Host header', async () => {
     let seenHost = '';
     const { port } = await startServer((request, response) => {

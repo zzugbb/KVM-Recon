@@ -330,7 +330,11 @@ export function App() {
       return;
     }
     applySnapshot(result);
-    setMessage('已采集当前画面。登录和 KVM 流量仍在自动记录，就绪后请导出。');
+    setMessage(
+      result.pageCapture?.operatorConfirmed
+        ? '已按操作员确认采集 KVM 画面；该确认不会自动将 WebSocket 判为已就绪。'
+        : '已采集当前画面。登录和 KVM 流量仍在自动记录，就绪后请导出。',
+    );
   }
 
   async function exportCapture() {

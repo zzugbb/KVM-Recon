@@ -329,12 +329,21 @@ describe('createNetworkRecorder', () => {
       resourceType: 'xhr',
       requestHeaders: {},
     });
+    recorder.recordHttpRequest({
+      id: 'static-kvm-script',
+      timestamp: '2026-09-07T03:00:01.100+08:00',
+      method: 'GET',
+      url: 'https://10.10.8.107/js/kvm.js',
+      resourceType: 'script',
+      requestHeaders: {},
+    });
 
     const records = recorder.toJSON().httpRequests;
     expect(records[0]?.tags).toEqual([]);
     expect(records[1]?.tags).toEqual([]);
     expect(records[2]?.tags).toEqual(['login']);
     expect(records[3]?.tags).toEqual(['kvm-token']);
+    expect(records[4]?.tags).toEqual([]);
   });
 
   it('only tags Huawei legacy property calls from the KVM viewer context', () => {
