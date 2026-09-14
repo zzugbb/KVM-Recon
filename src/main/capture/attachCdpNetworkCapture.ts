@@ -88,12 +88,29 @@ function scopedId(requestId: string, sessionId?: string) {
 }
 
 const MAX_RESPONSE_BODY_BYTES = 1024 * 1024;
+const SOURCE_FETCH_LIMIT_BYTES = 2 * 1024 * 1024;
+const SOURCE_SAMPLE_BYTES = 64 * 1024;
 
 interface ResponseCaptureMetadata {
   id: string;
   url: string;
   resourceType: string;
   contentType: string;
+}
+
+function isSourceMetadata(metadata: ResponseCaptureMetadata | undefined) {
+  if (!metadata) return false;
+  return (
+    /^(?:script|document)$/i.test(metadata.resourceType) ||
+    /javascript|ecmascript|html/i.test(metadata.contentType) ||
+    /\.(?:js|mjs|html?)(?:[?#]|$)/i.test(metadata.url)
+  );
+}
+
+function truncateUtf8(text: string, maxBytes: number) {
+  const buffer = Buffer.from(text, 'utf8');
+  if (buffer.byteLength <= maxBytes) return text;
+  return buffer.subarray(0, maxBytes).toString('utf8');
 }
 
 interface RequestChainState {
@@ -110,7 +127,10 @@ interface RequestChainState {
 function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBytes: number) {
   if (!metadata) return 'missing-response-metadata';
   if (/^(?:data|blob):/i.test(metadata.url)) return 'inline-or-blob-url';
-  if (encodedBytes > MAX_RESPONSE_BODY_BYTES) return `response-too-large:${encodedBytes}`;
+  if (encodedBytes > MAX_RESPONSE_BODY_BYTES) {
+    if (isSourceMetadata(metadata) && encodedBytes <= SOURCE_FETCH_LIMIT_BYTES) return '';
+    return `response-too-large:${encodedBytes}`;
+  }
   if (/^(?:eventsource|websocket)$/i.test(metadata.resourceType)) return 'streaming-resource';
   if (/^(?:image|media|font|stylesheet)$/i.test(metadata.resourceType)) {
     return `binary-resource:${metadata.resourceType.toLowerCase()}`;
@@ -207,7 +227,16 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const result = await input.cdp.sendCommand('Network.getResponseBody', { requestId }, sessionId);
       const responseBody = decodeResponseBody(result);
       const responseBytes = Buffer.byteLength(responseBody, 'utf8');
+      const metadata = responseMetadata.get(id);
       if (responseBytes > MAX_RESPONSE_BODY_BYTES) {
+        if (isSourceMetadata(metadata)) {
+          input.recorder.recordHttpResponseBody({
+            id,
+            responseBody: truncateUtf8(responseBody, SOURCE_SAMPLE_BYTES),
+            truncatedReason: `response-truncated:${responseBytes}`,
+          });
+          return;
+        }
         input.recorder.markHttpResponseBodySkipped(id, `response-too-large:${responseBytes}`);
         return;
       }
@@ -261,8 +290,16 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
   }
 
-  await input.cdp.attach('1.3');
-  await input.cdp.sendCommand('Network.enable');
+  try {
+    await input.cdp.attach('1.3');
+    await input.cdp.sendCommand('Network.enable');
+  } catch (error) {
+    // 捕获根窗口 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用或目标已销毁
+    // 策略：记入 attachFailures 让清单 PARTIAL，避免未处理拒绝；窗口仍可用于截图
+    input.recorder.markAttachFailure(input.captureWindowId || 'root', 'cdp-attach-failed');
+    void error;
+    return;
+  }
   try {
     await input.cdp.sendCommand('Target.setAutoAttach', {
       autoAttach: true,

@@ -10,7 +10,7 @@ import {
   type SelectorCandidate,
 } from '../../core/browser/browserCaptureCore';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
-import { kvmWebSocketEvidence } from '../../core/readiness/buildReadinessChecklist';
+import { kvmWebSocketEvidence, reliableKvmWindows } from '../../core/readiness/buildReadinessChecklist';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface ChromiumAccessInfo {
@@ -39,6 +39,7 @@ export interface CaptureBrowserAdapterOptions {
       openerCaptureWindowId?: string;
     },
   ): Promise<void>;
+  onAttachFailure?(sessionId: string, reason: string): void;
   onChromiumAccess(info: ChromiumAccessInfo): void;
   onAllWindowsClosed(): void;
 }
@@ -151,12 +152,8 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     return timeline.toJSON().events.some(event => event.type === 'screenshot' && event.role === 'viewer');
   }
 
-  function reliableKvmWindow(): { windowRole?: CaptureWindowRole; captureWindowId?: string } | undefined {
-    const snapshot = networkRecorder.toJSON();
-    const socketIds = new Set(kvmWebSocketEvidence(snapshot));
-    const socket = snapshot.webSockets.find(item => socketIds.has(item.id));
-    if (!socket) return undefined;
-    return { windowRole: socket.windowRole, captureWindowId: socket.captureWindowId };
+  function reliableKvmWindowCandidates() {
+    return reliableKvmWindows(networkRecorder.toJSON());
   }
 
   function hasReliableKvmEvidence() {
@@ -180,12 +177,44 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     }
 
     try {
-      const preferredWindow = role === 'viewer' ? reliableKvmWindow() : undefined;
-      const target = await windowHandle.selectPageTarget?.({
-        requireKvmSurface: role === 'viewer' && !operatorConfirmed,
-        preferredWindowRole: preferredWindow?.windowRole,
-        preferredCaptureWindowId: preferredWindow?.captureWindowId,
-      });
+      let preferredWindow: { windowRole?: CaptureWindowRole; captureWindowId?: string } | undefined;
+      let target: CapturePageTarget | undefined;
+      if (role === 'viewer') {
+        const candidates = reliableKvmWindowCandidates();
+        for (const candidate of candidates) {
+          try {
+            const selected = await windowHandle.selectPageTarget?.({
+              requireKvmSurface: !operatorConfirmed,
+              preferredWindowRole: candidate.windowRole,
+              preferredCaptureWindowId: candidate.captureWindowId,
+            });
+            if (selected) {
+              preferredWindow = candidate;
+              target = selected;
+              break;
+            }
+          } catch (error) {
+            // 捕获指定 Viewer 窗口已关闭或暂无 KVM 画面
+            // 策略：继续尝试下一条较新的可靠 WS 窗口，避免钉死在已关闭 Viewer
+            void error;
+          }
+          preferredWindow = preferredWindow || candidate;
+        }
+        if (!target && operatorConfirmed) {
+          try {
+            target = await windowHandle.selectPageTarget?.({
+              requireKvmSurface: false,
+            });
+          } catch (error) {
+            // 捕获操作员确认补拍时仍找不到窗口：返回未采集，由外层 catch 记录原因
+            void error;
+          }
+        }
+      } else {
+        target = await windowHandle.selectPageTarget?.({
+          requireKvmSurface: false,
+        });
+      }
       const windowRole = target?.windowRole || preferredWindow?.windowRole || 'main';
       const captureWindowId = target?.windowId || preferredWindow?.captureWindowId;
       const pageTargetOptions = { target, expectedRole: role };
@@ -308,14 +337,25 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
           timeline.recordHashChange(event.url, event.windowRole, event.captureWindowId),
         ),
         onPopup: unlessPaused(popup => timeline.recordPopup(popup)),
-        onNetworkDebugger: (cdp, context) =>
-          attachCdpNetworkCapture({
-            cdp,
-            recorder: networkRecorder,
-            windowRole: context?.windowRole || (debuggerCount++ === 0 ? 'main' : 'popup'),
-            captureWindowId: context?.captureWindowId,
-            openerCaptureWindowId: context?.openerCaptureWindowId,
-          }),
+        onAttachFailure: (sessionId, reason) => {
+          networkRecorder.markAttachFailure(sessionId, reason);
+        },
+        onNetworkDebugger: async (cdp, context) => {
+          try {
+            await attachCdpNetworkCapture({
+              cdp,
+              recorder: networkRecorder,
+              windowRole: context?.windowRole || (debuggerCount++ === 0 ? 'main' : 'popup'),
+              captureWindowId: context?.captureWindowId,
+              openerCaptureWindowId: context?.openerCaptureWindowId,
+            });
+          } catch (error) {
+            // 捕获根/弹窗 debugger.attach 或 Network.enable 失败
+            // 策略：记入 attachFailures，避免未处理拒绝；窗口继续用于截图，清单 PARTIAL
+            networkRecorder.markAttachFailure(context?.captureWindowId || 'unknown', 'cdp-attach-failed');
+            void error;
+          }
+        },
         onChromiumAccess: info => {
           chromiumAccess = info;
         },
@@ -383,6 +423,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     },
     network() {
       return networkRecorder.toJSON();
+    },
+    networkCaptureStatus() {
+      return networkRecorder.captureStatus();
     },
     async waitForNetworkIdle() {
       return networkRecorder.waitForIdle();

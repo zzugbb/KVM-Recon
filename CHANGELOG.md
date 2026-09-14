@@ -21,6 +21,13 @@
 - 登录后复验按每个实际探测 URL 读取符合 domain/path 的 BMC Cookie，不再丢失 `/api` 或 `/redfish` 路径 Cookie。
 - 对齐 randomtag `200` 命中语义、非默认端口 Host 和基础连接判定，并限制主动探测正文为 1 MiB。
 - 修复 Adapter evidence 与 Schema 不一致，新增 Ajv 样例包契约测试和 `1–65535` 端口双重校验。
+- HTML 与 JavaScript 响应保留脱敏后的正文样本（最长约 64KiB）；超过 1 MiB 的 Viewer/认证脚本保存截断前缀，不再整段丢弃。关键 HTML/JS 无样本时清单为 PARTIAL。
+- 华为虚拟媒体端口 `8208` 不再当作 KVM 视频 WebSocket；KVM 只认 `2198`/`2199`。
+- 可靠 KVM WebSocket 至少要求一条下行帧，仅客户端上行认证/控制包不再判 YES。
+- 弹窗 `debugger.attach` / `Network.enable` 失败记入 `attachFailures`，不再形成未处理拒绝。
+- 弹窗 URL/opener 直接使用 Electron `did-create-window` 详情，去掉全局 `pendingPopup`，避免并发/嵌套弹窗串窗。
+- 自动截图按最新可靠 KVM WebSocket 选择窗口；已关闭的旧 Viewer 失败后继续尝试新窗口。
+- 主界面实时就绪纳入当前 `attachFailures`，不再等导出时才从 YES 变成 PARTIAL。
 
 ## [0.2.6] - 2026-09-13
 

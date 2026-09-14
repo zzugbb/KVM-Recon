@@ -59,7 +59,8 @@ export function nextStepText(input: {
     pending.id === 'page.kvm.entry' ||
     pending.id === 'ws.kvm.established' ||
     pending.id === 'http.key_api' ||
-    pending.id === 'http.key_payload'
+    pending.id === 'http.key_payload' ||
+    pending.id === 'http.viewer_source'
   ) {
     return '请在采集窗口打开 HTML5 KVM，并把画面留在前台。打开后会自动截图。';
   }

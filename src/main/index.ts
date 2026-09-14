@@ -47,6 +47,7 @@ function sessionSnapshot(session: CaptureSession) {
       probe: session.probe,
       page: session.controller.timeline(),
       network: session.controller.network(),
+      networkIdle: session.controller.networkCaptureStatus(),
     }),
   };
 }

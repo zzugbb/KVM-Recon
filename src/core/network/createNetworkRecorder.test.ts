@@ -668,4 +668,57 @@ describe('createNetworkRecorder', () => {
     await expect(recorder.waitForIdle()).resolves.toMatchObject({ timedOut: false });
     expect(recorder.toJSON().httpRequests.every(request => request.streaming)).toBe(true);
   });
+
+  it('keeps redacted HTML and long JavaScript samples for adapter reconstruction', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    const script = `function initKvmViewer(token) {\n  return token;\n}\n${'A'.repeat(600)}`;
+    recorder.recordHttpRequest({
+      id: 'viewer-html',
+      timestamp: '2026-09-14T12:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/html5viewer.html',
+      resourceType: 'document',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'viewer-html',
+      status: 200,
+      responseHeaders: { 'content-type': 'text/html' },
+      responseBody: '<!doctype html><html><head></head><body><script src="/kvm.js"></script></body></html>',
+    });
+    recorder.recordHttpRequest({
+      id: 'viewer-js',
+      timestamp: '2026-09-14T12:00:00.100+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/html5viewer.js',
+      resourceType: 'script',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'viewer-js',
+      status: 200,
+      responseHeaders: { 'content-type': 'application/javascript' },
+      responseBody: script,
+    });
+
+    const records = recorder.toJSON().httpRequests;
+    expect(records[0]?.responseStructure?.bodyKind).toBe('html');
+    expect(String(records[0]?.responseBodySummary.sample)).toContain('<!doctype html>');
+    expect(String(records[0]?.responseBodySummary.sample)).toContain('kvm.js');
+    expect(String(records[1]?.responseBodySummary.sample).length).toBeGreaterThan(512);
+    expect(String(records[1]?.responseBodySummary.sample)).toContain('function initKvmViewer');
+  });
+
+  it('tags Huawei virtual media port 8208 as vmedia instead of kvm-video', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-vmedia',
+      timestamp: '2026-09-14T12:00:02.000+08:00',
+      url: 'wss://10.10.8.107:8208/websocket',
+      subProtocols: [],
+      requestHeaders: {},
+    });
+
+    expect(recorder.toJSON().webSockets[0]?.tags).toEqual(['vmedia']);
+  });
 });

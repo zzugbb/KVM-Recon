@@ -1,5 +1,5 @@
 import { redactSensitiveData, redactUrl } from '../redaction/redactSensitiveData';
-import { KNOWN_KVM_WEBSOCKET_PATTERN } from '../signatures/kvmUrlPatterns';
+import { HUAWEI_VMEDIA_WS_PATTERN, KNOWN_KVM_WEBSOCKET_PATTERN } from '../signatures/kvmUrlPatterns';
 
 type HeaderMap = Record<string, string>;
 type HttpTag = 'login' | 'kvm-token' | 'kvm-entry';
@@ -46,6 +46,7 @@ interface HttpResponseInput {
 interface HttpResponseBodyInput {
   id: string;
   responseBody: string;
+  truncatedReason?: string;
 }
 
 interface HttpRequestBodyInput {
@@ -227,11 +228,11 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
 
 function tagWebSocket(url: string): WebSocketTag[] {
   const lower = url.toLowerCase();
+  if (HUAWEI_VMEDIA_WS_PATTERN.test(lower) || /(?:^|\/)(?:vm|vmedia|media|cd-server)(?:\/|\?|$)/.test(lower) || /cd-server/.test(lower)) {
+    return ['vmedia'];
+  }
   if (KNOWN_KVM_WEBSOCKET_PATTERN.test(lower)) {
     return ['kvm-video'];
-  }
-  if (/(?:^|\/)(?:vm|vmedia|media|cd-server)(?:\/|\?|$)/.test(lower) || /cd-server/.test(lower)) {
-    return ['vmedia'];
   }
   return ['unknown'];
 }
@@ -245,10 +246,13 @@ function isLikelyStreamingRequest(input: Pick<HttpRequestInput, 'method' | 'url'
   );
 }
 
+const JSON_STRING_SAMPLE_LIMIT = 512;
+const SOURCE_TEXT_SAMPLE_LIMIT = 64 * 1024;
+
 function summarizeBody(body = '', contentType = '') {
   const parsed = parseBody(body, contentType);
   const redactedFields = collectSensitiveFieldNames(parsed);
-  const sample = sampleStructuredBody(parsed);
+  const sample = sampleStructuredBody(parsed, contentType);
   return {
     bytes: body.length,
     redactedFields,
@@ -328,7 +332,9 @@ function normalizeSample(value: unknown, key = '', depth = 0): StructuredBodySam
   if (typeof value === 'number' || typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const redactedUrl = redactUrl(value);
-    return redactedUrl.length > 512 ? `${redactedUrl.slice(0, 512)}<truncated>` : redactedUrl;
+    return redactedUrl.length > JSON_STRING_SAMPLE_LIMIT
+      ? `${redactedUrl.slice(0, JSON_STRING_SAMPLE_LIMIT)}<truncated>`
+      : redactedUrl;
   }
   if (Array.isArray(value)) {
     return value.slice(0, 8).map(item => normalizeSample(item, key, depth + 1));
@@ -343,18 +349,35 @@ function normalizeSample(value: unknown, key = '', depth = 0): StructuredBodySam
   return String(value);
 }
 
-function redactTextSample(text: string): string {
-  return redactUrl(text)
-    .replace(/((?:password|passwd|pwd|token|csrf|cookie|sessionid|session_id|authparam|garc|x-auth-token)=)([^&;\s]+)/gi, (_match, prefix, value) => {
+function redactTextSample(text: string, limit = JSON_STRING_SAMPLE_LIMIT): string {
+  const redacted = redactUrl(text).replace(
+    /((?:password|passwd|pwd|token|csrf|cookie|sessionid|session_id|authparam|garc|x-auth-token)=)([^&;\s]+)/gi,
+    (_match, prefix, value) => {
       return `${prefix}${redactSensitiveData({ value }).data.value}`;
-    })
-    .slice(0, 512);
+    },
+  );
+  return redacted.length > limit ? `${redacted.slice(0, limit)}<truncated>` : redacted;
 }
 
-function sampleStructuredBody(parsed: unknown): StructuredBodySample | undefined {
+function isJavascriptContent(contentType: string, text: string) {
+  if (/javascript|ecmascript/i.test(contentType)) return true;
+  const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 120);
+  return /^(?:['"]use strict['"]|;?\s*(?:function|var |let |const |class |import |export |\/\*|\/\/))/.test(
+    head,
+  );
+}
+
+function isSourceText(parsed: string, contentType: string) {
+  return isHtmlText(parsed) || isJavascriptContent(contentType, parsed) || /html/i.test(contentType);
+}
+
+function sampleStructuredBody(parsed: unknown, contentType = ''): StructuredBodySample | undefined {
   if (typeof parsed === 'string') {
     const text = parsed.trim();
-    if (!text || isHtmlText(text)) return undefined;
+    if (!text) return undefined;
+    if (isSourceText(parsed, contentType)) {
+      return redactTextSample(parsed, SOURCE_TEXT_SAMPLE_LIMIT);
+    }
     return redactTextSample(text);
   }
   if (!parsed || typeof parsed !== 'object') return undefined;
@@ -497,6 +520,15 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  function captureStatusResult(timedOut = false): NetworkIdleResult {
+    return {
+      timedOut,
+      pendingTaskCount: pendingTasks.size,
+      inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
+      ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
+    };
+  }
+
   return {
     trackPending(task: Promise<unknown>) {
       markActivity();
@@ -519,6 +551,9 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       attachFailures.push({ sessionId, reason });
       markActivity();
     },
+    captureStatus(options: { timedOut?: boolean } = {}): NetworkIdleResult {
+      return captureStatusResult(Boolean(options.timedOut));
+    },
     async waitForIdle(): Promise<NetworkIdleResult> {
       const quietMs = options.idleQuietMs ?? 120;
       const timeoutMs = options.idleTimeoutMs ?? 5000;
@@ -529,21 +564,11 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
           inFlightHttpRequestIds.size === 0 &&
           Date.now() - lastActivityAt >= quietMs
         ) {
-          return {
-            timedOut: false,
-            pendingTaskCount: 0,
-            inFlightRequestIds: [],
-            ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
-          };
+          return captureStatusResult(false);
         }
         await sleep(Math.min(quietMs, 25));
       }
-      return {
-        timedOut: true,
-        pendingTaskCount: pendingTasks.size,
-        inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
-        ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
-      };
+      return captureStatusResult(true);
     },
     markHttpRequestFinished(id: string) {
       if (inFlightHttpRequestIds.delete(id)) {
@@ -659,7 +684,11 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
       existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
       existing.responseBodyCaptured = true;
-      delete existing.responseBodySkippedReason;
+      if (input.truncatedReason) {
+        existing.responseBodySkippedReason = input.truncatedReason;
+      } else {
+        delete existing.responseBodySkippedReason;
+      }
     },
     markHttpResponseBodySkipped(id: string, reason: string) {
       const existing = httpRequests.get(id);

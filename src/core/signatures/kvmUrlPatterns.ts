@@ -6,14 +6,22 @@ export const DELL_VCONSOLE_HTTP_PATTERN =
 
 export const HPE_IRCPORT_WS_PATTERN = /\/wss\/ircport/i;
 
+export const HUAWEI_KVM_WS_PATTERN = /:(?:2198|2199)\/(?:websocket)?(?:\?|$)/i;
+
+export const HUAWEI_VMEDIA_WS_PATTERN = /:8208\/(?:websocket)?(?:\?|$)/i;
+
 export const KNOWN_KVM_WEBSOCKET_PATTERN =
-  /\/kvm(?:\/|\?|$)|\/kvm\/video|\/v[mn]c\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/i;
+  /\/kvm(?:\/|\?|$)|\/kvm\/video|\/v[mn]c\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199)\/(?:websocket)?(?:\?|$)/i;
 
 export const EXPLICIT_KVM_LAUNCH_URL_PATTERN =
   /\/api\/kvm\/token|kvmservice|setkvmkey|starth5kvm|\/kvm\/video|\/v[mn]c\/vconsole|\/restgui\/(?:html5viewer|vconsole)|\/wss\/ircport|\/bmc\/pages\/remote\/kvm_by_html5\.html|\/bmc\/php\/gettoken\.php|\/sysmgmt\/[^/]+\/server\/vconsole/i;
 
+export function isHuaweiVmediaWebSocketUrl(url: string) {
+  return HUAWEI_VMEDIA_WS_PATTERN.test(url);
+}
+
 export function isKnownKvmWebSocketUrl(url: string) {
-  return KNOWN_KVM_WEBSOCKET_PATTERN.test(url);
+  return KNOWN_KVM_WEBSOCKET_PATTERN.test(url) && !isHuaweiVmediaWebSocketUrl(url);
 }
 
 export function isDellVconsoleUrl(url: string) {

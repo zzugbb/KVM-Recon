@@ -8,7 +8,7 @@ import type {
 } from '../capture-pack/types';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
-import { isKnownKvmWebSocketUrl } from '../signatures/kvmUrlPatterns';
+import { isHuaweiVmediaWebSocketUrl, isKnownKvmWebSocketUrl } from '../signatures/kvmUrlPatterns';
 import {
   criticalPayloadGaps,
   hasCorrelatedKvmLaunch,
@@ -191,19 +191,41 @@ export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined
 
   return (network?.webSockets || [])
     .filter(socket => {
-      const frameCount = socket.binaryFrameCount + socket.textFrameCount;
-      if (frameCount <= 0) return false;
+      if (socket.tags.includes('vmedia') || isHuaweiVmediaWebSocketUrl(socket.url)) {
+        return false;
+      }
       const frames = framesBySocket.get(socket.id) || [];
-      if (hasStrongKvmFrame(frames)) return true;
+      const downFrames = frames.filter(frame => frame.direction === 'down');
+      if (downFrames.length === 0) return false;
+      if (hasStrongKvmFrame(downFrames)) return true;
       if (socket.binaryFrameCount <= 0) return false;
       const hasKvmContext =
         socket.tags.includes('kvm-video') ||
         isKnownKvmSocketUrl(socket.url) ||
         hasCorrelatedKvmLaunch(launchRequests, socket);
       if (!hasKvmContext) return false;
-      return hasWeakAmiFrame(frames) || socket.tags.includes('kvm-video') || isKnownKvmSocketUrl(socket.url);
+      return (
+        hasWeakAmiFrame(downFrames) ||
+        socket.tags.includes('kvm-video') ||
+        isKnownKvmSocketUrl(socket.url)
+      );
     })
     .map(socket => socket.id);
+}
+
+export function reliableKvmWindows(
+  network: NetworkSnapshot | null | undefined,
+): Array<{ windowRole?: 'main' | 'popup'; captureWindowId?: string; socketId: string; createdAt: string }> {
+  const socketIds = new Set(kvmWebSocketEvidence(network));
+  return [...(network?.webSockets || [])]
+    .filter(socket => socketIds.has(socket.id))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .map(socket => ({
+      socketId: socket.id,
+      createdAt: socket.createdAt,
+      ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
+      ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
+    }));
 }
 
 function probeConnectionEvidence(probe: ProbeBmcTargetResult | null | undefined): string[] {
@@ -260,6 +282,65 @@ function familyFingerprintItem(
     userAction: evidence.length
       ? ''
       : '请补充登录后页面截图、KVM 入口点击记录和 HTTP/WS 资料，便于离线判断协议族。',
+  });
+}
+
+function requestContentType(request: HttpRequestRecord) {
+  return (
+    request.responseContentType ||
+    Object.entries(request.responseHeaders).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
+    ''
+  );
+}
+
+function isAdapterSourceRequest(request: HttpRequestRecord) {
+  const contentType = requestContentType(request);
+  const isSource =
+    /^(?:script|document)$/i.test(request.resourceType) ||
+    /javascript|ecmascript|(?:text|application)\/(?:x-)?html/i.test(contentType);
+  if (!isSource) return false;
+  return /kvm|viewer|console|vnc|irc|vconsole|h5|encrypt|login|session|auth|websocket|vkvm|html5/i.test(
+    request.url,
+  );
+}
+
+function hasUsefulSourceSample(request: HttpRequestRecord) {
+  const sample = request.responseBodySummary.sample;
+  if (typeof sample !== 'string') return false;
+  return sample.replace(/<truncated>$/, '').trim().length >= 32;
+}
+
+function viewerSourceItem(network: NetworkSnapshot | null | undefined): ChecklistItem {
+  const candidates = (network?.httpRequests || []).filter(isAdapterSourceRequest);
+  if (candidates.length === 0) {
+    return item({
+      id: 'http.viewer_source',
+      title: '关键 Viewer/认证源码资料',
+      status: 'not_applicable',
+      severity: 'warning',
+      evidence: [],
+      userAction: '',
+    });
+  }
+  const withSample = candidates.filter(hasUsefulSourceSample);
+  if (withSample.length === 0) {
+    return item({
+      id: 'http.viewer_source',
+      title: '关键 Viewer/认证源码资料',
+      status: 'missing',
+      severity: 'warning',
+      evidence: candidates.map(request => request.id),
+      userAction:
+        '已捕获 Viewer/登录相关 HTML 或 JS，但正文样本缺失。请保持采集窗口打开并等待页面脚本加载后再导出，避免离场后无法写新 Adapter。',
+    });
+  }
+  return item({
+    id: 'http.viewer_source',
+    title: '关键 Viewer/认证源码资料',
+    status: 'pass',
+    severity: 'warning',
+    evidence: withSample.map(request => request.id),
+    userAction: '',
   });
 }
 
@@ -376,6 +457,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
         ? '关键登录 POST 或 KVM 启动接口缺少请求/响应正文。请在采集窗口完成登录并打开 KVM 后稍候再导出，避免空正文仍判 YES。'
         : '',
     }),
+    viewerSourceItem(input.network),
     item({
       id: 'ws.kvm.established',
       title: 'KVM WebSocket',
@@ -403,7 +485,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       severity: 'warning',
       evidence: networkCaptureEvidence(input.networkIdle),
       userAction: networkCaptureIncomplete(input.networkIdle)
-        ? '网络仍有未完成请求、响应体读取失败，或 OOPIF 未能启用 Network。请在采集窗口等待片刻后重新导出，避免关键请求缺正文或 Viewer 目标被暂停。'
+        ? '网络仍有未完成请求、响应体读取失败，或弹窗/OOPIF 未能启用 Network。请在采集窗口等待片刻后重新导出，避免关键请求缺正文或 Viewer 目标被暂停。'
         : '',
     }),
     item({

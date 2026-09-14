@@ -806,4 +806,153 @@ describe('createCaptureBrowserController', () => {
       }),
     );
   });
+
+  it('records attachFailures when popup debugger attach fails', async () => {
+    const failingCdp: CdpDebuggerLike = {
+      async attach() {
+        throw new Error('attach denied');
+      },
+      async sendCommand() {
+        return {};
+      },
+      on() {},
+    };
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger(failingCdp, {
+          windowRole: 'popup',
+          captureWindowId: 'popup-kvm',
+        });
+        return {
+          async loadURL() {},
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label) {
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-attach-fail',
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      adapter,
+    });
+
+    await controller.start();
+    await expect(controller.waitForNetworkIdle()).resolves.toMatchObject({
+      timedOut: false,
+      attachFailures: [{ sessionId: 'popup-kvm', reason: 'cdp-attach-failed' }],
+    });
+  });
+
+  it('selects the newest reliable KVM window after the viewer is reopened', async () => {
+    const requestedWindowIds: string[] = [];
+    const screenshotWindowIds: Array<string | undefined> = [];
+    const oldListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const newListeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const makeCdp = (
+      listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void>,
+    ): CdpDebuggerLike => ({
+      async attach() {},
+      async sendCommand() {},
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    });
+    const adapter: CaptureBrowserAdapter = {
+      async createWindow(nextOptions) {
+        await nextOptions.onNetworkDebugger(makeCdp(oldListeners), {
+          windowRole: 'popup',
+          captureWindowId: 'popup-old',
+        });
+        await nextOptions.onNetworkDebugger(makeCdp(newListeners), {
+          windowRole: 'popup',
+          captureWindowId: 'popup-new',
+        });
+        return {
+          async loadURL() {},
+          async selectPageTarget(options) {
+            const windowId = options?.preferredCaptureWindowId || '';
+            requestedWindowIds.push(windowId);
+            if (windowId === 'popup-old') {
+              throw new Error('No KVM viewer surface is ready for page capture');
+            }
+            if (windowId === 'popup-new') {
+              return { windowId: 'popup-new', windowRole: 'popup' };
+            }
+            throw new Error('No KVM viewer surface is ready for page capture');
+          },
+          async collectStorageKeys() {
+            return { localStorageKeys: [], sessionStorageKeys: [] };
+          },
+          async collectSelectorCandidates() {
+            return [];
+          },
+          async captureScreenshot(label, options) {
+            screenshotWindowIds.push(options?.preferredCaptureWindowId);
+            return {
+              packPath: `page/screenshots/${label}.png`,
+              sourcePath: `/tmp/${label}.png`,
+            };
+          },
+          async drainClicks() {
+            return [];
+          },
+          async collectSessionCookies() {
+            return [];
+          },
+          async close() {},
+        };
+      },
+    };
+
+    const controller = createCaptureBrowserController({
+      jobId: 'job-reopen-viewer',
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      adapter,
+    });
+
+    await controller.start();
+    for (const listener of oldListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-old',
+        url: 'wss://10.0.0.10/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-old',
+        response: { opcode: 2, payloadData: 'AAAA' },
+      });
+    }
+    await new Promise(resolve => setTimeout(resolve, 5));
+    for (const listener of newListeners) {
+      listener({}, 'Network.webSocketCreated', {
+        requestId: 'ws-new',
+        url: 'wss://10.0.0.10/kvm',
+      });
+      listener({}, 'Network.webSocketFrameReceived', {
+        requestId: 'ws-new',
+        response: { opcode: 2, payloadData: 'AAAA' },
+      });
+    }
+
+    await controller.collectPageFacts('viewer');
+    expect(requestedWindowIds[0]).toBe('popup-new');
+    expect(screenshotWindowIds).toEqual(['popup-new']);
+  });
 });

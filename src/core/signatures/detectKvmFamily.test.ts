@@ -264,4 +264,15 @@ describe('detectKvmFamily', () => {
     expect(result.primary).toBe('openbmc-h5');
     expect(result.candidates.map(item => item.kvmFamily)).not.toContain('ami-megarac');
   });
+
+  it('does not treat Huawei virtual media port 8208 as KVM WebSocket evidence', () => {
+    const result = detectKvmFamily({
+      traffic: {
+        webSocketUrls: ['wss://10.10.8.107:8208/websocket'],
+      },
+    });
+
+    expect(result.primary).not.toBe('huawei-ibmc');
+    expect(result.candidates.flatMap(item => item.evidence).join(' ')).not.toMatch(/8208/);
+  });
 });

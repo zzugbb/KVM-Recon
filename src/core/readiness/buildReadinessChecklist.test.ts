@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildReadinessChecklist } from './buildReadinessChecklist';
+import { buildReadinessChecklist, kvmWebSocketEvidence, reliableKvmWindows } from './buildReadinessChecklist';
 
 const completeProbe = {
   basic: {
@@ -1090,5 +1090,216 @@ describe('buildReadinessChecklist', () => {
     const fingerprint = checklist.items.find(item => item.id === 'bmc.fingerprint');
     expect(fingerprint?.status).toBe('not_applicable');
     expect(fingerprint?.evidence[0]).toMatch(/^unknown-h5:/);
+  });
+
+  it('does not treat uplink-only KVM WebSocket frames as established', () => {
+    const network = {
+      httpRequests: completeNetwork.httpRequests,
+      webSockets: [
+        {
+          id: 'ws-up',
+          createdAt: '2026-09-14T12:00:03.000+08:00',
+          url: 'wss://10.0.0.10/kvm',
+          subProtocols: ['binary'],
+          requestHeaders: {},
+          binaryFrameCount: 1,
+          textFrameCount: 0,
+          tags: ['kvm-video' as const],
+        },
+      ],
+      webSocketFrames: [
+        {
+          socketId: 'ws-up',
+          timestamp: '2026-09-14T12:00:03.100+08:00',
+          direction: 'up' as const,
+          opcode: 'binary' as const,
+          bytes: 16,
+          headHex: '41504350',
+          sampled: true,
+          magic: 'DELL_APCP',
+        },
+      ],
+    };
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network,
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(kvmWebSocketEvidence(network)).toEqual([]);
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+    expect(checklist.readiness).toBe('NO');
+  });
+
+  it('does not treat Huawei virtual media port 8208 as a KVM WebSocket', () => {
+    const network = {
+      httpRequests: completeNetwork.httpRequests,
+      webSockets: [
+        {
+          id: 'ws-vmedia',
+          createdAt: '2026-09-14T12:00:03.000+08:00',
+          url: 'wss://10.10.8.107:8208/websocket',
+          subProtocols: [],
+          requestHeaders: {},
+          binaryFrameCount: 2,
+          textFrameCount: 0,
+          tags: ['vmedia' as const],
+        },
+      ],
+      webSocketFrames: [
+        {
+          socketId: 'ws-vmedia',
+          timestamp: '2026-09-14T12:00:03.100+08:00',
+          direction: 'down' as const,
+          opcode: 'binary' as const,
+          bytes: 8,
+          headHex: 'fef60004',
+          sampled: true,
+          magic: 'HUAWEI_KVM_FEF6',
+        },
+      ],
+    };
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network,
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(kvmWebSocketEvidence(network)).toEqual([]);
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+  });
+
+  it('prefers the newest reliable KVM window after the viewer is reopened', () => {
+    expect(
+      reliableKvmWindows({
+        httpRequests: completeNetwork.httpRequests,
+        webSockets: [
+          {
+            id: 'ws-old',
+            createdAt: '2026-09-14T12:00:03.000+08:00',
+            url: 'wss://10.0.0.10/kvm',
+            subProtocols: ['binary'],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['kvm-video' as const],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-old',
+          },
+          {
+            id: 'ws-new',
+            createdAt: '2026-09-14T12:01:03.000+08:00',
+            url: 'wss://10.0.0.10/kvm',
+            subProtocols: ['binary'],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['kvm-video' as const],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-new',
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-old',
+            timestamp: '2026-09-14T12:00:03.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+          },
+          {
+            socketId: 'ws-new',
+            timestamp: '2026-09-14T12:01:03.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+          },
+        ],
+      }).map(window => window.captureWindowId),
+    ).toEqual(['popup-new', 'popup-old']);
+  });
+
+  it('downgrades to PARTIAL when Viewer HTML/JS was seen but no source sample was kept', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          {
+            id: 'viewer-js',
+            timestamp: '2026-09-14T12:00:02.500+08:00',
+            method: 'GET',
+            url: 'https://10.0.0.10/html5viewer.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: { bytes: 800000, redactedFields: [] },
+            responseBodyCaptured: false,
+            responseBodySkippedReason: 'response-too-large:800000',
+            tags: [],
+          },
+        ],
+        webSockets: completeNetwork.webSockets,
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'missing',
+      evidence: ['viewer-js'],
+    });
+  });
+
+  it('keeps YES when Viewer HTML/JS samples were captured', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          {
+            id: 'viewer-js',
+            timestamp: '2026-09-14T12:00:02.500+08:00',
+            method: 'GET',
+            url: 'https://10.0.0.10/html5viewer.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: {
+              bytes: 1200,
+              redactedFields: [],
+              sample: `function startKvmViewer() {${'A'.repeat(64)}}`,
+            },
+            responseBodyCaptured: true,
+            tags: [],
+          },
+        ],
+        webSockets: completeNetwork.webSockets,
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')?.status).toBe('pass');
+    expect(checklist.readiness).toBe('YES');
   });
 });

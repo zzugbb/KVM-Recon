@@ -68,6 +68,14 @@
       "userAction": ""
     },
     {
+      "id": "http.viewer_source",
+      "title": "关键 Viewer/认证源码资料",
+      "status": "not_applicable",
+      "severity": "warning",
+      "evidence": [],
+      "userAction": ""
+    },
+    {
       "id": "ws.kvm.established",
       "title": "KVM WebSocket",
       "status": "pass",

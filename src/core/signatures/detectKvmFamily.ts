@@ -1,4 +1,4 @@
-import { KNOWN_KVM_WEBSOCKET_PATTERN } from './kvmUrlPatterns';
+import { HUAWEI_KVM_WS_PATTERN, KNOWN_KVM_WEBSOCKET_PATTERN } from './kvmUrlPatterns';
 
 export interface ProbeSignatureInput {
   redfish?: {
@@ -182,7 +182,7 @@ function detectHuawei(input: ProbeSignatureInput): KvmFamilyCandidate | null {
   const kvmServiceHttp = urlMatches(urls(input), /\/kvmservice(\/|\?|$)/i);
   const setKvmKeyHttp = urlMatches(urls(input), /setkvmkey|kvmservice\.setkvmkey/i);
   const startH5KvmHttp = urlMatches(urls(input), /kvmservice\.starth5kvm/i);
-  const huaweiWs = urlMatches(wsUrls(input), /:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/i);
+  const huaweiWs = urlMatches(wsUrls(input), HUAWEI_KVM_WS_PATTERN);
   const huaweiFrame = frameHeadHexes(input).some(head => /^fef6/i.test(head));
   const kvmServicePath = Boolean(input.paths?.kvmService);
   const setKvmKeyPath = Boolean(input.paths?.setKvmKey);

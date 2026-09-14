@@ -9,6 +9,7 @@ import type {
   CapturePageTarget,
 } from './createCaptureBrowserController';
 import { pickCaptureWindow } from '../../core/browser/pickCaptureWindow';
+import { popupWindowFacts } from '../../core/browser/popupWindowFacts';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 
@@ -110,9 +111,6 @@ export function createElectronCaptureBrowserAdapter(
       const windowOpeners = new Map<BrowserWindow, string>();
       let foreground: BrowserWindow | null = null;
       let debuggerCount = 0;
-      let pendingPopup:
-        | { url: string; disposition: string; openerCaptureWindowId: string }
-        | null = null;
 
       function activeWindow() {
         if (windowAlive(foreground)) return foreground;
@@ -283,12 +281,7 @@ export function createElectronCaptureBrowserAdapter(
             `capture-renderer-gone reason=${details.reason} exit=${details.exitCode}`,
           );
         });
-        targetWindow.webContents.setWindowOpenHandler(details => {
-          pendingPopup = {
-            url: details.url,
-            disposition: details.disposition,
-            openerCaptureWindowId: String(targetWindow.webContents.id),
-          };
+        targetWindow.webContents.setWindowOpenHandler(_details => {
           return {
             action: 'allow',
             overrideBrowserWindowOptions: {
@@ -302,29 +295,51 @@ export function createElectronCaptureBrowserAdapter(
             },
           };
         });
-        targetWindow.webContents.on('did-create-window', childWindow => {
-          const openerCaptureWindowId =
-            pendingPopup?.openerCaptureWindowId || String(targetWindow.webContents.id);
-          options.onPopup({
-            url: pendingPopup?.url || childWindow.webContents.getURL(),
-            disposition: pendingPopup?.disposition || 'new-window',
-            windowRole: 'popup',
-            captureWindowId: String(childWindow.webContents.id),
-            openerCaptureWindowId,
+        targetWindow.webContents.on('did-create-window', (childWindow, details) => {
+          const facts = popupWindowFacts({
+            childCaptureWindowId: String(childWindow.webContents.id),
+            openerCaptureWindowId: String(targetWindow.webContents.id),
+            details,
+            fallbackUrl: childWindow.webContents.getURL(),
           });
-          pendingPopup = null;
-          void attachWindow(childWindow, true, { openerCaptureWindowId });
+          options.onPopup(facts);
+          void attachWindow(childWindow, true, {
+            openerCaptureWindowId: facts.openerCaptureWindowId,
+          }).catch(error => {
+            // 捕获弹窗窗口挂载失败：debugger.attach、Network.enable 或页面脚本注入拒绝
+            // 策略：记入 attachFailures，避免未处理拒绝；KVM 弹窗仍可显示但清单 PARTIAL
+            options.onAttachFailure?.(facts.captureWindowId, 'popup-attach-failed');
+            recordCaptureWindowLog(
+              `capture-popup-attach-failed window=${facts.captureWindowId}`,
+            );
+            void error;
+          });
         });
         if (attachDebugger) {
-          await options.onNetworkDebugger(
-            targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
-            {
-              windowRole: windowRoles.get(targetWindow) || 'main',
-              captureWindowId: String(targetWindow.webContents.id),
-              openerCaptureWindowId: windowOpeners.get(targetWindow),
-            },
-          );
-          recordCaptureWindowLog(`capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`);
+          try {
+            await options.onNetworkDebugger(
+              targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
+              {
+                windowRole: windowRoles.get(targetWindow) || 'main',
+                captureWindowId: String(targetWindow.webContents.id),
+                openerCaptureWindowId: windowOpeners.get(targetWindow),
+              },
+            );
+            recordCaptureWindowLog(
+              `capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`,
+            );
+          } catch (error) {
+            // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
+            // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝
+            options.onAttachFailure?.(
+              String(targetWindow.webContents.id),
+              'cdp-attach-failed',
+            );
+            recordCaptureWindowLog(
+              `capture-cdp-attach-failed window=${targetWindow.webContents.id}`,
+            );
+            void error;
+          }
         }
       }
 

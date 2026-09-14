@@ -25,6 +25,12 @@ interface BuildLiveCaptureSnapshotInput {
   probe?: ProbeBmcTargetResult | null;
   page?: BrowserTimelineJson | null;
   network?: NetworkSnapshot | null;
+  networkIdle?: {
+    timedOut: boolean;
+    pendingTaskCount: number;
+    inFlightRequestIds: string[];
+    attachFailures?: Array<{ sessionId: string; reason: string }>;
+  } | null;
 }
 
 export interface LiveCaptureSnapshot {
@@ -37,6 +43,7 @@ export function buildLiveCaptureSnapshot(input: BuildLiveCaptureSnapshotInput): 
     probe: input.probe,
     page: input.page,
     network: input.network,
+    networkIdle: input.networkIdle,
     redaction: {
       status: 'pass',
       redactedFields: 0,

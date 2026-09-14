@@ -830,4 +830,77 @@ describe('attachCdpNetworkCapture', () => {
     expect(requests[0]?.responseBodySkippedReason).toBe('binary-resource:image');
     expect(requests[1]?.responseBodySkippedReason).toBe(`response-too-large:${2 * 1024 * 1024}`);
   });
+
+  it('records attachFailures when the root debugger.attach rejects', async () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, idleQuietMs: 10, idleTimeoutMs: 200 });
+    const cdp: CdpDebuggerLike = {
+      async attach() {
+        throw new Error('attach denied');
+      },
+      async sendCommand() {
+        return {};
+      },
+      on() {},
+    };
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      captureWindowId: 'popup-kvm',
+    });
+
+    await expect(recorder.waitForIdle()).resolves.toMatchObject({
+      timedOut: false,
+      attachFailures: [{ sessionId: 'popup-kvm', reason: 'cdp-attach-failed' }],
+    });
+  });
+
+  it('keeps a truncated prefix for oversized Viewer scripts instead of skipping them', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const body = `function startKvm() {}\n${'A'.repeat(1.5 * 1024 * 1024)}`;
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command) {
+        if (command === 'Network.getResponseBody') {
+          return { body, base64Encoded: false };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      request: { method: 'GET', url: 'https://bmc.example/html5viewer.js', headers: {} },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      response: {
+        status: 200,
+        mimeType: 'application/javascript',
+        headers: { 'content-type': 'application/javascript' },
+      },
+    });
+    emit('Network.loadingFinished', {
+      requestId: 'viewer-js',
+      encodedDataLength: 1.5 * 1024 * 1024,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request?.responseBodyCaptured).toBe(true);
+    expect(request?.responseBodySkippedReason).toMatch(/^response-truncated:/);
+    expect(String(request?.responseBodySummary.sample)).toContain('function startKvm');
+    expect(String(request?.responseBodySummary.sample).length).toBeLessThan(body.length);
+  });
 });
