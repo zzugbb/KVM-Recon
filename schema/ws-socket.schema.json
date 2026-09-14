@@ -26,6 +26,7 @@
       "items": { "enum": ["kvm-video", "vmedia", "unknown"] }
     },
     "windowRole": { "enum": ["main", "popup"] },
-    "captureWindowId": { "type": "string" }
+    "captureWindowId": { "type": "string" },
+    "openerCaptureWindowId": { "type": "string" }
   }
 }

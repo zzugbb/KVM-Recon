@@ -1,5 +1,5 @@
 import type { ProbeSignatureInput } from './detectKvmFamily';
-import { DELL_VCONSOLE_HTTP_PATTERN, DELL_VCONSOLE_WS_PATTERN, HPE_IRCPORT_WS_PATTERN } from './kvmUrlPatterns';
+import { DELL_VCONSOLE_HTTP_PATTERN, HPE_IRCPORT_WS_PATTERN } from './kvmUrlPatterns';
 
 export interface ProductHintInput {
   redfish?: ProbeSignatureInput['redfish'];
@@ -41,6 +41,14 @@ function hasUrl(input: ProductHintInput, pattern: RegExp) {
   return [...(input.traffic?.httpUrls || []), ...(input.traffic?.webSocketUrls || [])].some(url =>
     pattern.test(url),
   );
+}
+
+function dellVconsoleEvidence(input: ProductHintInput) {
+  const urls = [...(input.traffic?.httpUrls || []), ...(input.traffic?.webSocketUrls || [])];
+  const hints: string[] = [];
+  if (urls.some(url => /\/vmc\/vconsole/i.test(url))) hints.push('ws:/vmc/vconsole');
+  if (urls.some(url => /\/vnc\/vconsole/i.test(url))) hints.push('ws:/vnc/vconsole');
+  return hints;
 }
 
 function hasFrame(input: ProductHintInput, pattern: RegExp) {
@@ -95,7 +103,7 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
     candidate('dell-idrac-h5', 0.55, [
       /dell|idrac|poweredge/i.test(text) ? 'vendor/product:Dell iDRAC' : '',
       hasUrl(input, /\/sysmgmt\/2015\/bmc\/session/i) ? 'http:/sysmgmt/2015/bmc/session' : '',
-      hasUrl(input, DELL_VCONSOLE_WS_PATTERN) ? 'ws:/vmc/vconsole' : '',
+      ...dellVconsoleEvidence(input),
       hasUrl(input, /:5900\/(?:$|\?|vkvm\/?)/i) ? 'ws:5900' : '',
       hasUrl(input, DELL_VCONSOLE_HTTP_PATTERN) ? 'http:/restgui/html5viewer' : '',
       hasFrame(input, /^RFB 003\.008/) ? 'frame:RFB 003.008' : '',

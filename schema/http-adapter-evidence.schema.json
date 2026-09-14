@@ -43,6 +43,7 @@
           },
           "windowRole": { "enum": ["main", "popup"] },
           "captureWindowId": { "type": "string" },
+          "openerCaptureWindowId": { "type": "string" },
           "firstFrame": { "type": "object" }
         }
       }
@@ -55,6 +56,7 @@
         "properties": {
           "socketId": { "type": "string" },
           "captureWindowId": { "type": "string" },
+          "openerCaptureWindowId": { "type": "string" },
           "windowRole": { "type": "string" },
           "likelyLoginHttpIds": {
             "type": "array",
@@ -101,7 +103,8 @@
         "requestBodySample": {},
         "responseBodySample": {},
         "windowRole": { "enum": ["main", "popup"] },
-        "captureWindowId": { "type": "string" }
+        "captureWindowId": { "type": "string" },
+        "openerCaptureWindowId": { "type": "string" }
       }
     }
   }

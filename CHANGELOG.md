@@ -10,10 +10,12 @@
 - 收紧 KVM WebSocket 可靠帧判定：静态 KVM 资源不再作为启动链，通用二进制 `/websocket` 的弱 AMI 帧必须关联同窗口、短时间内的成功 KVM 启动请求。
 - 关键登录 POST / KVM 启动接口缺少请求或响应正文时降为 PARTIAL；CDP `hasPostData` 无内联 body 时调用 `Network.getRequestPostData`。
 - 弱 AMI 帧只关联明确 token/启动接口，不再信任宽泛 `kvm-entry`（如 `/api/console/status`）。
-- HTTP/WS/页面事件/截图按 `captureWindowId` 关联；`main/popup` 仅作展示。多弹窗不再共用 `popup` 角色误关联。
+- HTTP/WS/页面事件/截图按 `captureWindowId` 关联，并记录 `openerCaptureWindowId`；主窗口 token + 子窗口 WS 视为同一上下文，兄弟弹窗不关联。`main/popup` 仅作展示。
 - `adapter-evidence.json` 与就绪判定共用同一套窗口/两分钟/成功请求关联。
-- OOPIF auto-attach 使用 `waitForDebuggerOnStart`，先 `Network.enable` 再恢复目标。
-- 戴尔 iDRAC HTML5 同时识别 `/vmc/vconsole` 与 `/vnc/vconsole`。
+- OOPIF auto-attach 使用 `waitForDebuggerOnStart`，先 `Network.enable` 再恢复目标；`Network.enable` 失败时仍解除暂停并记入 `attachFailures`，清单降为 PARTIAL。
+- 自动 viewer 截图在指定 `captureWindowId` 时不再退回其他弹窗。
+- 关键 KVM token/启动接口遇到 `loading-failed` 或 `response-too-large` 时降为 PARTIAL。
+- 戴尔 iDRAC HTML5 同时识别 `/vmc/vconsole` 与 `/vnc/vconsole`，product hint 按实际路径输出。
 - 手动补拍新协议 Viewer 时记录 `operatorConfirmed`并返回实际采集结果，操作员确认不会自动让 WebSocket 证据通过。
 - Popup 页面的点击、storage、截图与 selector 绑定同一窗口；按窗口和页面角色聚合全部 storage/selector 快照，并支持 iframe/OOPIF Viewer 候选。
 - 登录后复验按每个实际探测 URL 读取符合 domain/path 的 BMC Cookie，不再丢失 `/api` 或 `/redfish` 路径 Cookie。

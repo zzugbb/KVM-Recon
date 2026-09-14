@@ -3,7 +3,9 @@ import { EXPLICIT_KVM_LAUNCH_URL_PATTERN } from '../signatures/kvmUrlPatterns';
 
 export const KVM_LAUNCH_ASSOCIATION_MS = 120_000;
 
-const ACCEPTABLE_RESPONSE_BODY_SKIP = /^(?:redirect-response|streaming-resource|binary-resource:|unsupported-content-type:|response-too-large:|inline-or-blob-url|loading-failed)/;
+const ACCEPTABLE_RESPONSE_BODY_SKIP =
+  /^(?:redirect-response|streaming-resource|binary-resource:|unsupported-content-type:|inline-or-blob-url)/;
+const CRITICAL_RESPONSE_BODY_SKIP = /^(?:get-response-body-failed|loading-failed|response-too-large)/;
 
 function isStaticAssetUrl(url: string) {
   return /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(url);
@@ -56,12 +58,21 @@ export function isExplicitKvmLaunchRequest(
   return EXPLICIT_KVM_LAUNCH_URL_PATTERN.test(request.url);
 }
 
-export function sameCaptureContext(
-  left?: { captureWindowId?: string; windowRole?: string },
-  right?: { captureWindowId?: string; windowRole?: string },
-) {
-  if (left?.captureWindowId || right?.captureWindowId) {
-    return Boolean(left?.captureWindowId) && left?.captureWindowId === right?.captureWindowId;
+type CaptureContext = {
+  captureWindowId?: string;
+  openerCaptureWindowId?: string;
+  windowRole?: string;
+};
+
+export function sameCaptureContext(left?: CaptureContext, right?: CaptureContext) {
+  const leftId = left?.captureWindowId;
+  const rightId = right?.captureWindowId;
+  if (leftId || rightId) {
+    if (leftId && rightId && leftId === rightId) return true;
+    // 主窗口请求 token、子窗口建立 WS：直接父子算同一采集上下文，兄弟弹窗不算
+    if (leftId && leftId === right?.openerCaptureWindowId) return true;
+    if (rightId && rightId === left?.openerCaptureWindowId) return true;
+    return false;
   }
   if (left?.windowRole || right?.windowRole) {
     return Boolean(left?.windowRole) && left?.windowRole === right?.windowRole;
@@ -115,7 +126,7 @@ export function isCriticalRequestBodyMissing(request: HttpRequestRecord) {
 
 export function isCriticalResponseBodyMissing(request: HttpRequestRecord) {
   const reason = request.responseBodySkippedReason || '';
-  if (reason === 'get-response-body-failed') return true;
+  if (CRITICAL_RESPONSE_BODY_SKIP.test(reason)) return true;
   if (ACCEPTABLE_RESPONSE_BODY_SKIP.test(reason)) return false;
   if (request.responseBodySummary.bytes > 0) return false;
   if (request.responseBodyCaptured) return false;

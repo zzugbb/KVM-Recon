@@ -49,7 +49,8 @@
       "items": { "enum": ["login", "kvm-token", "kvm-entry"] }
     },
     "windowRole": { "enum": ["main", "popup"] },
-    "captureWindowId": { "type": "string" }
+    "captureWindowId": { "type": "string" },
+    "openerCaptureWindowId": { "type": "string" }
   },
   "definitions": {
     "bodySummary": {

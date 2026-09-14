@@ -28,6 +28,7 @@ interface AttachCdpNetworkCaptureInput {
   now?: () => string;
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
+  openerCaptureWindowId?: string;
 }
 
 type HeaderMap = Record<string, string>;
@@ -242,13 +243,21 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
   }
 
   async function enableAttachedTarget(attachedSessionId: string) {
-    await input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
     try {
-      await input.cdp.sendCommand('Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
+      await input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
     } catch (error) {
-      // 捕获 iframe 未处于 waitForDebugger：旧目标或已自行恢复
-      // 策略：Network.enable 已完成即可继续采集，不阻断主窗口
+      // 捕获 OOPIF Network.enable 失败：目标可能不支持 Network 域或会话已失效
+      // 策略：记入 attachFailures 让清单 PARTIAL，finally 仍解除 waitForDebugger，避免 Viewer 永久冻结
+      input.recorder.markAttachFailure(attachedSessionId, 'network-enable-failed');
       void error;
+    } finally {
+      try {
+        await input.cdp.sendCommand('Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
+      } catch (error) {
+        // 捕获 iframe 未处于 waitForDebugger：旧目标或已自行恢复
+        // 策略：不阻断主窗口采集
+        void error;
+      }
     }
   }
 
@@ -316,6 +325,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         redirectedFromId,
         windowRole: input.windowRole,
         captureWindowId: input.captureWindowId,
+        openerCaptureWindowId: input.openerCaptureWindowId,
       });
       if (!inlinePostData && request.hasPostData === true) {
         input.recorder.trackPending(recordRequestPostData(requestId, id, sessionId));
@@ -408,6 +418,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         requestHeaders: {},
         windowRole: input.windowRole,
         captureWindowId: input.captureWindowId,
+        openerCaptureWindowId: input.openerCaptureWindowId,
       });
       return;
     }

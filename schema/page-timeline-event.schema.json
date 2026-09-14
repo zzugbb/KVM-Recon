@@ -23,6 +23,7 @@
         "disposition": { "type": "string" },
         "windowRole": { "enum": ["main", "popup"] },
         "captureWindowId": { "type": "string" },
+        "openerCaptureWindowId": { "type": "string" },
         "timestamp": { "type": "string" }
       }
     },

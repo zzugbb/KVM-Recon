@@ -276,6 +276,47 @@ describe('attachCdpNetworkCapture', () => {
     });
   });
 
+  it('resumes an OOPIF even when Network.enable fails and records the attach failure', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const sentCommands: Array<{ command: string; sessionId?: string }> = [];
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, idleQuietMs: 10, idleTimeoutMs: 200 });
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, _params, sessionId) {
+        sentCommands.push({ command, sessionId });
+        if (command === 'Network.enable' && sessionId === 'oopif-session') {
+          throw new Error('Network.enable failed');
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-08-24T12:00:00.000+08:00',
+    });
+
+    for (const listener of listeners) {
+      listener({}, 'Target.attachedToTarget', { sessionId: 'oopif-session' }, undefined);
+    }
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sentCommands).toContainEqual({
+      command: 'Runtime.runIfWaitingForDebugger',
+      sessionId: 'oopif-session',
+    });
+    await expect(recorder.waitForIdle()).resolves.toMatchObject({
+      timedOut: false,
+      attachFailures: [{ sessionId: 'oopif-session', reason: 'network-enable-failed' }],
+    });
+  });
+
   it('loads POST bodies via Network.getRequestPostData when CDP omits postData', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });

@@ -375,6 +375,56 @@ describe('buildReadinessChecklist', () => {
     });
   });
 
+  it('correlates a main-window KVM token with a child popup WebSocket', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-parent-child', events: [] },
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[1],
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            windowRole: 'main' as const,
+            captureWindowId: 'win-main',
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-child',
+            createdAt: '2026-09-14T10:00:02.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-kvm',
+            openerCaptureWindowId: 'win-main',
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-child',
+            timestamp: '2026-09-14T10:00:02.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'pass',
+      evidence: ['ws-child'],
+    });
+  });
+
   it('downgrades to PARTIAL when login Set-Cookie exists but POST body was not captured', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,
@@ -453,6 +503,32 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.items.find(item => item.id === 'http.key_payload')?.evidence).toContain(
       'token-1:kvm-request-body-missing',
     );
+  });
+
+  it('downgrades to PARTIAL when a KVM token response was loading-failed or too large', () => {
+    for (const reason of ['loading-failed', 'response-too-large:2000000']) {
+      const checklist = buildReadinessChecklist({
+        probe: completeProbe,
+        page: pageWithScreenshot,
+        network: {
+          httpRequests: [
+            completeNetwork.httpRequests[0],
+            {
+              ...completeNetwork.httpRequests[1],
+              responseBodySummary: { bytes: 0, redactedFields: [] },
+              responseBodyCaptured: false,
+              responseBodySkippedReason: reason,
+            },
+          ],
+          webSockets: completeNetwork.webSockets,
+          webSocketFrames: completeNetwork.webSocketFrames,
+        },
+        redaction: { status: 'pass', redactedFields: 2 },
+      });
+
+      expect(checklist.readiness).toBe('PARTIAL');
+      expect(checklist.items.find(item => item.id === 'http.key_payload')?.status).toBe('missing');
+    }
   });
 
   it('accepts a weak AMI frame only when a successful launch request is recent and in the same window', () => {
@@ -735,6 +811,27 @@ describe('buildReadinessChecklist', () => {
         'pendingTaskCount=1',
         'inFlight=session-1::request-9',
       ],
+    });
+  });
+
+  it('marks an otherwise complete capture PARTIAL when OOPIF Network.enable failed', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 0,
+        inFlightRequestIds: [],
+        attachFailures: [{ sessionId: 'oopif-session', reason: 'network-enable-failed' }],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: expect.arrayContaining(['attachFailed=oopif-session:network-enable-failed']),
     });
   });
 

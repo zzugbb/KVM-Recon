@@ -109,6 +109,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         tags: request.tags,
         ...(request.windowRole ? { windowRole: request.windowRole } : {}),
         ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
+        ...(request.openerCaptureWindowId ? { openerCaptureWindowId: request.openerCaptureWindowId } : {}),
         requestJsonKeys: request.requestBodySummary.jsonKeys || [],
         responseJsonKeys: request.responseBodySummary.jsonKeys || [],
         redactedFields: [
@@ -134,6 +135,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         tags: request.tags,
         ...(request.windowRole ? { windowRole: request.windowRole } : {}),
         ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
+        ...(request.openerCaptureWindowId ? { openerCaptureWindowId: request.openerCaptureWindowId } : {}),
         requestBodySample: request.requestBodySummary.sample || null,
         responseBodySample: request.responseBodySummary.sample || null,
         responseStructure: request.responseStructure,
@@ -155,6 +157,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         tags: socket.tags,
         ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
         ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
+        ...(socket.openerCaptureWindowId ? { openerCaptureWindowId: socket.openerCaptureWindowId } : {}),
         firstFrame: firstFrame
           ? {
               direction: firstFrame.direction,
@@ -169,6 +172,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
     correlations: input.webSockets.map(socket => ({
         socketId: socket.id,
         ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
+        ...(socket.openerCaptureWindowId ? { openerCaptureWindowId: socket.openerCaptureWindowId } : {}),
         ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
         likelyLoginHttpIds: correlatedLoginHttpIds(input.httpRequests, socket),
         likelyKvmLaunchHttpIds: correlatedKvmLaunchHttpIds(input.httpRequests, socket),

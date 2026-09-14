@@ -32,6 +32,7 @@ interface HttpRequestInput {
   redirectedFromId?: string;
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
+  openerCaptureWindowId?: string;
 }
 
 interface HttpResponseInput {
@@ -93,6 +94,7 @@ export interface HttpRequestRecord {
   tags: HttpTag[];
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
+  openerCaptureWindowId?: string;
 }
 
 interface WebSocketCreatedInput {
@@ -103,6 +105,7 @@ interface WebSocketCreatedInput {
   requestHeaders: HeaderMap;
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
+  openerCaptureWindowId?: string;
 }
 
 interface WebSocketHandshakeInput {
@@ -141,6 +144,7 @@ export interface WebSocketRecord {
   tags: WebSocketTag[];
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
+  openerCaptureWindowId?: string;
 }
 
 interface WebSocketHandshakeResponseInput {
@@ -170,6 +174,7 @@ export interface NetworkIdleResult {
   timedOut: boolean;
   pendingTaskCount: number;
   inFlightRequestIds: string[];
+  attachFailures?: Array<{ sessionId: string; reason: string }>;
 }
 
 type HttpResponseStructure = NonNullable<HttpRequestRecord['responseStructure']>;
@@ -457,6 +462,13 @@ function detectFrameMagic(payload: string | Uint8Array): string | undefined {
   return undefined;
 }
 
+function lineageFields(input?: { captureWindowId?: string; openerCaptureWindowId?: string }) {
+  return {
+    ...(input?.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
+    ...(input?.openerCaptureWindowId ? { openerCaptureWindowId: input.openerCaptureWindowId } : {}),
+  };
+}
+
 function toHex(bytes: Uint8Array, take: number) {
   return Array.from(bytes.slice(0, take))
     .map(byte => byte.toString(16).padStart(2, '0'))
@@ -473,6 +485,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const sampledFrameCounts = new Map<string, number>();
   const sampledFrameDirections = new Map<string, Set<'up' | 'down'>>();
   const sampledFrameMagic = new Map<string, Set<string>>();
+  const attachFailures: Array<{ sessionId: string; reason: string }> = [];
   let lastActivityAt = Date.now();
   let paused = false;
 
@@ -487,12 +500,24 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   return {
     trackPending(task: Promise<unknown>) {
       markActivity();
-      pendingTasks.add(task);
-      void task.finally(() => {
-        pendingTasks.delete(task);
+      const tracked = Promise.resolve(task).then(
+        value => value,
+        error => {
+          // 捕获后台 CDP 任务失败：OOPIF Network.enable、读正文等
+          // 策略：吞掉拒绝以免未处理 Promise，失败原因由调用方写入 attachFailures
+          void error;
+        },
+      );
+      pendingTasks.add(tracked);
+      void tracked.finally(() => {
+        pendingTasks.delete(tracked);
         markActivity();
       });
-      return task;
+      return tracked;
+    },
+    markAttachFailure(sessionId: string, reason: string) {
+      attachFailures.push({ sessionId, reason });
+      markActivity();
     },
     async waitForIdle(): Promise<NetworkIdleResult> {
       const quietMs = options.idleQuietMs ?? 120;
@@ -508,6 +533,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
             timedOut: false,
             pendingTaskCount: 0,
             inFlightRequestIds: [],
+            ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
           };
         }
         await sleep(Math.min(quietMs, 25));
@@ -516,6 +542,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         timedOut: true,
         pendingTaskCount: pendingTasks.size,
         inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
+        ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
       };
     },
     markHttpRequestFinished(id: string) {
@@ -570,7 +597,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         responseStructure: structureBody(),
         tags: tagHttp(input),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
-        ...(input.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
+        ...lineageFields(input),
       });
     },
     recordHttpRequestBody(input: HttpRequestBodyInput) {
@@ -655,7 +682,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         droppedFrameCount: 0,
         tags: tagWebSocket(input.url),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
-        ...(input.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
+        ...lineageFields(input),
       });
     },
     recordWebSocketHandshake(input: WebSocketHandshakeInput) {

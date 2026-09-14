@@ -8,6 +8,7 @@ import type {
   CaptureBrowserWindowHandle,
   CapturePageTarget,
 } from './createCaptureBrowserController';
+import { pickCaptureWindow } from '../../core/browser/pickCaptureWindow';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 
@@ -106,8 +107,12 @@ export function createElectronCaptureBrowserAdapter(
 
       const windows = new Set<BrowserWindow>();
       const windowRoles = new Map<BrowserWindow, 'main' | 'popup'>();
+      const windowOpeners = new Map<BrowserWindow, string>();
       let foreground: BrowserWindow | null = null;
       let debuggerCount = 0;
+      let pendingPopup:
+        | { url: string; disposition: string; openerCaptureWindowId: string }
+        | null = null;
 
       function activeWindow() {
         if (windowAlive(foreground)) return foreground;
@@ -120,9 +125,11 @@ export function createElectronCaptureBrowserAdapter(
       }
 
       function pageTarget(targetWindow: BrowserWindow): CapturePageTarget {
+        const openerCaptureWindowId = windowOpeners.get(targetWindow);
         return {
           windowId: String(targetWindow.webContents.id),
           windowRole: windowRoles.get(targetWindow) || 'main',
+          ...(openerCaptureWindowId ? { openerCaptureWindowId } : {}),
         };
       }
 
@@ -169,43 +176,16 @@ export function createElectronCaptureBrowserAdapter(
         preferredWindowRole?: 'main' | 'popup';
         preferredCaptureWindowId?: string;
       }) {
-        const alive = [...windows].filter(windowAlive);
-        const byId = options?.preferredCaptureWindowId
-          ? alive.find(candidate => String(candidate.webContents.id) === options.preferredCaptureWindowId)
-          : undefined;
-        if (byId && !options?.requireKvmSurface) return byId;
-        if (byId && (await windowHasKvmSurface(byId))) return byId;
-        const preferred = alive.filter(
-          candidate => !options?.preferredWindowRole || windowRoles.get(candidate) === options.preferredWindowRole,
-        );
-        const ordered = [...preferred, ...alive.filter(candidate => !preferred.includes(candidate))];
-        if (!options?.requireKvmSurface) {
-          if (
-            windowAlive(foreground) &&
-            (!options?.preferredWindowRole ||
-              windowRoles.get(foreground) === options.preferredWindowRole)
-          ) {
-            return foreground;
-          }
-          return ordered[0] || activeWindow();
-        }
-        if (
-          windowAlive(foreground) &&
-          (!options?.preferredWindowRole || windowRoles.get(foreground) === options.preferredWindowRole) &&
-          (await windowHasKvmSurface(foreground))
-        ) {
-          return foreground;
-        }
-        for (const candidate of ordered) {
-          if (candidate !== foreground && (await windowHasKvmSurface(candidate))) {
-            return candidate;
-          }
-        }
-        if (options?.requireKvmSurface && options.preferredWindowRole && preferred.length > 0) {
-          return preferred[0];
-        }
-        if (options?.requireKvmSurface) return null;
-        return activeWindow();
+        return pickCaptureWindow({
+          alive: [...windows].filter(windowAlive),
+          foreground,
+          preferredCaptureWindowId: options?.preferredCaptureWindowId,
+          preferredWindowRole: options?.preferredWindowRole,
+          requireKvmSurface: options?.requireKvmSurface,
+          windowId: candidate => String(candidate.webContents.id),
+          windowRole: candidate => windowRoles.get(candidate) || 'main',
+          hasKvmSurface: windowHasKvmSurface,
+        });
       }
 
       async function installPageProbe(targetWindow: BrowserWindow) {
@@ -218,11 +198,18 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
-      async function attachWindow(targetWindow: BrowserWindow, attachDebugger: boolean) {
+      async function attachWindow(
+        targetWindow: BrowserWindow,
+        attachDebugger: boolean,
+        lineage?: { openerCaptureWindowId?: string },
+      ) {
         windows.add(targetWindow);
         foreground = targetWindow;
         if (!windowRoles.has(targetWindow)) {
           windowRoles.set(targetWindow, debuggerCount++ === 0 ? 'main' : 'popup');
+        }
+        if (lineage?.openerCaptureWindowId) {
+          windowOpeners.set(targetWindow, lineage.openerCaptureWindowId);
         }
         targetWindow.on('focus', () => {
           if (windowAlive(targetWindow)) foreground = targetWindow;
@@ -230,6 +217,7 @@ export function createElectronCaptureBrowserAdapter(
         targetWindow.on('closed', () => {
           windows.delete(targetWindow);
           windowRoles.delete(targetWindow);
+          windowOpeners.delete(targetWindow);
           if (foreground === targetWindow) {
             foreground = [...windows].find(windowAlive) || null;
           }
@@ -296,12 +284,11 @@ export function createElectronCaptureBrowserAdapter(
           );
         });
         targetWindow.webContents.setWindowOpenHandler(details => {
-          options.onPopup({
+          pendingPopup = {
             url: details.url,
             disposition: details.disposition,
-            windowRole: windowRoles.get(targetWindow) || 'main',
-            captureWindowId: String(targetWindow.webContents.id),
-          });
+            openerCaptureWindowId: String(targetWindow.webContents.id),
+          };
           return {
             action: 'allow',
             overrideBrowserWindowOptions: {
@@ -316,7 +303,17 @@ export function createElectronCaptureBrowserAdapter(
           };
         });
         targetWindow.webContents.on('did-create-window', childWindow => {
-          void attachWindow(childWindow, true);
+          const openerCaptureWindowId =
+            pendingPopup?.openerCaptureWindowId || String(targetWindow.webContents.id);
+          options.onPopup({
+            url: pendingPopup?.url || childWindow.webContents.getURL(),
+            disposition: pendingPopup?.disposition || 'new-window',
+            windowRole: 'popup',
+            captureWindowId: String(childWindow.webContents.id),
+            openerCaptureWindowId,
+          });
+          pendingPopup = null;
+          void attachWindow(childWindow, true, { openerCaptureWindowId });
         });
         if (attachDebugger) {
           await options.onNetworkDebugger(
@@ -324,6 +321,7 @@ export function createElectronCaptureBrowserAdapter(
             {
               windowRole: windowRoles.get(targetWindow) || 'main',
               captureWindowId: String(targetWindow.webContents.id),
+              openerCaptureWindowId: windowOpeners.get(targetWindow),
             },
           );
           recordCaptureWindowLog(`capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`);

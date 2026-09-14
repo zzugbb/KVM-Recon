@@ -203,4 +203,66 @@ describe('buildNetworkArtifacts', () => {
       'launch-same-window',
     ]);
   });
+
+  it('correlates adapter evidence from a main-window launch to a child popup WebSocket', () => {
+    const artifacts = buildNetworkArtifacts({
+      httpRequests: [
+        {
+          id: 'login-main',
+          timestamp: '2026-08-24T12:00:00.000+08:00',
+          method: 'POST',
+          url: 'https://bmc.example/api/session',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 16, redactedFields: [] },
+          responseBodySummary: { bytes: 16, redactedFields: [] },
+          tags: ['login'],
+          windowRole: 'main',
+          captureWindowId: 'win-main',
+        },
+        {
+          id: 'token-main',
+          timestamp: '2026-08-24T12:00:00.500+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/kvm/token',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 21, redactedFields: ['token'] },
+          tags: ['kvm-token'],
+          windowRole: 'main',
+          captureWindowId: 'win-main',
+        },
+      ],
+      webSockets: [
+        {
+          id: 'ws-child',
+          createdAt: '2026-08-24T12:00:01.000+08:00',
+          url: 'wss://bmc.example/websocket',
+          subProtocols: [],
+          requestHeaders: {},
+          binaryFrameCount: 1,
+          textFrameCount: 0,
+          tags: ['unknown'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-kvm',
+          openerCaptureWindowId: 'win-main',
+        },
+      ],
+      webSocketFrames: [],
+    });
+
+    const adapterEvidence = JSON.parse(artifacts[2].content);
+    expect(adapterEvidence.correlations[0]).toMatchObject({
+      socketId: 'ws-child',
+      captureWindowId: 'popup-kvm',
+      openerCaptureWindowId: 'win-main',
+      likelyLoginHttpIds: ['login-main'],
+      likelyKvmLaunchHttpIds: ['token-main'],
+    });
+  });
 });

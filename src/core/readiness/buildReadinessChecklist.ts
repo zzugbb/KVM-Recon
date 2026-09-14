@@ -263,6 +263,27 @@ function familyFingerprintItem(
   });
 }
 
+function networkCaptureIncomplete(networkIdle: NetworkIdleResult | null | undefined) {
+  return Boolean(networkIdle?.timedOut || (networkIdle?.attachFailures || []).length);
+}
+
+function networkCaptureEvidence(networkIdle: NetworkIdleResult | null | undefined) {
+  const attachFailures = networkIdle?.attachFailures || [];
+  if (!networkIdle?.timedOut && attachFailures.length === 0) {
+    return ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0'];
+  }
+  return [
+    ...(networkIdle?.timedOut
+      ? [
+          'timedOut=true',
+          `pendingTaskCount=${networkIdle.pendingTaskCount}`,
+          ...networkIdle.inFlightRequestIds.map(id => `inFlight=${id}`),
+        ]
+      : ['timedOut=false']),
+    ...attachFailures.map(failure => `attachFailed=${failure.sessionId}:${failure.reason}`),
+  ];
+}
+
 function tlsEvidence(probe: ProbeBmcTargetResult | null | undefined): {
   status: ChecklistStatus;
   evidence: string[];
@@ -378,17 +399,11 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     item({
       id: 'network.capture.complete',
       title: '网络响应采集完整性',
-      status: input.networkIdle?.timedOut ? 'needs_user_action' : 'pass',
+      status: networkCaptureIncomplete(input.networkIdle) ? 'needs_user_action' : 'pass',
       severity: 'warning',
-      evidence: input.networkIdle?.timedOut
-        ? [
-            'timedOut=true',
-            `pendingTaskCount=${input.networkIdle.pendingTaskCount}`,
-            ...input.networkIdle.inFlightRequestIds.map(id => `inFlight=${id}`),
-          ]
-        : ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0'],
-      userAction: input.networkIdle?.timedOut
-        ? '网络仍有未完成请求或响应体读取。请在采集窗口等待片刻后重新导出，避免关键请求出现 status=null 或响应体为空。'
+      evidence: networkCaptureEvidence(input.networkIdle),
+      userAction: networkCaptureIncomplete(input.networkIdle)
+        ? '网络仍有未完成请求、响应体读取失败，或 OOPIF 未能启用 Network。请在采集窗口等待片刻后重新导出，避免关键请求缺正文或 Viewer 目标被暂停。'
         : '',
     }),
     item({

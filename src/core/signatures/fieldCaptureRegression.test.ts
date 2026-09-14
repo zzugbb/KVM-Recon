@@ -197,6 +197,27 @@ describe('field capture regressions from existing on-site packs', () => {
     expect(checklist.items.find(item => item.id === 'ws.kvm.established')?.status).toBe('pass');
   });
 
+  it('records Dell vconsole evidence using the actual /vmc or /vnc path', () => {
+    expect(
+      detectProductHints({
+        observed: { vendor: 'Dell', product: 'iDRAC' },
+        traffic: { webSocketUrls: ['wss://10.10.9.101/vmc/vconsole?vck=1'] },
+      })[0]?.evidence,
+    ).toContain('ws:/vmc/vconsole');
+    expect(
+      detectProductHints({
+        observed: { vendor: 'Dell', product: 'iDRAC' },
+        traffic: { webSocketUrls: ['wss://10.10.8.101/vnc/vconsole'] },
+      })[0]?.evidence,
+    ).toEqual(expect.arrayContaining(['ws:/vnc/vconsole']));
+    expect(
+      detectProductHints({
+        observed: { vendor: 'Dell', product: 'iDRAC' },
+        traffic: { webSocketUrls: ['wss://10.10.8.101/vnc/vconsole'] },
+      })[0]?.evidence,
+    ).not.toContain('ws:/vmc/vconsole');
+  });
+
   it('recognizes HPE iLO4 HTML5 IRC as unknown-h5 and waits for /wss/ircport frames', () => {
     const network = {
       httpRequests: [

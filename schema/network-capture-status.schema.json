@@ -11,6 +11,17 @@
       "type": "array",
       "items": { "type": "string" },
       "uniqueItems": true
+    },
+    "attachFailures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sessionId", "reason"],
+        "properties": {
+          "sessionId": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
     }
   },
   "additionalProperties": false

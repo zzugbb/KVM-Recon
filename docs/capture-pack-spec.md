@@ -259,9 +259,9 @@ HTTP 资料必须脱敏：
 ```
 
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
-`windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口），仅用于展示。内部关联与自动截图使用 `captureWindowId`（采集会话内每个 BrowserWindow 的稳定 ID）。旧包没有该字段时，才退回比较 `windowRole`。
+`windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口），仅用于展示。内部关联与自动截图使用 `captureWindowId`（采集会话内每个 BrowserWindow 的稳定 ID）。弹窗子窗口额外记录 `openerCaptureWindowId`：主窗口请求 token、子窗口建立 WS 视为同一上下文；两个兄弟弹窗不关联。旧包没有窗口 ID 时，才退回比较 `windowRole`。
 
-KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vmc/vconsole` 与 `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳、告警帧或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同一 `captureWindowId`（无 ID 时退回 `windowRole`）、2 分钟内、状态成功且非静态资源的**明确** KVM 启动 HTTP 请求；`kvm.js`、`/api/console/status` 等宽泛 `kvm-entry` 不构成启动链。关键登录 POST 与 KVM token 响应正文缺失时清单为 PARTIAL，不能只靠 URL+200 判 YES。
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vmc/vconsole` 与 `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳、告警帧或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同一 `captureWindowId` / 直接父子窗口（`openerCaptureWindowId`）、2 分钟内、状态成功且非静态资源的**明确** KVM 启动 HTTP 请求；`kvm.js`、`/api/console/status` 等宽泛 `kvm-entry` 不构成启动链。关键登录 POST 与 KVM token 响应正文缺失、加载失败或超限时清单为 PARTIAL，不能只靠 URL+200 判 YES。
 
 限制：
 

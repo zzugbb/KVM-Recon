@@ -154,12 +154,14 @@ describe('createCaptureBrowserController', () => {
             nextOptions.onPopup({
               url: `${url}kvm.html`,
               disposition: 'new-window',
-              windowRole: 'main',
-              captureWindowId: 'main-window',
+              windowRole: 'popup',
+              captureWindowId: 'popup-window',
+              openerCaptureWindowId: 'main-window',
             });
             await nextOptions.onNetworkDebugger(popupCdp, {
               windowRole: 'popup',
               captureWindowId: 'popup-window',
+              openerCaptureWindowId: 'main-window',
             });
             focused = 'main';
           },
@@ -243,9 +245,18 @@ describe('createCaptureBrowserController', () => {
       tags: ['kvm-video'],
       windowRole: 'popup',
       captureWindowId: 'popup-window',
+      openerCaptureWindowId: 'main-window',
     });
     expect(controller.network().webSocketFrames[0]?.socketId).toBe('ws-popup');
     expect(controller.timeline().events.map(event => event.type)).toContain('popup');
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'popup',
+        captureWindowId: 'popup-window',
+        openerCaptureWindowId: 'main-window',
+        windowRole: 'popup',
+      }),
+    );
     expect(controller.timeline().events).toContainEqual(
       expect.objectContaining({
         type: 'click',

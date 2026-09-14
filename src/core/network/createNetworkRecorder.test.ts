@@ -447,6 +447,19 @@ describe('createNetworkRecorder', () => {
     });
   });
 
+  it('swallows rejected pending tasks so idle waiting can finish', async () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, idleQuietMs: 10, idleTimeoutMs: 200 });
+    recorder.trackPending(
+      new Promise((_resolve, reject) => {
+        reject(new Error('network-enable-failed'));
+      }),
+    );
+    await expect(recorder.waitForIdle()).resolves.toMatchObject({
+      timedOut: false,
+      pendingTaskCount: 0,
+    });
+  });
+
   it('records printable WebSocket handshake magic without storing the full stream', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
     recorder.recordWebSocketCreated({

@@ -29,10 +29,15 @@ export interface CaptureBrowserAdapterOptions {
     disposition: string;
     windowRole: CaptureWindowRole;
     captureWindowId?: string;
+    openerCaptureWindowId?: string;
   }): void;
   onNetworkDebugger(
     cdp: CdpDebuggerLike,
-    context?: { windowRole: CaptureWindowRole; captureWindowId: string },
+    context?: {
+      windowRole: CaptureWindowRole;
+      captureWindowId: string;
+      openerCaptureWindowId?: string;
+    },
   ): Promise<void>;
   onChromiumAccess(info: ChromiumAccessInfo): void;
   onAllWindowsClosed(): void;
@@ -41,6 +46,7 @@ export interface CaptureBrowserAdapterOptions {
 export interface CapturePageTarget {
   windowId: string;
   windowRole: CaptureWindowRole;
+  openerCaptureWindowId?: string;
 }
 
 interface PageTargetOptions {
@@ -308,6 +314,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
             recorder: networkRecorder,
             windowRole: context?.windowRole || (debuggerCount++ === 0 ? 'main' : 'popup'),
             captureWindowId: context?.captureWindowId,
+            openerCaptureWindowId: context?.openerCaptureWindowId,
           }),
         onChromiumAccess: info => {
           chromiumAccess = info;
