@@ -36,6 +36,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install Electron binary
+        run: npm run electron:install
+        timeout-minutes: 5
+
       - name: Install Electron system libraries
         run: |
           sudo apt-get update

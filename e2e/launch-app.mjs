@@ -22,7 +22,9 @@ const electronPackageDir = dirname(require.resolve('electron/package.json'));
 const electronPathFile = join(electronPackageDir, 'path.txt');
 if (!existsSync(electronPathFile)) {
   clearTimeout(timeout);
-  console.error('Electron 二进制未安装：缺少 node_modules/electron/path.txt，请先完成依赖安装');
+  console.error(
+    'Electron 二进制未安装：缺少 node_modules/electron/path.txt，请先运行 npm run electron:install',
+  );
   process.exit(1);
 }
 const electronBinary = join(
