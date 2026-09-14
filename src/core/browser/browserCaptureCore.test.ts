@@ -72,6 +72,11 @@ describe('browserCaptureCore', () => {
         confidence: 0.82,
       },
     ]);
+    timeline.recordPageScripts(
+      [{ url: 'https://10.0.0.10/main.js', kind: 'javascript', initiator: 'script-tag' }],
+      'popup',
+      'popup-kvm',
+    );
 
     expect(timeline.toJSON()).toMatchObject({
       jobId: 'job-001',
@@ -83,6 +88,7 @@ describe('browserCaptureCore', () => {
         { type: 'screenshot', path: 'page/screenshots/login.png', role: 'login' },
         { type: 'click', selector: '#kvm' },
         { type: 'selector-candidates' },
+        { type: 'page-scripts', scripts: [{ url: 'https://10.0.0.10/main.js', kind: 'javascript' }] },
       ],
     });
   });

@@ -907,14 +907,15 @@ describe('attachCdpNetworkCapture', () => {
     expect(recorder.sourceFiles()[0]?.text).toBe(body);
   });
 
-  it('stores a 2 MiB prefix when a Viewer script exceeds the source file limit', async () => {
+  it('does not read a Viewer script whose encoded length already exceeds 2 MiB', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
-    const body = `function startKvm() {}\n${'A'.repeat(2.5 * 1024 * 1024)}`;
+    let getBodyCalls = 0;
     const cdp: CdpDebuggerLike = {
       async attach() {},
       async sendCommand(command) {
         if (command === 'Network.getResponseBody') {
-          return { body, base64Encoded: false };
+          getBodyCalls += 1;
+          return { body: 'function startKvm() {}', base64Encoded: false };
         }
         return {};
       },
@@ -950,10 +951,11 @@ describe('attachCdpNetworkCapture', () => {
     await Promise.resolve();
 
     const request = recorder.toJSON().httpRequests[0];
+    expect(getBodyCalls).toBe(0);
+    expect(request?.responseBodyCaptured).toBe(false);
     expect(request?.sourceTruncated).toBe(true);
-    expect(request?.responseBodySkippedReason).toMatch(/^response-truncated:/);
-    expect(recorder.sourceFiles()[0]?.bytes).toBeLessThanOrEqual(2 * 1024 * 1024);
-    expect(recorder.sourceFiles()[0]?.truncated).toBe(true);
+    expect(request?.responseBodySkippedReason).toMatch(/^source-too-large-to-read:/);
+    expect(recorder.sourceFiles()).toEqual([]);
   });
 
   it('captures IIFE Viewer bundles even when the MIME type is wrong', async () => {

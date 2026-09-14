@@ -24,6 +24,10 @@ export function childWindowLineage(input: {
   };
 }
 
+export function shouldAttachBeforePopupNavigate(url: string) {
+  return /^https?:/i.test(String(url || '').trim());
+}
+
 export function popupWindowFacts(input: PopupWindowFactsInput) {
   return {
     url: String(input.details?.url || input.fallbackUrl || '').trim(),

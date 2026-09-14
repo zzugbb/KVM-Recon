@@ -1389,6 +1389,101 @@ describe('buildReadinessChecklist', () => {
     });
   });
 
+  it('downgrades unknown families when the page referenced main/polyfill but only a worker was captured', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, host: '10.10.8.101', vendor: '', product: '' },
+        paths: {},
+        familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
+      },
+      page: {
+        ...pageWithScreenshot,
+        events: [
+          ...pageWithScreenshot.events,
+          {
+            type: 'page-scripts',
+            windowRole: 'popup',
+            captureWindowId: 'popup-kvm',
+            timestamp: '2026-09-14T12:00:03.000+08:00',
+            scripts: [
+              {
+                url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+                kind: 'javascript',
+                initiator: 'script-tag',
+              },
+              {
+                url: 'https://10.10.8.101/vmc/vconsole/polyfills.41fe.js',
+                kind: 'javascript',
+                initiator: 'script-tag',
+              },
+              {
+                url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+                kind: 'javascript',
+                initiator: 'worker',
+              },
+            ],
+          },
+        ],
+      },
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-09-14T12:00:00.000+08:00',
+            method: 'POST',
+            url: 'https://10.10.8.101/login',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'set-cookie': 'SID=<redacted:sha256:sample>' } as Record<string, string>,
+            requestBodySummary: { bytes: 16, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 8, redactedFields: [] },
+            tags: ['login' as const],
+          },
+          {
+            id: 'worker-1',
+            timestamp: '2026-09-14T12:00:01.000+08:00',
+            method: 'GET',
+            url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: {
+              bytes: 1200,
+              redactedFields: [],
+              sample: `self.onmessage=function(){${'A'.repeat(64)}}`,
+            },
+            responseBodyCaptured: true,
+            sourceKind: 'javascript' as const,
+            sourceSha256: 'd'.repeat(64),
+            sourceBytes: 1200,
+            sourceTruncated: false,
+            tags: [],
+          },
+        ],
+        webSockets: completeNetwork.webSockets.map(socket => ({
+          ...socket,
+          url: 'wss://10.10.8.101/kvm',
+        })),
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 1 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'missing',
+      userAction: expect.stringContaining('重新打开 HTML5 KVM'),
+      evidence: expect.arrayContaining([
+        'missing:https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+        'missing:https://10.10.8.101/vmc/vconsole/polyfills.41fe.js',
+      ]),
+    });
+    expect(checklist.readiness).toBe('PARTIAL');
+  });
+
   it('downgrades unknown families when one required source is truncated even if another is complete', () => {
     const checklist = buildReadinessChecklist({
       probe: {

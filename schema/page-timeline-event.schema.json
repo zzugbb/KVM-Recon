@@ -89,6 +89,28 @@
         "captureWindowId": { "type": "string" },
         "timestamp": { "type": "string" }
       }
+    },
+    {
+      "type": "object",
+      "required": ["type", "scripts", "windowRole", "timestamp"],
+      "properties": {
+        "type": { "const": "page-scripts" },
+        "scripts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url", "kind"],
+            "properties": {
+              "url": { "type": "string" },
+              "kind": { "enum": ["javascript", "html"] },
+              "initiator": { "type": "string" }
+            }
+          }
+        },
+        "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
     }
   ],
   "definitions": {

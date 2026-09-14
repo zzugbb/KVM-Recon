@@ -35,7 +35,8 @@ describe('buildPackReadmeArtifact', () => {
     expect(artifact.content).toContain('现场型号：MegaRAC SPX');
     expect(artifact.content).toContain('不能替代工具判定的采集桶');
     expect(artifact.content).toContain('oem-profile.yaml');
-    expect(artifact.content).toContain('文件做什么');
+      expect(artifact.content).toContain('http/sources.json');
+      expect(artifact.content).toContain('referenced');
     expect(artifact.content).toContain('必须问人或看网关仓库');
     expect(artifact.content).toContain('KVM 画面截图：2');
     expect(artifact.content).toContain('有没有 viewer 截图：有 2 张');

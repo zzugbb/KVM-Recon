@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { popupWindowFacts } from './popupWindowFacts';
+import { popupWindowFacts, shouldAttachBeforePopupNavigate } from './popupWindowFacts';
 
 describe('popupWindowFacts', () => {
   it('keeps concurrent popups from sharing a global pending URL', () => {
@@ -53,5 +53,12 @@ describe('popupWindowFacts', () => {
       ancestorCaptureWindowIds: ['popup-kvm', 'win-main'],
       windowRole: 'popup',
     });
+  });
+
+  it('attaches before navigating known http(s) popup URLs, and allows blank windows', () => {
+    expect(shouldAttachBeforePopupNavigate('https://10.10.8.101/vmc/vconsole')).toBe(true);
+    expect(shouldAttachBeforePopupNavigate('http://10.10.8.94/viewer.html')).toBe(true);
+    expect(shouldAttachBeforePopupNavigate('about:blank')).toBe(false);
+    expect(shouldAttachBeforePopupNavigate('')).toBe(false);
   });
 });

@@ -42,6 +42,7 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 | `probe/authenticated.json` | 登录后复验：Cookie 名和带会话后的路径（可选，无 Cookie 值） |
 | `http/requests.jsonl` | 登录、KVM token、入口相关 HTTP；看 tags 与 URL |
 | `http/har.json` | 同上，HAR 格式，便于用现成工具打开 |
+| `http/sources.json` 与 `http/sources/` | Viewer/登录 HTML 与 JS：清单含 URL、SHA-256、字节数、是否截断；`referenced` 是页面实际引用，`missing` 表示引用了但没采到正文 |
 | `ws/sockets.json` | KVM WebSocket 的 URL、子协议、帧数量、是否 popup |
 | `ws/frames.jsonl` | 采样帧的 headHex / magic，不是完整视频 |
 | `page/timeline.jsonl` | 打开了哪些页、点了什么、何时截图 |

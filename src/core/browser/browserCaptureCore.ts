@@ -58,6 +58,12 @@ type BrowserTimelineEvent =
       tagName: string;
       windowRole: CaptureWindowRole;
       timestamp: string;
+    } & CaptureWindowIdFields
+  | {
+      type: 'page-scripts';
+      scripts: Array<{ url: string; kind: 'javascript' | 'html'; initiator?: string }>;
+      windowRole: CaptureWindowRole;
+      timestamp: string;
     } & CaptureWindowIdFields;
 
 interface BrowserTimelineJson {
@@ -280,6 +286,29 @@ export function createBrowserTimeline(jobId: string) {
             timestamp: nowIso(),
           },
           input.captureWindowId,
+        ),
+      );
+    },
+    recordPageScripts(
+      scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>,
+      windowRole: CaptureWindowRole = 'main',
+      captureWindowId?: string,
+    ) {
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'page-scripts',
+            scripts: scripts
+              .filter(item => typeof item.url === 'string' && item.url)
+              .map(item => ({
+                url: item.url,
+                kind: item.kind === 'html' ? 'html' : 'javascript',
+                ...(item.initiator ? { initiator: item.initiator } : {}),
+              })),
+            windowRole,
+            timestamp: nowIso(),
+          },
+          captureWindowId,
         ),
       );
     },

@@ -5,7 +5,10 @@ import {
   classifySourceKind,
   isHtmlSourceText,
   SOURCE_FILE_LIMIT_BYTES,
+  SOURCE_MAX_FILES,
   SOURCE_TEXT_SAMPLE_LIMIT,
+  SOURCE_TOTAL_BUDGET_BYTES,
+  sourceCapturePriority,
   type SourceFileRecord,
   type SourceKind,
 } from './sourceCapture';
@@ -549,16 +552,61 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     const stored = redactSourceText(body, SOURCE_FILE_LIMIT_BYTES);
     const truncatedFile = truncated || stored.endsWith('<truncated>');
     const text = stored.replace(/<truncated>$/, '');
+    const sha256 = sha256Hex(text);
+    const sourceBytes = Buffer.byteLength(text, 'utf8');
     existing.sourceKind = kind;
-    existing.sourceSha256 = sha256Hex(text);
-    existing.sourceBytes = Buffer.byteLength(text, 'utf8');
+    existing.sourceSha256 = sha256;
+    existing.sourceBytes = sourceBytes;
     existing.sourceTruncated = truncatedFile;
+    sourceBodies.delete(existing.id);
+    const priority = sourceCapturePriority({
+      url: existing.url,
+      windowRole: existing.windowRole,
+      resourceType: existing.resourceType,
+    });
+    const ranked = [...sourceBodies.values()].map(file => {
+      const record = httpRequests.get(file.id);
+      return {
+        file,
+        record,
+        priority: sourceCapturePriority({
+          url: record?.url || file.url,
+          windowRole: record?.windowRole,
+          resourceType: record?.resourceType,
+        }),
+      };
+    });
+    let totalBytes = ranked.reduce((sum, item) => sum + item.file.bytes, 0);
+    const canStore = () =>
+      sourceBodies.size < SOURCE_MAX_FILES && totalBytes + sourceBytes <= SOURCE_TOTAL_BUDGET_BYTES;
+    while (!canStore() && ranked.length > 0) {
+      ranked.sort((left, right) => left.priority - right.priority || left.file.bytes - right.file.bytes);
+      const lowest = ranked[0];
+      if (!lowest || priority < lowest.priority) {
+        existing.responseBodySkippedReason = `source-budget-exceeded:${sourceBytes}`;
+        existing.sourceTruncated = true;
+        sourceBodies.delete(existing.id);
+        return;
+      }
+      sourceBodies.delete(lowest.file.id);
+      if (lowest.record) {
+        lowest.record.responseBodySkippedReason = `source-budget-exceeded:${lowest.file.bytes}`;
+        lowest.record.sourceTruncated = true;
+      }
+      totalBytes -= lowest.file.bytes;
+      ranked.shift();
+    }
+    if (!canStore()) {
+      existing.responseBodySkippedReason = `source-budget-exceeded:${sourceBytes}`;
+      existing.sourceTruncated = true;
+      return;
+    }
     sourceBodies.set(existing.id, {
       id: existing.id,
       url: existing.url,
       kind,
-      sha256: existing.sourceSha256,
-      bytes: existing.sourceBytes,
+      sha256,
+      bytes: sourceBytes,
       truncated: truncatedFile,
       text,
     });
@@ -749,6 +797,9 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       if (!existing) return;
       existing.responseBodyCaptured = false;
       existing.responseBodySkippedReason = reason;
+      if (/^source-too-large-to-read:|^source-budget-exceeded:/.test(reason)) {
+        existing.sourceTruncated = true;
+      }
     },
     recordWebSocketCreated(input: WebSocketCreatedInput) {
       if (paused) return;

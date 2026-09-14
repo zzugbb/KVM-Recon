@@ -10,8 +10,13 @@
 ## [0.2.7] - 2026-09-14
 
 - Viewer/登录源码按清单与完整性判定：未知族哈希 chunk 也纳入候选；截断前缀或漏采关键源码不再假通过。
+- 从 `document.scripts` / `performance` / iframe 建立页面引用源码清单，并与 Network/`http/sources.json` 做覆盖率核对；只采到 worker、漏掉 `main`/`polyfills` 时未知族为 PARTIAL。
+- 对已知 http(s) Viewer URL 先 attach CDP 再导航，避免弹窗在 debugger attach 前加载主脚本。
+- 源码读取按 `encodedDataLength` 提前拒绝超过 2 MiB 的响应；最多保存 24 个文件、合计约 8 MiB，超预算记 `source-budget-exceeded`。
 - JavaScript 识别同时看 CDP `resourceType=Script` 与 IIFE/`!function` 正文，错误 MIME 不再只留 512 字符。
 - 导出独立源码文件 `http/sources/*.js|html` 与 `http/sources.json`（最长约 2 MiB），JSONL 仍只保留 64 KiB 摘要。
+- 打开/对比 zip 时校验源码清单路径、字节数与 SHA-256；未知族 YES 必须含完整源码。
+- 包内 README 增加 `http/sources.json` 与 `http/sources/` 阅读说明。
 - 实时就绪纳入未完成请求/pending 任务；网络未静默时不能显示最终 YES。
 - 窗口关联保存祖先链，三层弹窗可把主窗口 token 与 Viewer 子窗 WebSocket 关联，兄弟弹窗仍不关联。
 - HAR comment 写入 `openerCaptureWindowId` / `ancestorCaptureWindowIds` 与源码哈希字段。

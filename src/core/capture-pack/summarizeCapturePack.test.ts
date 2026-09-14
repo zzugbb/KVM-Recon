@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 
 import { buildCapturePackZip } from './buildCapturePackZip';
 import { compareCapturePacks, summarizeCapturePackZip } from './summarizeCapturePack';
-import { validateManifestShape, validateRequiredPackFiles, validateScreenshotIndexShape, validateTimelineLineShape } from './validateCapturePackShape';
+import { validateManifestShape, validateRequiredPackFiles, validateScreenshotIndexShape, validateSourceInventoryIntegrity, validateTimelineLineShape } from './validateCapturePackShape';
 import { createSampleCapturePack } from '../delivery/createSampleCapturePack';
 
 describe('capture pack schema and local review', () => {
@@ -146,5 +146,46 @@ describe('capture pack schema and local review', () => {
     zip.file('ws/sockets.json', '[]');
     const summary = await summarizeCapturePackZip(await zip.generateAsync({ type: 'uint8array' }));
     expect(summary.schemaErrors).toContain('缺少 README.md');
+  });
+
+  it('validates source inventory files, hashes, and unknown-family YES completeness', () => {
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory: {
+          files: [
+            {
+              id: 'worker',
+              url: 'https://bmc.example/file.worker.js',
+              kind: 'javascript',
+              sha256: 'deadbeef',
+              bytes: 4,
+              truncated: false,
+              path: 'http/sources/worker.js',
+            },
+          ],
+          referenced: [
+            { url: 'https://bmc.example/main.js', kind: 'javascript', captured: false, missing: true },
+          ],
+        },
+        packPaths: ['http/sources/worker.js'],
+        fileBytes: new Map([['http/sources/worker.js', { bytes: 4, sha256: 'abcd' }]]),
+        family: 'unknown-h5',
+        readiness: 'YES',
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        'http/sources.json.files[0] SHA-256 不匹配',
+        'http/sources.json.referenced[0] 页面引用缺失源码文件',
+      ]),
+    );
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory: null,
+        packPaths: ['README.md'],
+        fileBytes: new Map(),
+        family: 'unknown-h5',
+        readiness: 'YES',
+      }),
+    ).toEqual(['未知族 YES 缺少 http/sources.json 完整源码']);
   });
 });

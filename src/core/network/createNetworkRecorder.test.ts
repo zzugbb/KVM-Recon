@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildNetworkArtifacts } from './buildNetworkArtifacts';
 import { createNetworkRecorder } from './createNetworkRecorder';
+import { SOURCE_MAX_FILES } from './sourceCapture';
 
 describe('createNetworkRecorder', () => {
   it('records HTTP summaries and tags login, token, and KVM entry requests', () => {
@@ -739,6 +740,48 @@ describe('createNetworkRecorder', () => {
         text: script,
       }),
     ]);
+  });
+
+  it('evicts lower-priority workers when the source file budget is full', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    for (let index = 0; index < SOURCE_MAX_FILES; index += 1) {
+      recorder.recordHttpRequest({
+        id: `worker-${index}`,
+        timestamp: '2026-09-14T12:00:00.000+08:00',
+        method: 'GET',
+        url: `https://bmc.example/file.worker.${index}.js`,
+        resourceType: 'script',
+        requestHeaders: {},
+      });
+      recorder.recordHttpResponse({
+        id: `worker-${index}`,
+        status: 200,
+        responseHeaders: { 'content-type': 'application/javascript' },
+        responseBody: `self.onmessage=function(){${index}}`,
+      });
+    }
+    recorder.recordHttpRequest({
+      id: 'main-js',
+      timestamp: '2026-09-14T12:00:01.000+08:00',
+      method: 'GET',
+      url: 'https://bmc.example/main.36508cda.js',
+      resourceType: 'script',
+      requestHeaders: {},
+      windowRole: 'popup',
+    });
+    recorder.recordHttpResponse({
+      id: 'main-js',
+      status: 200,
+      responseHeaders: { 'content-type': 'application/javascript' },
+      responseBody: 'function startKvm() { return true; }',
+    });
+
+    const files = recorder.sourceFiles();
+    expect(files).toHaveLength(SOURCE_MAX_FILES);
+    expect(files.map(file => file.id)).toContain('main-js');
+    expect(recorder.toJSON().httpRequests.some(item => item.responseBodySkippedReason?.startsWith('source-budget-exceeded:'))).toBe(
+      true,
+    );
   });
 
   it('tags Huawei virtual media port 8208 as vmedia instead of kvm-video', () => {

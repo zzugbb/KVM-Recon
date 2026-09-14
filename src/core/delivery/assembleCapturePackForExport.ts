@@ -8,7 +8,7 @@ import type {
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
-import type { SourceFileRecord } from '../network/sourceCapture';
+import { pageReferencedScriptsFromEvents, type SourceFileRecord } from '../network/sourceCapture';
 import { buildNetworkArtifacts } from '../network/buildNetworkArtifacts';
 import { buildOemProfileArtifacts } from '../profile/buildOemProfileArtifacts';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
@@ -133,6 +133,7 @@ export function assembleCapturePackForExport(
     ...buildNetworkArtifacts({
       ...input.network,
       sourceFiles: input.sourceFiles,
+      referencedScripts: pageReferencedScriptsFromEvents(input.page.events),
     }),
     {
       path: 'http/capture-status.json',

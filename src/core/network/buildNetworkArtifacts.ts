@@ -5,7 +5,12 @@ import {
   correlatedLoginHttpIds,
   isExplicitKvmLaunchRequest,
 } from '../readiness/kvmLaunchCorrelation';
-import { sourceFilePath, type SourceFileRecord } from './sourceCapture';
+import {
+  buildSourceInventory,
+  sourceFilePath,
+  type PageReferencedScript,
+  type SourceFileRecord,
+} from './sourceCapture';
 
 interface NetworkArtifact {
   path: string;
@@ -17,6 +22,7 @@ interface BuildNetworkArtifactsInput {
   webSockets: WebSocketRecord[];
   webSocketFrames: WebSocketFrameRecord[];
   sourceFiles?: SourceFileRecord[];
+  referencedScripts?: PageReferencedScript[];
 }
 
 function toJsonl(records: unknown[]): string {
@@ -202,24 +208,17 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
 
 export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): NetworkArtifact[] {
   const sourceFiles = input.sourceFiles || [];
-  const sourceArtifacts = sourceFiles.flatMap(file => {
-    const path = sourceFilePath(file.id, file.kind);
-    return [
-      {
-        path,
-        content: file.text,
-      },
-    ];
-  });
-  const inventory = sourceFiles.map(file => ({
-    id: file.id,
-    url: file.url,
-    kind: file.kind,
-    sha256: file.sha256,
-    bytes: file.bytes,
-    truncated: file.truncated,
+  const referencedScripts = input.referencedScripts || [];
+  const sourceArtifacts = sourceFiles.map(file => ({
     path: sourceFilePath(file.id, file.kind),
+    content: file.text,
   }));
+  const inventory = buildSourceInventory({
+    sourceFiles,
+    referenced: referencedScripts,
+    requests: input.httpRequests,
+  });
+  const hasSourceInventory = inventory.files.length > 0 || inventory.referenced.length > 0;
   return [
     {
       path: 'http/requests.jsonl',
@@ -233,11 +232,11 @@ export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): Networ
       path: 'http/adapter-evidence.json',
       content: JSON.stringify(buildAdapterEvidence(input), null, 2),
     },
-    ...(inventory.length
+    ...(hasSourceInventory
       ? [
           {
             path: 'http/sources.json',
-            content: JSON.stringify({ files: inventory }, null, 2),
+            content: JSON.stringify(inventory, null, 2),
           },
           ...sourceArtifacts,
         ]

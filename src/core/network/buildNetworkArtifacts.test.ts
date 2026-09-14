@@ -322,4 +322,42 @@ describe('buildNetworkArtifacts', () => {
       'function startKvm() {}',
     );
   });
+
+  it('records referenced scripts that were never captured as missing', () => {
+    const artifacts = buildNetworkArtifacts({
+      httpRequests: [],
+      webSockets: [],
+      webSocketFrames: [],
+      referencedScripts: [
+        { url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js', kind: 'javascript', initiator: 'script-tag' },
+        { url: 'https://10.10.8.101/vmc/vconsole/file.worker.js', kind: 'javascript', initiator: 'worker' },
+      ],
+      sourceFiles: [
+        {
+          id: 'worker',
+          url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+          kind: 'javascript',
+          sha256: 'abc',
+          bytes: 12,
+          truncated: false,
+          text: 'self.onmessage=1',
+        },
+      ],
+    });
+    const inventory = JSON.parse(artifacts.find(item => item.path === 'http/sources.json')?.content || '{}');
+    expect(inventory.referenced).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+          missing: true,
+          captured: false,
+        }),
+        expect.objectContaining({
+          url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+          missing: false,
+          captured: true,
+        }),
+      ]),
+    );
+  });
 });

@@ -20,6 +20,34 @@
           "path": { "type": "string" }
         }
       }
+    },
+    "referenced": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "kind", "captured", "missing"],
+        "properties": {
+          "url": { "type": "string" },
+          "kind": { "enum": ["javascript", "html"] },
+          "initiator": { "type": "string" },
+          "captured": { "type": "boolean" },
+          "missing": { "type": "boolean" },
+          "requestId": { "type": "string" }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "requestId", "reason"],
+        "properties": {
+          "url": { "type": "string" },
+          "requestId": { "type": "string" },
+          "bytes": { "type": "integer" },
+          "reason": { "type": "string" }
+        }
+      }
     }
   }
 }

@@ -305,6 +305,18 @@ describe('createCaptureBrowserController', () => {
             pendingClicks = [];
             return items;
           },
+          async collectReferencedScripts() {
+            return [
+              {
+                windowRole: 'popup' as const,
+                captureWindowId: 'popup-kvm',
+                scripts: [
+                  { url: 'https://10.0.0.10/main.abc.js', kind: 'javascript' as const, initiator: 'script-tag' },
+                  { url: 'https://10.0.0.10/file.worker.js', kind: 'javascript' as const, initiator: 'worker' },
+                ],
+              },
+            ];
+          },
           async collectSessionCookies() {
             return [{ name: 'QSESSIONID', value: 'abc123' }];
           },
@@ -332,6 +344,15 @@ describe('createCaptureBrowserController', () => {
       expect.objectContaining({
         type: 'click',
         selector: '#kvm',
+      }),
+    );
+    expect(controller.timeline().events).toContainEqual(
+      expect.objectContaining({
+        type: 'page-scripts',
+        captureWindowId: 'popup-kvm',
+        scripts: expect.arrayContaining([
+          expect.objectContaining({ url: 'https://10.0.0.10/main.abc.js' }),
+        ]),
       }),
     );
     expect(controller.timeline().events.map(event => event.type)).not.toContain('screenshot');

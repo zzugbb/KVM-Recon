@@ -11,6 +11,7 @@ import {
 } from '../../core/browser/browserCaptureCore';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 import { kvmWebSocketEvidence, reliableKvmWindows } from '../../core/readiness/buildReadinessChecklist';
+import { sourceUrlKey } from '../../core/network/sourceCapture';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface ChromiumAccessInfo {
@@ -91,6 +92,13 @@ export interface CaptureBrowserWindowHandle {
     windowRole?: CaptureWindowRole;
   }>;
   drainClicks(options?: PageTargetOptions): Promise<ClickSummary[]>;
+  collectReferencedScripts?(): Promise<
+    Array<{
+      windowRole: CaptureWindowRole;
+      captureWindowId: string;
+      scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>;
+    }>
+  >;
   collectSessionCookies(targetUrl: string): Promise<Array<{ name: string; value: string }>>;
   close(): Promise<void>;
 }
@@ -107,6 +115,24 @@ interface CreateCaptureBrowserControllerInput {
 
 function buildPartition(jobId: string) {
   return `kvm-recon-${jobId}`;
+}
+
+async function recordReferencedScripts(
+  windowHandle: CaptureBrowserWindowHandle,
+  timeline: ReturnType<typeof createBrowserTimeline>,
+  previousScriptsFingerprint: Map<string, string>,
+) {
+  if (!windowHandle.collectReferencedScripts) return;
+  const groups = await windowHandle.collectReferencedScripts();
+  for (const group of groups) {
+    const scripts = (group.scripts || []).filter(item => typeof item.url === 'string' && item.url);
+    if (!scripts.length) continue;
+    const fingerprint = scripts.map(item => sourceUrlKey(item.url)).sort().join('\n');
+    const key = group.captureWindowId || group.windowRole;
+    if (previousScriptsFingerprint.get(key) === fingerprint) continue;
+    previousScriptsFingerprint.set(key, fingerprint);
+    timeline.recordPageScripts(scripts, group.windowRole, group.captureWindowId);
+  }
 }
 
 async function recordClicks(
@@ -137,6 +163,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     string,
     { localStorageKeys: string[]; sessionStorageKeys: string[] }
   >();
+  const previousScriptsFingerprint = new Map<string, string>();
   let captureWindowsOpen = false;
   let debuggerCount = 0;
   let paused = false;
@@ -268,6 +295,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         screenshot.windowId || captureWindowId,
       );
       timeline.recordSelectorCandidates(selectors, windowRole, role, captureWindowId);
+      await recordReferencedScripts(windowHandle, timeline, previousScriptsFingerprint);
       return {
         captured: true,
         reason: '',
@@ -382,6 +410,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
           return;
         }
         await recordClicks(windowHandle, timeline);
+        await recordReferencedScripts(windowHandle, timeline, previousScriptsFingerprint);
         maybeAutoCaptureViewer();
       } catch (error) {
         // 捕获进度轮询时读取点击失败：窗口可能已关闭或页面正在导航
@@ -408,8 +437,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
       if (!windowHandle) return;
       try {
         await recordClicks(windowHandle, timeline);
+        await recordReferencedScripts(windowHandle, timeline, previousScriptsFingerprint);
       } catch (error) {
-        // 捕获关窗前读取点击失败：页面可能已卸载
+        // 捕获关窗前读取点击或页面引用脚本失败：页面可能已卸载
         // 策略：仍关闭窗口，避免采集窗口残留
         void error;
       }

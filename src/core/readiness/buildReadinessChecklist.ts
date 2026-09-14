@@ -21,8 +21,8 @@ import type {
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
 import {
-  adapterSourceCandidates,
-  isCompleteAdapterSource,
+  adapterSourceCoverage,
+  pageReferencedScriptsFromEvents,
   sourceInventoryEvidence,
 } from '../network/sourceCapture';
 
@@ -293,14 +293,18 @@ function familyFingerprintItem(
 function viewerSourceItem(
   probe: ProbeBmcTargetResult | null | undefined,
   network: NetworkSnapshot | null | undefined,
+  page?: BrowserTimelineJson | null,
 ): ChecklistItem {
   const family = probe ? scoreCapturedKvmFamily(probe, network) : { primary: 'unknown-h5' as const };
   const unclassified = family.primary === 'unknown-h5' || family.primary === 'not-h5';
-  const candidates = adapterSourceCandidates(network?.httpRequests || [], {
+  const coverage = adapterSourceCoverage({
+    requests: network?.httpRequests || [],
+    referenced: pageReferencedScriptsFromEvents(page?.events || []),
     host: probe?.basic.host,
     unclassified,
   });
-  if (candidates.length === 0) {
+  const missingUrls = coverage.missingReferenced.map(item => `missing:${item.url}`);
+  if (coverage.candidates.length === 0 && coverage.requiredReferenced.length === 0) {
     if (unclassified && kvmWebSocketEvidence(network).length > 0) {
       return item({
         id: 'http.viewer_source',
@@ -309,7 +313,7 @@ function viewerSourceItem(
         severity: 'warning',
         evidence: [],
         userAction:
-          '未知协议已有 KVM WebSocket，但未捕获 Viewer/登录 HTML 或 JS。请保持采集窗口打开并等待脚本加载后再导出。',
+          '未知协议已有 KVM WebSocket，但未捕获 Viewer/登录 HTML 或 JS。请关闭并重新打开 HTML5 KVM，不要只等待脚本加载。',
       });
     }
     return item({
@@ -321,16 +325,23 @@ function viewerSourceItem(
       userAction: '',
     });
   }
-  const incomplete = candidates.filter(request => !isCompleteAdapterSource(request));
-  if (incomplete.length > 0) {
+  if (coverage.missingReferenced.length > 0 || coverage.incomplete.length > 0) {
+    const budgetOrTruncated = coverage.incomplete.some(request =>
+      /truncated|too-large|budget-exceeded/i.test(
+        `${request.responseBodySkippedReason || ''} ${request.sourceTruncated ? 'truncated' : ''}`,
+      ),
+    );
     return item({
       id: 'http.viewer_source',
       title: '关键 Viewer/认证源码资料',
       status: 'missing',
       severity: 'warning',
-      evidence: incomplete.map(sourceInventoryEvidence),
-      userAction:
-        'Viewer/登录源码不完整或被截断。请等待页面脚本加载完成后再导出；未知协议缺少完整源码时不能判 YES。',
+      evidence: [...missingUrls, ...coverage.incomplete.map(sourceInventoryEvidence)],
+      userAction: coverage.missingReferenced.length
+        ? '页面已引用 Viewer 主脚本/polyfill，但 Network 未采到正文（常见于弹窗在 debugger attach 前加载）。请关闭并重新打开 HTML5 KVM，不要只等待。'
+        : budgetOrTruncated
+          ? '源码超过 2 MiB 或总量预算，无法通过等待补齐。请重新打开/重载 Viewer，手动补采关键 bundle，或接受 PARTIAL。'
+          : 'Viewer/登录源码不完整。未知协议缺少完整源码时不能判 YES。',
     });
   }
   return item({
@@ -338,7 +349,10 @@ function viewerSourceItem(
     title: '关键 Viewer/认证源码资料',
     status: 'pass',
     severity: 'warning',
-    evidence: candidates.map(sourceInventoryEvidence),
+    evidence: [
+      ...coverage.requiredReferenced.map(item => `referenced:${item.url}`),
+      ...coverage.candidates.map(sourceInventoryEvidence),
+    ],
     userAction: '',
   });
 }
@@ -461,7 +475,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
         ? '关键登录 POST 或 KVM 启动接口缺少请求/响应正文。请在采集窗口完成登录并打开 KVM 后稍候再导出，避免空正文仍判 YES。'
         : '',
     }),
-    viewerSourceItem(input.probe, input.network),
+    viewerSourceItem(input.probe, input.network, input.page),
     item({
       id: 'ws.kvm.established',
       title: 'KVM WebSocket',

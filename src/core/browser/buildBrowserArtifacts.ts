@@ -131,6 +131,39 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     }
   }
   const selectors = [...selectorsByKey.values()];
+  const scriptEvents = timeline.events.filter(event => event.type === 'page-scripts');
+  const referencedScripts: Array<{
+    url: string;
+    kind: 'javascript' | 'html';
+    initiator?: string;
+    windowRole: 'main' | 'popup';
+    captureWindowId?: string;
+  }> = [];
+  const referencedKeys = new Set<string>();
+  for (const event of scriptEvents) {
+    const scripts = Array.isArray(event.scripts) ? event.scripts : [];
+    for (const item of scripts) {
+      if (!item || typeof item !== 'object') continue;
+      const record = item as { url?: unknown; kind?: unknown; initiator?: unknown };
+      if (typeof record.url !== 'string' || !record.url) continue;
+      const key = `${record.url}\0${captureWindowIdOf(event) || windowRoleOf(event)}`;
+      if (referencedKeys.has(key)) continue;
+      referencedKeys.add(key);
+      referencedScripts.push(
+        withCaptureWindowId(
+          {
+            url: record.url,
+            kind: record.kind === 'html' ? 'html' : 'javascript',
+            ...(typeof record.initiator === 'string' && record.initiator
+              ? { initiator: record.initiator }
+              : {}),
+            windowRole: windowRoleOf(event),
+          },
+          captureWindowIdOf(event),
+        ),
+      );
+    }
+  }
   const screenshots = screenshotEvents
     .map(event => {
       const path = typeof event.path === 'string' ? toPackScreenshotPath(event.path) : '';
@@ -206,5 +239,13 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
       path: 'page/screenshots.json',
       content: stringify(screenshots),
     },
+    ...(referencedScripts.length
+      ? [
+          {
+            path: 'page/scripts.json',
+            content: stringify(referencedScripts),
+          },
+        ]
+      : []),
   ];
 }

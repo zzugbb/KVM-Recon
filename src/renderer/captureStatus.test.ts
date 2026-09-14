@@ -105,5 +105,25 @@ describe('captureStatus', () => {
         windowsOpen: true,
       }),
     ).toContain('网络尚未静默');
+
+    expect(
+      nextStepText({
+        phase: 'capturing',
+        readiness: 'PARTIAL',
+        items: [
+          {
+            id: 'http.viewer_source',
+            title: '关键 Viewer/认证源码资料',
+            status: 'missing',
+            severity: 'warning',
+            evidence: ['missing:https://bmc.example/main.js'],
+            userAction: '请关闭并重新打开 HTML5 KVM，不要只等待。',
+          },
+        ],
+        capturingScreenshot: false,
+        paused: false,
+        windowsOpen: true,
+      }),
+    ).toContain('关闭并重新打开 HTML5 KVM');
   });
 });

@@ -9,7 +9,7 @@ import type {
   CapturePageTarget,
 } from './createCaptureBrowserController';
 import { pickCaptureWindow } from '../../core/browser/pickCaptureWindow';
-import { popupWindowFacts } from '../../core/browser/popupWindowFacts';
+import { popupWindowFacts, shouldAttachBeforePopupNavigate } from '../../core/browser/popupWindowFacts';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 
@@ -66,6 +66,41 @@ function selectorScript(includeAnyFrame: boolean) {
 })()
 `;
 }
+
+const referencedScriptsCollector = `
+(() => {
+  const items = [];
+  const seen = new Set();
+  const push = (url, kind, initiator) => {
+    if (!url || String(url).startsWith('data:') || String(url).startsWith('blob:')) return;
+    const key = String(url).split('#')[0].split('?')[0];
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ url: String(url), kind, initiator });
+  };
+  const walk = (doc) => {
+    if (!doc) return;
+    for (const node of Array.from(doc.scripts || [])) {
+      if (node.src) push(node.src, 'javascript', 'script-tag');
+    }
+    try {
+      for (const entry of performance.getEntriesByType('resource')) {
+        const name = String(entry.name || '');
+        const initiator = String(entry.initiatorType || '');
+        if (initiator === 'script' || initiator === 'worker' || /\\.(?:m?js|html?)(?:[?#]|$)/i.test(name)) {
+          push(name, /\\.html?(?:[?#]|$)/i.test(name) ? 'html' : 'javascript', initiator || 'performance');
+        }
+      }
+    } catch (_error) {}
+    for (const frame of Array.from(doc.querySelectorAll('iframe'))) {
+      try { walk(frame.contentDocument); } catch (_error) {}
+      if (frame.src) push(frame.src, 'html', 'iframe');
+    }
+  };
+  walk(document);
+  return items.slice(0, 80);
+})()
+`;
 
 const clickProbeScript = `
 (() => {
@@ -199,6 +234,47 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
+      async function openOwnedPopup(
+        opener: BrowserWindow,
+        details: { url?: string; disposition?: string },
+        popupOptions: ConstructorParameters<typeof BrowserWindow>[0],
+      ) {
+        const child = new BrowserWindow({
+          ...popupOptions,
+          title: `KVM-Recon Capture - ${options.targetHost}`,
+        });
+        const facts = popupWindowFacts({
+          childCaptureWindowId: String(child.webContents.id),
+          openerCaptureWindowId: String(opener.webContents.id),
+          openerAncestorCaptureWindowIds: windowAncestors.get(opener),
+          details,
+          fallbackUrl: details.url,
+        });
+        options.onPopup(facts);
+        try {
+          await attachWindow(child, true, {
+            openerCaptureWindowId: facts.openerCaptureWindowId,
+            ancestorCaptureWindowIds: facts.ancestorCaptureWindowIds,
+          });
+          if (facts.url) {
+            await child.loadURL(facts.url);
+          }
+        } catch (error) {
+          // 捕获自建弹窗 attach 或导航失败：CDP 可能被占用，或 Viewer URL 已失效
+          // 策略：记入 attachFailures；仍尝试 loadURL 让用户能看到 KVM，清单 PARTIAL
+          options.onAttachFailure?.(facts.captureWindowId, 'popup-attach-failed');
+          recordCaptureWindowLog(`capture-popup-attach-failed window=${facts.captureWindowId}`);
+          try {
+            if (facts.url && windowAlive(child)) {
+              await child.loadURL(facts.url);
+            }
+          } catch (loadError) {
+            void loadError;
+          }
+          void error;
+        }
+      }
+
       async function attachWindow(
         targetWindow: BrowserWindow,
         attachDebugger: boolean,
@@ -291,18 +367,25 @@ export function createElectronCaptureBrowserAdapter(
             `capture-renderer-gone reason=${details.reason} exit=${details.exitCode}`,
           );
         });
-        targetWindow.webContents.setWindowOpenHandler(_details => {
+        targetWindow.webContents.setWindowOpenHandler(details => {
+          const popupOptions = {
+            width: 1280,
+            height: 860,
+            webPreferences: {
+              partition: options.partition,
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: false,
+              webSecurity: false,
+            },
+          };
+          if (shouldAttachBeforePopupNavigate(String(details.url || ''))) {
+            void openOwnedPopup(targetWindow, details, popupOptions);
+            return { action: 'deny' };
+          }
           return {
             action: 'allow',
-            overrideBrowserWindowOptions: {
-              webPreferences: {
-                partition: options.partition,
-                contextIsolation: true,
-                nodeIntegration: false,
-                sandbox: false,
-                webSecurity: false,
-              },
-            },
+            overrideBrowserWindowOptions: popupOptions,
           };
         });
         targetWindow.webContents.on('did-create-window', (childWindow, details) => {
@@ -454,6 +537,32 @@ export function createElectronCaptureBrowserAdapter(
             void error;
             return [];
           }
+        },
+        async collectReferencedScripts() {
+          const groups: Array<{
+            windowRole: 'main' | 'popup';
+            captureWindowId: string;
+            scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>;
+          }> = [];
+          for (const targetWindow of [...windows]) {
+            if (!windowAlive(targetWindow)) continue;
+            try {
+              const scripts = await targetWindow.webContents.executeJavaScript(
+                referencedScriptsCollector,
+                true,
+              );
+              groups.push({
+                windowRole: windowRoles.get(targetWindow) || 'main',
+                captureWindowId: String(targetWindow.webContents.id),
+                scripts: Array.isArray(scripts) ? scripts : [],
+              });
+            } catch (error) {
+              // 捕获页面引用脚本清单失败：文档可能尚未就绪或跨域 iframe 不可读
+              // 策略：跳过该窗口，保留已观察到的 HTTP 源码，清单按覆盖率判定
+              void error;
+            }
+          }
+          return groups;
         },
         async collectSessionCookies(targetUrl) {
           try {

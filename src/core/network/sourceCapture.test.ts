@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { HttpRequestRecord } from './createNetworkRecorder';
 import {
   adapterSourceCandidates,
+  adapterSourceCoverage,
   classifySourceKind,
   isCompleteAdapterSource,
   isJavascriptSourceText,
@@ -89,5 +90,39 @@ describe('sourceCapture', () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it('marks referenced main/polyfill missing when only a worker was captured', () => {
+    const worker = request({
+      id: 'worker',
+      url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+      resourceType: 'script',
+      responseContentType: 'application/javascript',
+      responseBodyCaptured: true,
+      sourceSha256: 'd'.repeat(64),
+      sourceBytes: 1200,
+      sourceTruncated: false,
+      responseBodySummary: {
+        bytes: 1200,
+        redactedFields: [],
+        sample: `self.onmessage=function(){${'A'.repeat(64)}}`,
+      },
+    });
+    const coverage = adapterSourceCoverage({
+      requests: [worker],
+      referenced: [
+        { url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js', kind: 'javascript', initiator: 'script-tag' },
+        { url: 'https://10.10.8.101/vmc/vconsole/polyfills.41fe.js', kind: 'javascript', initiator: 'script-tag' },
+        { url: 'https://10.10.8.101/vmc/vconsole/file.worker.js', kind: 'javascript', initiator: 'worker' },
+      ],
+      host: '10.10.8.101',
+      unclassified: true,
+    });
+
+    expect(coverage.missingReferenced.map(item => item.url)).toEqual([
+      'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+      'https://10.10.8.101/vmc/vconsole/polyfills.41fe.js',
+    ]);
+    expect(coverage.candidates.map(item => item.id)).toEqual(['worker']);
   });
 });

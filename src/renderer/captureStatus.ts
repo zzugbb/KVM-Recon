@@ -59,10 +59,12 @@ export function nextStepText(input: {
     pending.id === 'page.kvm.entry' ||
     pending.id === 'ws.kvm.established' ||
     pending.id === 'http.key_api' ||
-    pending.id === 'http.key_payload' ||
-    pending.id === 'http.viewer_source'
+    pending.id === 'http.key_payload'
   ) {
     return '请在采集窗口打开 HTML5 KVM，并把画面留在前台。打开后会自动截图。';
+  }
+  if (pending.id === 'http.viewer_source') {
+    return pending.userAction || '请关闭并重新打开 HTML5 KVM，不要只等待脚本加载。';
   }
   if (pending.id === 'page.viewer.screenshot') {
     return 'KVM 已打开，正在等待自动截图。请把画面窗口留在前台。';

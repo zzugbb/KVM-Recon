@@ -134,7 +134,12 @@ function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBy
   if (/^(?:image|media|font|stylesheet)$/i.test(metadata.resourceType)) {
     return `binary-resource:${metadata.resourceType.toLowerCase()}`;
   }
-  if (isSourceMetadata(metadata)) return '';
+  if (isSourceMetadata(metadata)) {
+    if (encodedBytes > SOURCE_FILE_LIMIT_BYTES) {
+      return `source-too-large-to-read:${encodedBytes}`;
+    }
+    return '';
+  }
   if (
     /^(?:image|audio|video|font)\//i.test(metadata.contentType) ||
     /application\/(?:octet-stream|pdf|zip|x-rar|wasm)/i.test(metadata.contentType) ||

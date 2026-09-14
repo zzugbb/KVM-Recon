@@ -6,9 +6,11 @@ import {
   validateManifestShape,
   validateRequiredPackFiles,
   validateScreenshotIndexShape,
+  validateSourceInventoryIntegrity,
   validateTimelineLineShape,
   validateWebSocketListShape,
 } from './validateCapturePackShape';
+import { sha256Hex } from '../network/sourceRedaction';
 
 export interface CapturePackSummary {
   family: string;
@@ -84,6 +86,10 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<CapturePackSummary> {
   const zip = await JSZip.loadAsync(bytes);
   const manifest = asRecord(await readZipJson(zip, 'manifest.json'));
@@ -94,8 +100,22 @@ export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<Captur
   const operatorObserved = asRecord(await readZipJson(zip, 'probe/operator-observed.json'));
   const requestLines = parseJsonl(await readZipText(zip, 'http/requests.jsonl'));
   const timelineLines = parseJsonl(await readZipText(zip, 'page/timeline.jsonl'));
+  const sourcesInventory = await readZipJson(zip, 'http/sources.json');
 
   const packPaths = Object.keys(zip.files).filter(path => !zip.files[path]?.dir);
+  const sourceFileBytes = new Map<string, { bytes: number; sha256: string }>();
+  if (isRecord(sourcesInventory) && Array.isArray(sourcesInventory.files)) {
+    for (const item of sourcesInventory.files) {
+      if (!isRecord(item) || typeof item.path !== 'string') continue;
+      const file = zip.file(item.path);
+      if (!file) continue;
+      const text = await file.async('string');
+      sourceFileBytes.set(item.path, {
+        bytes: Buffer.byteLength(text, 'utf8'),
+        sha256: sha256Hex(text),
+      });
+    }
+  }
   const schemaErrors = [
     ...validateManifestShape(manifest),
     ...validateChecklistShape(Object.keys(checklist).length ? checklist : null),
@@ -114,6 +134,16 @@ export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<Captur
   const items = Array.isArray(checklist.items) ? checklist.items : [];
   const socketList = Array.isArray(sockets) ? sockets : [];
   const screenshotList = Array.isArray(screenshots) ? screenshots : [];
+  schemaErrors.push(
+    ...validateSourceInventoryIntegrity({
+      inventory: sourcesInventory,
+      packPaths,
+      fileBytes: sourceFileBytes,
+      family: typeof family.primary === 'string' ? family.primary : '',
+      readiness:
+        typeof readiness.status === 'string' ? readiness.status : String(checklist.readiness || ''),
+    }),
+  );
 
   return {
     family: typeof family.primary === 'string' ? family.primary : '',
