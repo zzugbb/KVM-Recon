@@ -61,6 +61,7 @@ export function isExplicitKvmLaunchRequest(
 type CaptureContext = {
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
   windowRole?: string;
 };
 
@@ -69,9 +70,15 @@ export function sameCaptureContext(left?: CaptureContext, right?: CaptureContext
   const rightId = right?.captureWindowId;
   if (leftId || rightId) {
     if (leftId && rightId && leftId === rightId) return true;
-    // 主窗口请求 token、子窗口建立 WS：直接父子算同一采集上下文，兄弟弹窗不算
-    if (leftId && leftId === right?.openerCaptureWindowId) return true;
-    if (rightId && rightId === left?.openerCaptureWindowId) return true;
+    const leftAncestors = left?.ancestorCaptureWindowIds || [];
+    const rightAncestors = right?.ancestorCaptureWindowIds || [];
+    // 主窗口 token → 中间启动窗 → Viewer 子窗：祖先链上的窗口算同一上下文；兄弟弹窗不算
+    if (leftId && (rightId === left.openerCaptureWindowId || rightAncestors.includes(leftId))) {
+      return true;
+    }
+    if (rightId && (leftId === right.openerCaptureWindowId || leftAncestors.includes(rightId))) {
+      return true;
+    }
     return false;
   }
   if (left?.windowRole || right?.windowRole) {

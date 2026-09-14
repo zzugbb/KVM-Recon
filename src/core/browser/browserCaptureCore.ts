@@ -6,6 +6,7 @@ export type CaptureWindowRole = 'main' | 'popup';
 type CaptureWindowIdFields = {
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 };
 
 type BrowserTimelineEvent =
@@ -70,6 +71,7 @@ interface PopupEventInput {
   windowRole?: CaptureWindowRole;
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 interface StorageSnapshotInput {
@@ -215,6 +217,9 @@ export function createBrowserTimeline(jobId: string) {
             timestamp: nowIso(),
             ...(input.openerCaptureWindowId
               ? { openerCaptureWindowId: input.openerCaptureWindowId }
+              : {}),
+            ...(input.ancestorCaptureWindowIds?.length
+              ? { ancestorCaptureWindowIds: input.ancestorCaptureWindowIds }
               : {}),
           },
           input.captureWindowId,

@@ -76,16 +76,34 @@ describe('kvmLaunchCorrelation', () => {
     const token = http('token-1', 'https://10.0.0.10/api/kvm/token', {
       captureWindowId: 'popup-kvm',
       openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
       windowRole: 'popup',
     });
     const help = socket({
       captureWindowId: 'popup-help',
       openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
       windowRole: 'popup',
     });
 
     expect(sameCaptureContext(token, help)).toBe(false);
     expect(correlatedKvmLaunchHttpIds([token], help)).toEqual([]);
+  });
+
+  it('correlates a main-window token through an intermediate launcher to a nested Viewer WebSocket', () => {
+    const token = http('token-1', 'https://10.0.0.10/api/kvm/token', {
+      captureWindowId: 'win-main',
+      windowRole: 'main',
+    });
+    const viewer = socket({
+      captureWindowId: 'popup-viewer',
+      openerCaptureWindowId: 'popup-launch',
+      ancestorCaptureWindowIds: ['popup-launch', 'win-main'],
+      windowRole: 'popup',
+    });
+
+    expect(sameCaptureContext(token, viewer)).toBe(true);
+    expect(correlatedKvmLaunchHttpIds([token], viewer)).toEqual(['token-1']);
   });
 
   it('treats loading-failed and oversized KVM responses as missing critical payloads', () => {

@@ -1,5 +1,14 @@
 import { redactSensitiveData, redactUrl } from '../redaction/redactSensitiveData';
 import { HUAWEI_VMEDIA_WS_PATTERN, KNOWN_KVM_WEBSOCKET_PATTERN } from '../signatures/kvmUrlPatterns';
+import { redactSourceText, sha256Hex } from './sourceRedaction';
+import {
+  classifySourceKind,
+  isHtmlSourceText,
+  SOURCE_FILE_LIMIT_BYTES,
+  SOURCE_TEXT_SAMPLE_LIMIT,
+  type SourceFileRecord,
+  type SourceKind,
+} from './sourceCapture';
 
 type HeaderMap = Record<string, string>;
 type HttpTag = 'login' | 'kvm-token' | 'kvm-entry';
@@ -33,6 +42,7 @@ interface HttpRequestInput {
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 interface HttpResponseInput {
@@ -96,6 +106,11 @@ export interface HttpRequestRecord {
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
+  sourceKind?: SourceKind;
+  sourceSha256?: string;
+  sourceBytes?: number;
+  sourceTruncated?: boolean;
 }
 
 interface WebSocketCreatedInput {
@@ -107,6 +122,7 @@ interface WebSocketCreatedInput {
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 interface WebSocketHandshakeInput {
@@ -146,6 +162,7 @@ export interface WebSocketRecord {
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 interface WebSocketHandshakeResponseInput {
@@ -247,12 +264,11 @@ function isLikelyStreamingRequest(input: Pick<HttpRequestInput, 'method' | 'url'
 }
 
 const JSON_STRING_SAMPLE_LIMIT = 512;
-const SOURCE_TEXT_SAMPLE_LIMIT = 64 * 1024;
 
-function summarizeBody(body = '', contentType = '') {
+function summarizeBody(body = '', contentType = '', resourceType = '', url = '') {
   const parsed = parseBody(body, contentType);
   const redactedFields = collectSensitiveFieldNames(parsed);
-  const sample = sampleStructuredBody(parsed, contentType);
+  const sample = sampleStructuredBody(parsed, contentType, resourceType, url);
   return {
     bytes: body.length,
     redactedFields,
@@ -272,13 +288,7 @@ function responseRedirectLocation(headers: HeaderMap): string {
 }
 
 function isHtmlText(text: string) {
-  const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 512).toLowerCase();
-  return (
-    head.startsWith('<!doctype') ||
-    head.startsWith('<html') ||
-    /^<html[\s>]/.test(head) ||
-    (head.includes('<head') && head.includes('<body'))
-  );
+  return isHtmlSourceText(text);
 }
 
 function structureBody(body = '', contentType = ''): HttpResponseStructure {
@@ -350,33 +360,20 @@ function normalizeSample(value: unknown, key = '', depth = 0): StructuredBodySam
 }
 
 function redactTextSample(text: string, limit = JSON_STRING_SAMPLE_LIMIT): string {
-  const redacted = redactUrl(text).replace(
-    /((?:password|passwd|pwd|token|csrf|cookie|sessionid|session_id|authparam|garc|x-auth-token)=)([^&;\s]+)/gi,
-    (_match, prefix, value) => {
-      return `${prefix}${redactSensitiveData({ value }).data.value}`;
-    },
-  );
-  return redacted.length > limit ? `${redacted.slice(0, limit)}<truncated>` : redacted;
+  return redactSourceText(text, limit);
 }
 
-function isJavascriptContent(contentType: string, text: string) {
-  if (/javascript|ecmascript/i.test(contentType)) return true;
-  const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 120);
-  return /^(?:['"]use strict['"]|;?\s*(?:function|var |let |const |class |import |export |\/\*|\/\/))/.test(
-    head,
-  );
-}
-
-function isSourceText(parsed: string, contentType: string) {
-  return isHtmlText(parsed) || isJavascriptContent(contentType, parsed) || /html/i.test(contentType);
-}
-
-function sampleStructuredBody(parsed: unknown, contentType = ''): StructuredBodySample | undefined {
+function sampleStructuredBody(
+  parsed: unknown,
+  contentType = '',
+  resourceType = '',
+  url = '',
+): StructuredBodySample | undefined {
   if (typeof parsed === 'string') {
     const text = parsed.trim();
     if (!text) return undefined;
-    if (isSourceText(parsed, contentType)) {
-      return redactTextSample(parsed, SOURCE_TEXT_SAMPLE_LIMIT);
+    if (classifySourceKind(parsed, contentType, resourceType, url)) {
+      return redactSourceText(parsed, SOURCE_TEXT_SAMPLE_LIMIT);
     }
     return redactTextSample(text);
   }
@@ -485,10 +482,20 @@ function detectFrameMagic(payload: string | Uint8Array): string | undefined {
   return undefined;
 }
 
-function lineageFields(input?: { captureWindowId?: string; openerCaptureWindowId?: string }) {
+function lineageFields(input?: {
+  captureWindowId?: string;
+  openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
+}) {
+  const ancestorCaptureWindowIds = input?.ancestorCaptureWindowIds?.length
+    ? [...input.ancestorCaptureWindowIds]
+    : input?.openerCaptureWindowId
+      ? [input.openerCaptureWindowId]
+      : [];
   return {
     ...(input?.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
     ...(input?.openerCaptureWindowId ? { openerCaptureWindowId: input.openerCaptureWindowId } : {}),
+    ...(ancestorCaptureWindowIds.length ? { ancestorCaptureWindowIds } : {}),
   };
 }
 
@@ -509,6 +516,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const sampledFrameDirections = new Map<string, Set<'up' | 'down'>>();
   const sampledFrameMagic = new Map<string, Set<string>>();
   const attachFailures: Array<{ sessionId: string; reason: string }> = [];
+  const sourceBodies = new Map<string, SourceFileRecord>();
   let lastActivityAt = Date.now();
   let paused = false;
 
@@ -527,6 +535,33 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
       ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
     };
+  }
+
+  function captureSourceBody(existing: HttpRequestRecord, body: string, truncated: boolean) {
+    if (!body) return;
+    const kind = classifySourceKind(
+      body,
+      existing.responseContentType || '',
+      existing.resourceType,
+      existing.url,
+    );
+    if (!kind) return;
+    const stored = redactSourceText(body, SOURCE_FILE_LIMIT_BYTES);
+    const truncatedFile = truncated || stored.endsWith('<truncated>');
+    const text = stored.replace(/<truncated>$/, '');
+    existing.sourceKind = kind;
+    existing.sourceSha256 = sha256Hex(text);
+    existing.sourceBytes = Buffer.byteLength(text, 'utf8');
+    existing.sourceTruncated = truncatedFile;
+    sourceBodies.set(existing.id, {
+      id: existing.id,
+      url: existing.url,
+      kind,
+      sha256: existing.sourceSha256,
+      bytes: existing.sourceBytes,
+      truncated: truncatedFile,
+      text,
+    });
   }
 
   return {
@@ -613,7 +648,12 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         status: null,
         requestHeaders: redactHeaders(input.requestHeaders),
         responseHeaders: {},
-        requestBodySummary: summarizeBody(input.requestBody, contentTypeFromHeaders(input.requestHeaders)),
+        requestBodySummary: summarizeBody(
+          input.requestBody,
+          contentTypeFromHeaders(input.requestHeaders),
+          input.resourceType,
+          input.url,
+        ),
         requestBodyCaptured: Boolean(input.requestBody),
         responseBodySummary: summarizeBody(),
         responseContentType: '',
@@ -632,6 +672,8 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       existing.requestBodySummary = summarizeBody(
         input.requestBody,
         contentTypeFromHeaders(existing.requestHeaders),
+        existing.resourceType,
+        existing.url,
       );
       existing.requestBodyCaptured = true;
       delete existing.requestBodySkippedReason;
@@ -672,16 +714,27 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         inFlightHttpRequestIds.delete(input.id);
       }
       if (input.responseBody !== undefined) {
-        existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
+        existing.responseBodySummary = summarizeBody(
+          input.responseBody,
+          existing.responseContentType,
+          existing.resourceType,
+          existing.url,
+        );
         existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
         existing.responseBodyCaptured = true;
+        captureSourceBody(existing, input.responseBody, false);
       }
     },
     recordHttpResponseBody(input: HttpResponseBodyInput) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
       markActivity();
-      existing.responseBodySummary = summarizeBody(input.responseBody, existing.responseContentType);
+      existing.responseBodySummary = summarizeBody(
+        input.responseBody,
+        existing.responseContentType,
+        existing.resourceType,
+        existing.url,
+      );
       existing.responseStructure = structureBody(input.responseBody, existing.responseContentType);
       existing.responseBodyCaptured = true;
       if (input.truncatedReason) {
@@ -689,6 +742,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       } else {
         delete existing.responseBodySkippedReason;
       }
+      captureSourceBody(existing, input.responseBody, Boolean(input.truncatedReason));
     },
     markHttpResponseBodySkipped(id: string, reason: string) {
       const existing = httpRequests.get(id);
@@ -781,6 +835,9 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         webSockets: Array.from(webSockets.values()),
         webSocketFrames: [...webSocketFrames],
       };
+    },
+    sourceFiles(): SourceFileRecord[] {
+      return [...sourceBodies.values()];
     },
   };
 }

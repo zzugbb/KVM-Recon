@@ -809,6 +809,7 @@ describe('buildReadinessChecklist', () => {
       evidence: [
         'timedOut=true',
         'pendingTaskCount=1',
+        'inFlightRequestCount=1',
         'inFlight=session-1::request-9',
       ],
     });
@@ -1263,7 +1264,7 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('PARTIAL');
     expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
       status: 'missing',
-      evidence: ['viewer-js'],
+      evidence: ['viewer-js:sha256=missing:bytes=800000:truncated'],
     });
   });
 
@@ -1301,5 +1302,195 @@ describe('buildReadinessChecklist', () => {
 
     expect(checklist.items.find(item => item.id === 'http.viewer_source')?.status).toBe('pass');
     expect(checklist.readiness).toBe('YES');
+  });
+
+  it('does not require Viewer source samples for a known AMI family', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')?.status).toBe(
+      'not_applicable',
+    );
+    expect(checklist.readiness).toBe('YES');
+  });
+
+  it('treats hashed first-party chunks as required sources for unknown families', () => {
+    const unknownNetwork = {
+      httpRequests: [
+        {
+          id: 'login-1',
+          timestamp: '2026-09-14T12:00:00.000+08:00',
+          method: 'POST',
+          url: 'https://bmc.example/login',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: { 'set-cookie': 'SID=<redacted:sha256:sample>' } as Record<string, string>,
+          requestBodySummary: { bytes: 16, redactedFields: ['Password'] },
+          responseBodySummary: { bytes: 8, redactedFields: [] },
+          tags: ['login' as const],
+        },
+        {
+          id: 'chunk-1',
+          timestamp: '2026-09-14T12:00:01.000+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/static/js/8f3a21.chunk.js',
+          resourceType: 'script',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: { 'content-type': 'application/javascript' },
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: {
+            bytes: 1200,
+            redactedFields: [],
+            sample: `(()=>{window.kvm=true;${'A'.repeat(64)}})()`,
+          },
+          responseBodyCaptured: true,
+          sourceKind: 'javascript' as const,
+          sourceSha256: 'a'.repeat(64),
+          sourceBytes: 1200,
+          sourceTruncated: false,
+          tags: [],
+        },
+      ],
+      webSockets: [
+        {
+          id: 'ws-1',
+          createdAt: '2026-09-14T12:00:02.000+08:00',
+          url: 'wss://bmc.example/kvm',
+          subProtocols: ['binary'],
+          requestHeaders: {},
+          binaryFrameCount: 4,
+          textFrameCount: 0,
+          tags: ['kvm-video' as const],
+        },
+      ],
+      webSocketFrames: completeNetwork.webSocketFrames,
+    };
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, host: 'bmc.example', vendor: '', product: '' },
+        paths: {},
+        familySignatures: { primary: 'not-h5', confidence: 0, candidates: [] },
+      },
+      page: pageWithScreenshot,
+      network: unknownNetwork,
+      redaction: { status: 'pass', redactedFields: 1 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'pass',
+      evidence: [expect.stringContaining('chunk-1:')],
+    });
+  });
+
+  it('downgrades unknown families when one required source is truncated even if another is complete', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, host: 'bmc.example', vendor: '', product: '' },
+        paths: {},
+        familySignatures: { primary: 'not-h5', confidence: 0, candidates: [] },
+      },
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-09-14T12:00:00.000+08:00',
+            method: 'POST',
+            url: 'https://bmc.example/login',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'set-cookie': 'SID=<redacted:sha256:sample>' } as Record<string, string>,
+            requestBodySummary: { bytes: 16, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 8, redactedFields: [] },
+            tags: ['login' as const],
+          },
+          {
+            id: 'viewer-html',
+            timestamp: '2026-09-14T12:00:01.000+08:00',
+            method: 'GET',
+            url: 'https://bmc.example/console/html5viewer.html',
+            resourceType: 'document',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'text/html' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: {
+              bytes: 256,
+              redactedFields: [],
+              sample: '<!doctype html><html><body>kvm</body></html>',
+            },
+            responseBodyCaptured: true,
+            sourceKind: 'html' as const,
+            sourceSha256: 'b'.repeat(64),
+            sourceBytes: 256,
+            sourceTruncated: false,
+            tags: ['kvm-entry' as const],
+          },
+          {
+            id: 'chunk-1',
+            timestamp: '2026-09-14T12:00:01.100+08:00',
+            method: 'GET',
+            url: 'https://bmc.example/static/js/8f3a21.chunk.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: {
+              bytes: 65536,
+              redactedFields: [],
+              sample: `${'A'.repeat(64)}<truncated>`,
+            },
+            responseBodyCaptured: true,
+            sourceKind: 'javascript' as const,
+            sourceSha256: 'c'.repeat(64),
+            sourceBytes: 65536,
+            sourceTruncated: true,
+            tags: [],
+          },
+        ],
+        webSockets: completeNetwork.webSockets.map(socket => ({
+          ...socket,
+          url: 'wss://bmc.example/kvm',
+        })),
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 1 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'missing',
+      evidence: [expect.stringContaining('chunk-1:')],
+    });
+  });
+
+  it('marks an otherwise complete capture PARTIAL while requests are still in flight', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 1,
+        inFlightRequestIds: ['viewer-js'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: expect.arrayContaining(['pendingTaskCount=1', 'inFlight=viewer-js']),
+    });
   });
 });

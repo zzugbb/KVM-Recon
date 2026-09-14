@@ -265,4 +265,61 @@ describe('buildNetworkArtifacts', () => {
       likelyKvmLaunchHttpIds: ['token-main'],
     });
   });
+
+  it('writes opener window ids into HAR comments and exports independent source files', () => {
+    const artifacts = buildNetworkArtifacts({
+      httpRequests: [
+        {
+          id: 'viewer-js',
+          timestamp: '2026-09-14T12:00:00.000+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/html5viewer.js',
+          resourceType: 'script',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: { 'content-type': 'application/javascript' },
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: {
+            bytes: 32,
+            redactedFields: [],
+            sample: 'function startKvm() {}',
+          },
+          tags: [],
+          captureWindowId: 'popup-kvm',
+          openerCaptureWindowId: 'win-main',
+          ancestorCaptureWindowIds: ['win-main'],
+          sourceKind: 'javascript',
+          sourceSha256: 'abc123',
+          sourceBytes: 32,
+          sourceTruncated: false,
+        },
+      ],
+      webSockets: [],
+      webSocketFrames: [],
+      sourceFiles: [
+        {
+          id: 'viewer-js',
+          url: 'https://bmc.example/html5viewer.js',
+          kind: 'javascript',
+          sha256: 'abc123',
+          bytes: 32,
+          truncated: false,
+          text: 'function startKvm() {}',
+        },
+      ],
+    });
+
+    const har = JSON.parse(artifacts.find(item => item.path === 'http/har.json')?.content || '{}');
+    expect(JSON.parse(har.log.entries[0].comment)).toMatchObject({
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      sourceSha256: 'abc123',
+    });
+    expect(artifacts.find(item => item.path === 'http/sources.json')?.content).toContain(
+      'http/sources/viewer-js.js',
+    );
+    expect(artifacts.find(item => item.path === 'http/sources/viewer-js.js')?.content).toBe(
+      'function startKvm() {}',
+    );
+  });
 });

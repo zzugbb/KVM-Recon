@@ -5,6 +5,7 @@ import {
   correlatedLoginHttpIds,
   isExplicitKvmLaunchRequest,
 } from '../readiness/kvmLaunchCorrelation';
+import { sourceFilePath, type SourceFileRecord } from './sourceCapture';
 
 interface NetworkArtifact {
   path: string;
@@ -15,6 +16,7 @@ interface BuildNetworkArtifactsInput {
   httpRequests: HttpRequestRecord[];
   webSockets: WebSocketRecord[];
   webSocketFrames: WebSocketFrameRecord[];
+  sourceFiles?: SourceFileRecord[];
 }
 
 function toJsonl(records: unknown[]): string {
@@ -79,6 +81,12 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
           responseStructure: request.responseStructure,
           windowRole: request.windowRole,
           captureWindowId: request.captureWindowId,
+          openerCaptureWindowId: request.openerCaptureWindowId,
+          ancestorCaptureWindowIds: request.ancestorCaptureWindowIds,
+          sourceKind: request.sourceKind,
+          sourceSha256: request.sourceSha256,
+          sourceBytes: request.sourceBytes,
+          sourceTruncated: request.sourceTruncated,
         }),
       })),
     },
@@ -110,6 +118,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         ...(request.windowRole ? { windowRole: request.windowRole } : {}),
         ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
         ...(request.openerCaptureWindowId ? { openerCaptureWindowId: request.openerCaptureWindowId } : {}),
+        ...(request.ancestorCaptureWindowIds?.length
+          ? { ancestorCaptureWindowIds: request.ancestorCaptureWindowIds }
+          : {}),
         requestJsonKeys: request.requestBodySummary.jsonKeys || [],
         responseJsonKeys: request.responseBodySummary.jsonKeys || [],
         redactedFields: [
@@ -136,6 +147,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         ...(request.windowRole ? { windowRole: request.windowRole } : {}),
         ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
         ...(request.openerCaptureWindowId ? { openerCaptureWindowId: request.openerCaptureWindowId } : {}),
+        ...(request.ancestorCaptureWindowIds?.length
+          ? { ancestorCaptureWindowIds: request.ancestorCaptureWindowIds }
+          : {}),
         requestBodySample: request.requestBodySummary.sample || null,
         responseBodySample: request.responseBodySummary.sample || null,
         responseStructure: request.responseStructure,
@@ -158,6 +172,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
         ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
         ...(socket.openerCaptureWindowId ? { openerCaptureWindowId: socket.openerCaptureWindowId } : {}),
+        ...(socket.ancestorCaptureWindowIds?.length
+          ? { ancestorCaptureWindowIds: socket.ancestorCaptureWindowIds }
+          : {}),
         firstFrame: firstFrame
           ? {
               direction: firstFrame.direction,
@@ -173,6 +190,9 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         socketId: socket.id,
         ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
         ...(socket.openerCaptureWindowId ? { openerCaptureWindowId: socket.openerCaptureWindowId } : {}),
+        ...(socket.ancestorCaptureWindowIds?.length
+          ? { ancestorCaptureWindowIds: socket.ancestorCaptureWindowIds }
+          : {}),
         ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
         likelyLoginHttpIds: correlatedLoginHttpIds(input.httpRequests, socket),
         likelyKvmLaunchHttpIds: correlatedKvmLaunchHttpIds(input.httpRequests, socket),
@@ -181,6 +201,25 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
 }
 
 export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): NetworkArtifact[] {
+  const sourceFiles = input.sourceFiles || [];
+  const sourceArtifacts = sourceFiles.flatMap(file => {
+    const path = sourceFilePath(file.id, file.kind);
+    return [
+      {
+        path,
+        content: file.text,
+      },
+    ];
+  });
+  const inventory = sourceFiles.map(file => ({
+    id: file.id,
+    url: file.url,
+    kind: file.kind,
+    sha256: file.sha256,
+    bytes: file.bytes,
+    truncated: file.truncated,
+    path: sourceFilePath(file.id, file.kind),
+  }));
   return [
     {
       path: 'http/requests.jsonl',
@@ -194,6 +233,15 @@ export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): Networ
       path: 'http/adapter-evidence.json',
       content: JSON.stringify(buildAdapterEvidence(input), null, 2),
     },
+    ...(inventory.length
+      ? [
+          {
+            path: 'http/sources.json',
+            content: JSON.stringify({ files: inventory }, null, 2),
+          },
+          ...sourceArtifacts,
+        ]
+      : []),
     {
       path: 'ws/sockets.json',
       content: JSON.stringify(input.webSockets, null, 2),

@@ -195,6 +195,7 @@ describe('field capture regressions from existing on-site packs', () => {
 
     expect(family.primary).toBe('unknown-h5');
     expect(checklist.items.find(item => item.id === 'ws.kvm.established')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')?.status).toBe('missing');
   });
 
   it('records Dell vconsole evidence using the actual /vmc or /vnc path', () => {

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/http-sources.schema.json",
+  "title": "KVM-Recon captured HTML/JS source inventory",
+  "type": "object",
+  "required": ["files"],
+  "properties": {
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "kind", "sha256", "bytes", "truncated", "path"],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "kind": { "enum": ["javascript", "html"] },
+          "sha256": { "type": "string" },
+          "bytes": { "type": "integer" },
+          "truncated": { "type": "boolean" },
+          "path": { "type": "string" }
+        }
+      }
+    }
+  }
+}

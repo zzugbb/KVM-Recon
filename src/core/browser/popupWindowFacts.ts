@@ -6,8 +6,22 @@ export interface PopupWindowDetails {
 export interface PopupWindowFactsInput {
   childCaptureWindowId: string;
   openerCaptureWindowId: string;
+  openerAncestorCaptureWindowIds?: string[];
   details?: PopupWindowDetails | null;
   fallbackUrl?: string;
+}
+
+export function childWindowLineage(input: {
+  openerCaptureWindowId: string;
+  openerAncestorCaptureWindowIds?: string[];
+}) {
+  return {
+    openerCaptureWindowId: input.openerCaptureWindowId,
+    ancestorCaptureWindowIds: [
+      input.openerCaptureWindowId,
+      ...(input.openerAncestorCaptureWindowIds || []),
+    ],
+  };
 }
 
 export function popupWindowFacts(input: PopupWindowFactsInput) {
@@ -16,6 +30,9 @@ export function popupWindowFacts(input: PopupWindowFactsInput) {
     disposition: input.details?.disposition || 'new-window',
     windowRole: 'popup' as const,
     captureWindowId: input.childCaptureWindowId,
-    openerCaptureWindowId: input.openerCaptureWindowId,
+    ...childWindowLineage({
+      openerCaptureWindowId: input.openerCaptureWindowId,
+      openerAncestorCaptureWindowIds: input.openerAncestorCaptureWindowIds,
+    }),
   };
 }

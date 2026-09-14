@@ -30,6 +30,7 @@ export interface CaptureBrowserAdapterOptions {
     windowRole: CaptureWindowRole;
     captureWindowId?: string;
     openerCaptureWindowId?: string;
+    ancestorCaptureWindowIds?: string[];
   }): void;
   onNetworkDebugger(
     cdp: CdpDebuggerLike,
@@ -37,6 +38,7 @@ export interface CaptureBrowserAdapterOptions {
       windowRole: CaptureWindowRole;
       captureWindowId: string;
       openerCaptureWindowId?: string;
+      ancestorCaptureWindowIds?: string[];
     },
   ): Promise<void>;
   onAttachFailure?(sessionId: string, reason: string): void;
@@ -48,6 +50,7 @@ export interface CapturePageTarget {
   windowId: string;
   windowRole: CaptureWindowRole;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 interface PageTargetOptions {
@@ -348,6 +351,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
               windowRole: context?.windowRole || (debuggerCount++ === 0 ? 'main' : 'popup'),
               captureWindowId: context?.captureWindowId,
               openerCaptureWindowId: context?.openerCaptureWindowId,
+              ancestorCaptureWindowIds: context?.ancestorCaptureWindowIds,
             });
           } catch (error) {
             // 捕获根/弹窗 debugger.attach 或 Network.enable 失败
@@ -423,6 +427,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     },
     network() {
       return networkRecorder.toJSON();
+    },
+    sourceFiles() {
+      return networkRecorder.sourceFiles();
     },
     networkCaptureStatus() {
       return networkRecorder.captureStatus();

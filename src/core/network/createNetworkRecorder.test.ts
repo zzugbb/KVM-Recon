@@ -709,6 +709,38 @@ describe('createNetworkRecorder', () => {
     expect(String(records[1]?.responseBodySummary.sample)).toContain('function initKvmViewer');
   });
 
+  it('keeps IIFE bundles as source text when MIME is wrong but CDP type is Script', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    const script = `(()=>{window.startKvmViewer=function(){${'A'.repeat(800)}}})();`;
+    recorder.recordHttpRequest({
+      id: 'chunk-js',
+      timestamp: '2026-09-14T12:00:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.0.0.10/static/js/8f3a21.chunk.js',
+      resourceType: 'Script',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'chunk-js',
+      status: 200,
+      responseHeaders: { 'content-type': 'application/octet-stream' },
+      responseBody: script,
+    });
+
+    const record = recorder.toJSON().httpRequests[0];
+    expect(record?.sourceKind).toBe('javascript');
+    expect(record?.sourceTruncated).toBe(false);
+    expect(String(record?.responseBodySummary.sample).length).toBeGreaterThan(512);
+    expect(recorder.sourceFiles()).toEqual([
+      expect.objectContaining({
+        id: 'chunk-js',
+        kind: 'javascript',
+        truncated: false,
+        text: script,
+      }),
+    ]);
+  });
+
   it('tags Huawei virtual media port 8208 as vmedia instead of kvm-video', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
     recorder.recordWebSocketCreated({

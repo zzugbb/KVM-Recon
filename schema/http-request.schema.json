@@ -50,7 +50,15 @@
     },
     "windowRole": { "enum": ["main", "popup"] },
     "captureWindowId": { "type": "string" },
-    "openerCaptureWindowId": { "type": "string" }
+    "openerCaptureWindowId": { "type": "string" },
+    "ancestorCaptureWindowIds": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sourceKind": { "enum": ["javascript", "html"] },
+    "sourceSha256": { "type": "string" },
+    "sourceBytes": { "type": "integer" },
+    "sourceTruncated": { "type": "boolean" }
   },
   "definitions": {
     "bodySummary": {

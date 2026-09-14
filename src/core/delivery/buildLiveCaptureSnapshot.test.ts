@@ -200,5 +200,17 @@ describe('buildLiveCaptureSnapshot', () => {
         },
       }).readiness,
     ).toBe('PARTIAL');
+    expect(
+      buildLiveCaptureSnapshot({
+        probe,
+        page,
+        network,
+        networkIdle: {
+          timedOut: false,
+          pendingTaskCount: 1,
+          inFlightRequestIds: ['viewer-js'],
+        },
+      }).readiness,
+    ).toBe('PARTIAL');
   });
 });

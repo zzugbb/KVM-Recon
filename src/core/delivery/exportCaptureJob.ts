@@ -9,6 +9,7 @@ import type {
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
+import type { SourceFileRecord } from '../network/sourceCapture';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { assembleCapturePackForExport } from './assembleCapturePackForExport';
 import {
@@ -53,6 +54,7 @@ interface ExportCaptureJobInput {
   collectPageFacts(label: string): Promise<unknown>;
   getPage(): BrowserTimelineJson;
   getNetwork(): NetworkSnapshot;
+  getSourceFiles?(): SourceFileRecord[];
   waitForNetworkIdle?(): Promise<NetworkIdleResult | void>;
   chooseSavePath(fileName: string): Promise<string | null>;
   writeFile(path: string, bytes: Uint8Array): Promise<void>;
@@ -118,6 +120,7 @@ export async function exportCaptureJob(input: ExportCaptureJobInput): Promise<Ex
       },
       page,
       network: input.getNetwork(),
+      sourceFiles: input.getSourceFiles?.() || [],
       networkIdle,
       sensitiveValues: input.sensitiveValues,
       screenshotArtifacts,

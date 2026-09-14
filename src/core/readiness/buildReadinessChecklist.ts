@@ -20,6 +20,11 @@ import type {
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
+import {
+  adapterSourceCandidates,
+  isCompleteAdapterSource,
+  sourceInventoryEvidence,
+} from '../network/sourceCapture';
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -285,34 +290,28 @@ function familyFingerprintItem(
   });
 }
 
-function requestContentType(request: HttpRequestRecord) {
-  return (
-    request.responseContentType ||
-    Object.entries(request.responseHeaders).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
-    ''
-  );
-}
-
-function isAdapterSourceRequest(request: HttpRequestRecord) {
-  const contentType = requestContentType(request);
-  const isSource =
-    /^(?:script|document)$/i.test(request.resourceType) ||
-    /javascript|ecmascript|(?:text|application)\/(?:x-)?html/i.test(contentType);
-  if (!isSource) return false;
-  return /kvm|viewer|console|vnc|irc|vconsole|h5|encrypt|login|session|auth|websocket|vkvm|html5/i.test(
-    request.url,
-  );
-}
-
-function hasUsefulSourceSample(request: HttpRequestRecord) {
-  const sample = request.responseBodySummary.sample;
-  if (typeof sample !== 'string') return false;
-  return sample.replace(/<truncated>$/, '').trim().length >= 32;
-}
-
-function viewerSourceItem(network: NetworkSnapshot | null | undefined): ChecklistItem {
-  const candidates = (network?.httpRequests || []).filter(isAdapterSourceRequest);
+function viewerSourceItem(
+  probe: ProbeBmcTargetResult | null | undefined,
+  network: NetworkSnapshot | null | undefined,
+): ChecklistItem {
+  const family = probe ? scoreCapturedKvmFamily(probe, network) : { primary: 'unknown-h5' as const };
+  const unclassified = family.primary === 'unknown-h5' || family.primary === 'not-h5';
+  const candidates = adapterSourceCandidates(network?.httpRequests || [], {
+    host: probe?.basic.host,
+    unclassified,
+  });
   if (candidates.length === 0) {
+    if (unclassified && kvmWebSocketEvidence(network).length > 0) {
+      return item({
+        id: 'http.viewer_source',
+        title: '关键 Viewer/认证源码资料',
+        status: 'missing',
+        severity: 'warning',
+        evidence: [],
+        userAction:
+          '未知协议已有 KVM WebSocket，但未捕获 Viewer/登录 HTML 或 JS。请保持采集窗口打开并等待脚本加载后再导出。',
+      });
+    }
     return item({
       id: 'http.viewer_source',
       title: '关键 Viewer/认证源码资料',
@@ -322,16 +321,16 @@ function viewerSourceItem(network: NetworkSnapshot | null | undefined): Checklis
       userAction: '',
     });
   }
-  const withSample = candidates.filter(hasUsefulSourceSample);
-  if (withSample.length === 0) {
+  const incomplete = candidates.filter(request => !isCompleteAdapterSource(request));
+  if (incomplete.length > 0) {
     return item({
       id: 'http.viewer_source',
       title: '关键 Viewer/认证源码资料',
       status: 'missing',
       severity: 'warning',
-      evidence: candidates.map(request => request.id),
+      evidence: incomplete.map(sourceInventoryEvidence),
       userAction:
-        '已捕获 Viewer/登录相关 HTML 或 JS，但正文样本缺失。请保持采集窗口打开并等待页面脚本加载后再导出，避免离场后无法写新 Adapter。',
+        'Viewer/登录源码不完整或被截断。请等待页面脚本加载完成后再导出；未知协议缺少完整源码时不能判 YES。',
     });
   }
   return item({
@@ -339,28 +338,33 @@ function viewerSourceItem(network: NetworkSnapshot | null | undefined): Checklis
     title: '关键 Viewer/认证源码资料',
     status: 'pass',
     severity: 'warning',
-    evidence: withSample.map(request => request.id),
+    evidence: candidates.map(sourceInventoryEvidence),
     userAction: '',
   });
 }
 
 function networkCaptureIncomplete(networkIdle: NetworkIdleResult | null | undefined) {
-  return Boolean(networkIdle?.timedOut || (networkIdle?.attachFailures || []).length);
+  if (!networkIdle) return false;
+  return Boolean(
+    networkIdle.timedOut ||
+      (networkIdle.attachFailures || []).length ||
+      networkIdle.pendingTaskCount > 0 ||
+      networkIdle.inFlightRequestIds.length > 0,
+  );
 }
 
 function networkCaptureEvidence(networkIdle: NetworkIdleResult | null | undefined) {
   const attachFailures = networkIdle?.attachFailures || [];
-  if (!networkIdle?.timedOut && attachFailures.length === 0) {
+  const pendingTaskCount = networkIdle?.pendingTaskCount ?? 0;
+  const inFlight = networkIdle?.inFlightRequestIds || [];
+  if (!networkIdle) {
     return ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0'];
   }
   return [
-    ...(networkIdle?.timedOut
-      ? [
-          'timedOut=true',
-          `pendingTaskCount=${networkIdle.pendingTaskCount}`,
-          ...networkIdle.inFlightRequestIds.map(id => `inFlight=${id}`),
-        ]
-      : ['timedOut=false']),
+    `timedOut=${Boolean(networkIdle.timedOut)}`,
+    `pendingTaskCount=${pendingTaskCount}`,
+    `inFlightRequestCount=${inFlight.length}`,
+    ...inFlight.map(id => `inFlight=${id}`),
     ...attachFailures.map(failure => `attachFailed=${failure.sessionId}:${failure.reason}`),
   ];
 }
@@ -457,7 +461,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
         ? '关键登录 POST 或 KVM 启动接口缺少请求/响应正文。请在采集窗口完成登录并打开 KVM 后稍候再导出，避免空正文仍判 YES。'
         : '',
     }),
-    viewerSourceItem(input.network),
+    viewerSourceItem(input.probe, input.network),
     item({
       id: 'ws.kvm.established',
       title: 'KVM WebSocket',
@@ -485,7 +489,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       severity: 'warning',
       evidence: networkCaptureEvidence(input.networkIdle),
       userAction: networkCaptureIncomplete(input.networkIdle)
-        ? '网络仍有未完成请求、响应体读取失败，或弹窗/OOPIF 未能启用 Network。请在采集窗口等待片刻后重新导出，避免关键请求缺正文或 Viewer 目标被暂停。'
+        ? '网络尚未静默，或弹窗/OOPIF 未能启用 Network。请在采集窗口等待请求结束后再导出，避免实时 YES 与导出 PARTIAL 不一致。'
         : '',
     }),
     item({

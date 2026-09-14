@@ -398,4 +398,41 @@ describe('assembleCapturePackForExport', () => {
       'ami-megarac',
     );
   });
+
+  it('writes independent Viewer source files into the capture pack', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-source',
+      startedAt: '2026-09-14T12:00:00.000+08:00',
+      endedAt: '2026-09-14T12:01:00.000+08:00',
+      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      probe: completeProbe,
+      page: {
+        jobId: 'job-source',
+        events: [],
+      },
+      network: {
+        httpRequests: [],
+        webSockets: [],
+        webSocketFrames: [],
+      },
+      sourceFiles: [
+        {
+          id: 'viewer-js',
+          url: 'https://10.0.0.10/html5viewer.js',
+          kind: 'javascript',
+          sha256: 'abc123',
+          bytes: 21,
+          truncated: false,
+          text: 'function startKvm() {}',
+        },
+      ],
+    });
+
+    expect(result.pack.artifacts?.map(item => item.path)).toEqual(
+      expect.arrayContaining(['http/sources.json', 'http/sources/viewer-js.js']),
+    );
+    expect(result.pack.artifacts?.find(item => item.path === 'http/sources/viewer-js.js')?.content).toBe(
+      'function startKvm() {}',
+    );
+  });
 });

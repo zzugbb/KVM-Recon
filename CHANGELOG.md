@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-09-14
+
+- Viewer/登录源码按清单与完整性判定：未知族哈希 chunk 也纳入候选；截断前缀或漏采关键源码不再假通过。
+- JavaScript 识别同时看 CDP `resourceType=Script` 与 IIFE/`!function` 正文，错误 MIME 不再只留 512 字符。
+- 导出独立源码文件 `http/sources/*.js|html` 与 `http/sources.json`（最长约 2 MiB），JSONL 仍只保留 64 KiB 摘要。
+- 实时就绪纳入未完成请求/pending 任务；网络未静默时不能显示最终 YES。
+- 窗口关联保存祖先链，三层弹窗可把主窗口 token 与 Viewer 子窗 WebSocket 关联，兄弟弹窗仍不关联。
+- HAR comment 写入 `openerCaptureWindowId` / `ancestorCaptureWindowIds` 与源码哈希字段。
 - 收紧 KVM WebSocket 可靠帧判定：静态 KVM 资源不再作为启动链，通用二进制 `/websocket` 的弱 AMI 帧必须关联同窗口、短时间内的成功 KVM 启动请求。
 - 关键登录 POST / KVM 启动接口缺少请求或响应正文时降为 PARTIAL；CDP `hasPostData` 无内联 body 时调用 `Network.getRequestPostData`。
 - 弱 AMI 帧只关联明确 token/启动接口，不再信任宽泛 `kvm-entry`（如 `/api/console/status`）。
@@ -21,7 +29,6 @@
 - 登录后复验按每个实际探测 URL 读取符合 domain/path 的 BMC Cookie，不再丢失 `/api` 或 `/redfish` 路径 Cookie。
 - 对齐 randomtag `200` 命中语义、非默认端口 Host 和基础连接判定，并限制主动探测正文为 1 MiB。
 - 修复 Adapter evidence 与 Schema 不一致，新增 Ajv 样例包契约测试和 `1–65535` 端口双重校验。
-- HTML 与 JavaScript 响应保留脱敏后的正文样本（最长约 64KiB）；超过 1 MiB 的 Viewer/认证脚本保存截断前缀，不再整段丢弃。关键 HTML/JS 无样本时清单为 PARTIAL。
 - 华为虚拟媒体端口 `8208` 不再当作 KVM 视频 WebSocket；KVM 只认 `2198`/`2199`。
 - 可靠 KVM WebSocket 至少要求一条下行帧，仅客户端上行认证/控制包不再判 YES。
 - 弹窗 `debugger.attach` / `Network.enable` 失败记入 `attachFailures`，不再形成未处理拒绝。

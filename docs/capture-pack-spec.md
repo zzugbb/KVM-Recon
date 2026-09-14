@@ -48,6 +48,8 @@ capture-pack/
     har.json
     adapter-evidence.json
     capture-status.json
+    sources.json
+    sources/
   ws/
     frames.jsonl
     sockets.json
@@ -78,7 +80,7 @@ capture-pack/
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "buildId": "3d7a6e2c4f10"
   },
   "job": {
@@ -200,8 +202,8 @@ HTTP 资料必须脱敏：
 - Cookie / Set-Cookie **保留 cookie 名**，只脱敏值，便于离场后识别 `QSESSIONID` 等字段。
 - JSON 体保留 `jsonKeys` 字段名，不保存明文敏感值。
 - JSON 与 `application/x-www-form-urlencoded` 体可保留经过字段级处理的 `sample`，用于还原嵌套结构、表单参数和非敏感参数关系；敏感值写入 hash/长度掩码。
-- 短文本响应可保留有限长度 `sample`；HTML 页面和长视频/二进制流不落正文。
-- `data:` / `blob:` 不进入 HTTP 请求列表；图片、字体、媒体、样式、流式响应、二进制 MIME 与超过 1 MiB 的响应不读取正文，并在 `responseBodySkippedReason` 记录原因。
+- 短文本响应可保留有限长度 `sample`。HTML 页面与 JavaScript 源码在 `http/requests.jsonl` 中保留脱敏后最长约 64 KiB 的正文样本；完整源码另存 `http/sources/<id>.js|html`（最长约 2 MiB）并由 `http/sources.json` 记录 URL、SHA-256、字节数和是否截断。
+- `data:` / `blob:` 不进入 HTTP 请求列表；图片、字体、媒体、样式、流式响应、二进制 MIME 与超过 1 MiB 的非源码响应不读取正文，并在 `responseBodySkippedReason` 记录原因。CDP `resourceType=Script` / `Document` 或 JavaScript/HTML MIME 的源码最多读取 2 MiB；超过则保存截断前缀并标记 `sourceTruncated`。未知族截断或漏采关键源码时清单为 PARTIAL。
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
 - Chromium 重定向复用的 CDP `requestId` 会按 hop 拆成独立记录，并通过 `redirectedFromId` / `redirectedToId` 关联；每一跳保留方法、请求体、状态、Location 和响应头。

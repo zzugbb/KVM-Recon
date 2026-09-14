@@ -67,5 +67,8 @@ export function nextStepText(input: {
   if (pending.id === 'page.viewer.screenshot') {
     return 'KVM 已打开，正在等待自动截图。请把画面窗口留在前台。';
   }
+  if (pending.id === 'network.capture.complete') {
+    return '网络尚未静默。请等待 Viewer 脚本和请求结束后再导出，避免实时 YES 与导出结果不一致。';
+  }
   return pending.userAction || '请按下方采集进度补齐缺失项。';
 }

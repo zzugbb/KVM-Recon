@@ -109,6 +109,7 @@ export function createElectronCaptureBrowserAdapter(
       const windows = new Set<BrowserWindow>();
       const windowRoles = new Map<BrowserWindow, 'main' | 'popup'>();
       const windowOpeners = new Map<BrowserWindow, string>();
+      const windowAncestors = new Map<BrowserWindow, string[]>();
       let foreground: BrowserWindow | null = null;
       let debuggerCount = 0;
 
@@ -124,10 +125,12 @@ export function createElectronCaptureBrowserAdapter(
 
       function pageTarget(targetWindow: BrowserWindow): CapturePageTarget {
         const openerCaptureWindowId = windowOpeners.get(targetWindow);
+        const ancestorCaptureWindowIds = windowAncestors.get(targetWindow);
         return {
           windowId: String(targetWindow.webContents.id),
           windowRole: windowRoles.get(targetWindow) || 'main',
           ...(openerCaptureWindowId ? { openerCaptureWindowId } : {}),
+          ...(ancestorCaptureWindowIds?.length ? { ancestorCaptureWindowIds } : {}),
         };
       }
 
@@ -199,7 +202,7 @@ export function createElectronCaptureBrowserAdapter(
       async function attachWindow(
         targetWindow: BrowserWindow,
         attachDebugger: boolean,
-        lineage?: { openerCaptureWindowId?: string },
+        lineage?: { openerCaptureWindowId?: string; ancestorCaptureWindowIds?: string[] },
       ) {
         windows.add(targetWindow);
         foreground = targetWindow;
@@ -208,6 +211,12 @@ export function createElectronCaptureBrowserAdapter(
         }
         if (lineage?.openerCaptureWindowId) {
           windowOpeners.set(targetWindow, lineage.openerCaptureWindowId);
+          windowAncestors.set(
+            targetWindow,
+            lineage.ancestorCaptureWindowIds?.length
+              ? [...lineage.ancestorCaptureWindowIds]
+              : [lineage.openerCaptureWindowId],
+          );
         }
         targetWindow.on('focus', () => {
           if (windowAlive(targetWindow)) foreground = targetWindow;
@@ -216,6 +225,7 @@ export function createElectronCaptureBrowserAdapter(
           windows.delete(targetWindow);
           windowRoles.delete(targetWindow);
           windowOpeners.delete(targetWindow);
+          windowAncestors.delete(targetWindow);
           if (foreground === targetWindow) {
             foreground = [...windows].find(windowAlive) || null;
           }
@@ -299,12 +309,14 @@ export function createElectronCaptureBrowserAdapter(
           const facts = popupWindowFacts({
             childCaptureWindowId: String(childWindow.webContents.id),
             openerCaptureWindowId: String(targetWindow.webContents.id),
+            openerAncestorCaptureWindowIds: windowAncestors.get(targetWindow),
             details,
             fallbackUrl: childWindow.webContents.getURL(),
           });
           options.onPopup(facts);
           void attachWindow(childWindow, true, {
             openerCaptureWindowId: facts.openerCaptureWindowId,
+            ancestorCaptureWindowIds: facts.ancestorCaptureWindowIds,
           }).catch(error => {
             // 捕获弹窗窗口挂载失败：debugger.attach、Network.enable 或页面脚本注入拒绝
             // 策略：记入 attachFailures，避免未处理拒绝；KVM 弹窗仍可显示但清单 PARTIAL
@@ -323,6 +335,7 @@ export function createElectronCaptureBrowserAdapter(
                 windowRole: windowRoles.get(targetWindow) || 'main',
                 captureWindowId: String(targetWindow.webContents.id),
                 openerCaptureWindowId: windowOpeners.get(targetWindow),
+                ancestorCaptureWindowIds: windowAncestors.get(targetWindow),
               },
             );
             recordCaptureWindowLog(

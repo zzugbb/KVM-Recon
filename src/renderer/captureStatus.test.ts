@@ -85,5 +85,25 @@ describe('captureStatus', () => {
         windowsOpen: true,
       }),
     ).toContain('打开 HTML5 KVM');
+
+    expect(
+      nextStepText({
+        phase: 'capturing',
+        readiness: 'PARTIAL',
+        items: [
+          {
+            id: 'network.capture.complete',
+            title: '网络响应采集完整性',
+            status: 'needs_user_action',
+            severity: 'warning',
+            evidence: ['pendingTaskCount=1'],
+            userAction: '网络尚未静默',
+          },
+        ],
+        capturingScreenshot: false,
+        paused: false,
+        windowsOpen: true,
+      }),
+    ).toContain('网络尚未静默');
   });
 });

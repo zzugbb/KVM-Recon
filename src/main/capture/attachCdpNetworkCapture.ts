@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 
+import { SOURCE_FILE_LIMIT_BYTES } from '../../core/network/sourceCapture';
 import type { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 
 type NetworkRecorder = ReturnType<typeof createNetworkRecorder>;
@@ -29,6 +30,7 @@ interface AttachCdpNetworkCaptureInput {
   windowRole?: 'main' | 'popup';
   captureWindowId?: string;
   openerCaptureWindowId?: string;
+  ancestorCaptureWindowIds?: string[];
 }
 
 type HeaderMap = Record<string, string>;
@@ -88,8 +90,6 @@ function scopedId(requestId: string, sessionId?: string) {
 }
 
 const MAX_RESPONSE_BODY_BYTES = 1024 * 1024;
-const SOURCE_FETCH_LIMIT_BYTES = 2 * 1024 * 1024;
-const SOURCE_SAMPLE_BYTES = 64 * 1024;
 
 interface ResponseCaptureMetadata {
   id: string;
@@ -127,14 +127,14 @@ interface RequestChainState {
 function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBytes: number) {
   if (!metadata) return 'missing-response-metadata';
   if (/^(?:data|blob):/i.test(metadata.url)) return 'inline-or-blob-url';
-  if (encodedBytes > MAX_RESPONSE_BODY_BYTES) {
-    if (isSourceMetadata(metadata) && encodedBytes <= SOURCE_FETCH_LIMIT_BYTES) return '';
+  if (encodedBytes > MAX_RESPONSE_BODY_BYTES && !isSourceMetadata(metadata)) {
     return `response-too-large:${encodedBytes}`;
   }
   if (/^(?:eventsource|websocket)$/i.test(metadata.resourceType)) return 'streaming-resource';
   if (/^(?:image|media|font|stylesheet)$/i.test(metadata.resourceType)) {
     return `binary-resource:${metadata.resourceType.toLowerCase()}`;
   }
+  if (isSourceMetadata(metadata)) return '';
   if (
     /^(?:image|audio|video|font)\//i.test(metadata.contentType) ||
     /application\/(?:octet-stream|pdf|zip|x-rar|wasm)/i.test(metadata.contentType) ||
@@ -228,15 +228,16 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const responseBody = decodeResponseBody(result);
       const responseBytes = Buffer.byteLength(responseBody, 'utf8');
       const metadata = responseMetadata.get(id);
+      if (isSourceMetadata(metadata)) {
+        const truncated = responseBytes > SOURCE_FILE_LIMIT_BYTES;
+        input.recorder.recordHttpResponseBody({
+          id,
+          responseBody: truncated ? truncateUtf8(responseBody, SOURCE_FILE_LIMIT_BYTES) : responseBody,
+          ...(truncated ? { truncatedReason: `response-truncated:${responseBytes}` } : {}),
+        });
+        return;
+      }
       if (responseBytes > MAX_RESPONSE_BODY_BYTES) {
-        if (isSourceMetadata(metadata)) {
-          input.recorder.recordHttpResponseBody({
-            id,
-            responseBody: truncateUtf8(responseBody, SOURCE_SAMPLE_BYTES),
-            truncatedReason: `response-truncated:${responseBytes}`,
-          });
-          return;
-        }
         input.recorder.markHttpResponseBodySkipped(id, `response-too-large:${responseBytes}`);
         return;
       }
@@ -363,6 +364,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         windowRole: input.windowRole,
         captureWindowId: input.captureWindowId,
         openerCaptureWindowId: input.openerCaptureWindowId,
+        ancestorCaptureWindowIds: input.ancestorCaptureWindowIds,
       });
       if (!inlinePostData && request.hasPostData === true) {
         input.recorder.trackPending(recordRequestPostData(requestId, id, sessionId));
@@ -456,6 +458,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         windowRole: input.windowRole,
         captureWindowId: input.captureWindowId,
         openerCaptureWindowId: input.openerCaptureWindowId,
+        ancestorCaptureWindowIds: input.ancestorCaptureWindowIds,
       });
       return;
     }

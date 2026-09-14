@@ -855,7 +855,7 @@ describe('attachCdpNetworkCapture', () => {
     });
   });
 
-  it('keeps a truncated prefix for oversized Viewer scripts instead of skipping them', async () => {
+  it('keeps a complete Viewer script under 2 MiB instead of truncating to the JSONL sample limit', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const body = `function startKvm() {}\n${'A'.repeat(1.5 * 1024 * 1024)}`;
     const cdp: CdpDebuggerLike = {
@@ -899,8 +899,108 @@ describe('attachCdpNetworkCapture', () => {
 
     const request = recorder.toJSON().httpRequests[0];
     expect(request?.responseBodyCaptured).toBe(true);
-    expect(request?.responseBodySkippedReason).toMatch(/^response-truncated:/);
+    expect(request?.responseBodySkippedReason).toBeUndefined();
+    expect(request?.sourceTruncated).toBe(false);
+    expect(request?.sourceBytes).toBe(Buffer.byteLength(body, 'utf8'));
     expect(String(request?.responseBodySummary.sample)).toContain('function startKvm');
     expect(String(request?.responseBodySummary.sample).length).toBeLessThan(body.length);
+    expect(recorder.sourceFiles()[0]?.text).toBe(body);
+  });
+
+  it('stores a 2 MiB prefix when a Viewer script exceeds the source file limit', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const body = `function startKvm() {}\n${'A'.repeat(2.5 * 1024 * 1024)}`;
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command) {
+        if (command === 'Network.getResponseBody') {
+          return { body, base64Encoded: false };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      request: { method: 'GET', url: 'https://bmc.example/html5viewer.js', headers: {} },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      response: {
+        status: 200,
+        mimeType: 'application/javascript',
+        headers: { 'content-type': 'application/javascript' },
+      },
+    });
+    emit('Network.loadingFinished', {
+      requestId: 'viewer-js',
+      encodedDataLength: 2.5 * 1024 * 1024,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request?.sourceTruncated).toBe(true);
+    expect(request?.responseBodySkippedReason).toMatch(/^response-truncated:/);
+    expect(recorder.sourceFiles()[0]?.bytes).toBeLessThanOrEqual(2 * 1024 * 1024);
+    expect(recorder.sourceFiles()[0]?.truncated).toBe(true);
+  });
+
+  it('captures IIFE Viewer bundles even when the MIME type is wrong', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const body = `(()=>{window.startKvm=function(){${'B'.repeat(800)}}})();`;
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command) {
+        if (command === 'Network.getResponseBody') {
+          return { body, base64Encoded: false };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'chunk-js',
+      type: 'Script',
+      request: { method: 'GET', url: 'https://bmc.example/static/js/8f3a21.chunk.js', headers: {} },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'chunk-js',
+      type: 'Script',
+      response: {
+        status: 200,
+        mimeType: 'application/octet-stream',
+        headers: { 'content-type': 'application/octet-stream' },
+      },
+    });
+    emit('Network.loadingFinished', {
+      requestId: 'chunk-js',
+      encodedDataLength: body.length,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request?.sourceKind).toBe('javascript');
+    expect(String(request?.responseBodySummary.sample).length).toBeGreaterThan(512);
+    expect(recorder.sourceFiles()[0]?.text).toBe(body);
   });
 });

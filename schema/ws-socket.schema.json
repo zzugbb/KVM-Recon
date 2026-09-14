@@ -27,6 +27,10 @@
     },
     "windowRole": { "enum": ["main", "popup"] },
     "captureWindowId": { "type": "string" },
-    "openerCaptureWindowId": { "type": "string" }
+    "openerCaptureWindowId": { "type": "string" },
+    "ancestorCaptureWindowIds": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
   }
 }

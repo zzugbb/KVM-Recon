@@ -57,6 +57,15 @@ describe('Capture Pack JSON Schema', () => {
         path: 'http/capture-status.json',
         values: [JSON.parse(artifacts.get('http/capture-status.json') || 'null')],
       },
+      ...(artifacts.has('http/sources.json')
+        ? [
+            {
+              schema: 'http-sources.schema.json',
+              path: 'http/sources.json',
+              values: [JSON.parse(artifacts.get('http/sources.json') || 'null')],
+            },
+          ]
+        : []),
       {
         schema: 'ws-socket.schema.json',
         path: 'ws/sockets.json',

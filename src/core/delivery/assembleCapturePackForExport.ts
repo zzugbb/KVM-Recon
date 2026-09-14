@@ -8,6 +8,7 @@ import type {
   WebSocketFrameRecord,
   WebSocketRecord,
 } from '../network/createNetworkRecorder';
+import type { SourceFileRecord } from '../network/sourceCapture';
 import { buildNetworkArtifacts } from '../network/buildNetworkArtifacts';
 import { buildOemProfileArtifacts } from '../profile/buildOemProfileArtifacts';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
@@ -50,6 +51,7 @@ export interface AssembleCapturePackForExportInput {
   probe: ProbeBmcTargetResult;
   page: BrowserTimelineJson;
   network: NetworkSnapshot;
+  sourceFiles?: SourceFileRecord[];
   networkIdle?: NetworkIdleResult;
   sensitiveValues?: string[];
   screenshotArtifacts?: CapturePackArtifact[];
@@ -128,7 +130,10 @@ export function assembleCapturePackForExport(
     ...(operatorArtifact ? [operatorArtifact] : []),
     ...buildBrowserArtifacts(input.page),
     ...(input.screenshotArtifacts ?? []),
-    ...buildNetworkArtifacts(input.network),
+    ...buildNetworkArtifacts({
+      ...input.network,
+      sourceFiles: input.sourceFiles,
+    }),
     {
       path: 'http/capture-status.json',
       content: JSON.stringify(networkIdle, null, 2),

@@ -39,6 +39,7 @@ describe('popupWindowFacts', () => {
     const nested = popupWindowFacts({
       childCaptureWindowId: 'popup-nested',
       openerCaptureWindowId: 'popup-kvm',
+      openerAncestorCaptureWindowIds: ['win-main'],
       details: {
         url: 'https://10.0.0.10/viewer.html',
       },
@@ -49,6 +50,7 @@ describe('popupWindowFacts', () => {
       url: 'https://10.0.0.10/viewer.html',
       captureWindowId: 'popup-nested',
       openerCaptureWindowId: 'popup-kvm',
+      ancestorCaptureWindowIds: ['popup-kvm', 'win-main'],
       windowRole: 'popup',
     });
   });
