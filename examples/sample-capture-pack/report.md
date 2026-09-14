@@ -11,6 +11,7 @@
 - 登录链路 HTTP 资料：pass / blocking；证据：login-1；补采动作：无
 - HTML5 KVM 入口：pass / blocking；证据：#kvm, token-1；补采动作：无
 - KVM 关键 HTTP API：pass / warning；证据：token-1；补采动作：无
+- 关键登录/KVM 请求正文：pass / warning；证据：payload-complete；补采动作：无
 - KVM WebSocket：pass / blocking；证据：ws-1；补采动作：无
 - KVM 画面截图：missing / warning；证据：无；补采动作：打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。
 - 网络响应采集完整性：pass / warning；证据：timedOut=false, pendingTaskCount=0, inFlightRequestCount=0；补采动作：无

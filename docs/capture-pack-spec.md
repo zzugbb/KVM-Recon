@@ -259,9 +259,9 @@ HTTP 资料必须脱敏：
 ```
 
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
-`windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口）。未区分时可省略。
+`windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口），仅用于展示。内部关联与自动截图使用 `captureWindowId`（采集会话内每个 BrowserWindow 的稳定 ID）。旧包没有该字段时，才退回比较 `windowRole`。
 
-KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳、告警帧或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同窗口、2 分钟内、状态成功且非静态资源的 KVM 启动 HTTP 请求；`kvm.js` 等页面资源不构成启动链。
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vmc/vconsole` 与 `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。通用 `/websocket` 上的纯文本首页心跳、告警帧或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同一 `captureWindowId`（无 ID 时退回 `windowRole`）、2 分钟内、状态成功且非静态资源的**明确** KVM 启动 HTTP 请求；`kvm.js`、`/api/console/status` 等宽泛 `kvm-entry` 不构成启动链。关键登录 POST 与 KVM token 响应正文缺失时清单为 PARTIAL，不能只靠 URL+200 判 YES。
 
 限制：
 
@@ -280,7 +280,8 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 - popup/new window。
 - 截图时间点（包内相对路径）。
 - 点击事件摘要（选择器或短文案，不含敏感值）。
-- 每条事件的 `windowRole`（`main` / `popup`）。
+- 每条事件的 `windowRole`（`main` / `popup`，仅展示）。
+- 每条事件的 `captureWindowId`（采集会话内窗口 ID；与 HTTP/WS 使用同一值，用于同窗口关联）。
 
 `page/storage.json`：
 
@@ -288,7 +289,7 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 - 不导出敏感值原文。
 - 写入前后 key 增减（`localStorageAdded` / `Removed` 等）。
 - 保存该快照所属的 `windowRole`。
-- 顶层 key 是全部快照的并集；`snapshots` 按 `windowRole + captureRole` 保留登录页、KVM 入口和 Viewer 的聚合结果。
+- 顶层 key 是全部快照的并集；`snapshots` 按 `captureWindowId`（无 ID 时 `windowRole`）+ `captureRole` 保留登录页、KVM 入口和 Viewer 的聚合结果。
 
 `page/selectors.json`：
 
@@ -307,7 +308,7 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 - 离场清单 `page.viewer.screenshot` **只认 `role=viewer`**；登录页、菜单页、异常页或未标明 role 的截图不能让该项通过。
 - 自动 viewer 截图必须等正确 viewer target 收到可靠 KVM 证据后才生成，避免把 BMC 首页误当 KVM 画面。
 - 操作员手动选择「KVM 画面」时可对当前窗口补拍新/未知协议，索引会记录 `operatorConfirmed: true`；该字段只证明操作员确认了画面，不会让 `ws.kvm.established` 自动通过。若未实际生成截图，IPC 返回失败，界面不得显示已采集。
-- 同一次页面事实中的点击、storage、截图与 selector 必须绑定同一 `windowId`，并导出一致的 `windowRole`。
+- 同一次页面事实中的点击、storage、截图与 selector 必须绑定同一 `captureWindowId`，并导出一致的 `windowRole`。
 - 不得包含采集机绝对路径。
 
 `page/screenshots/`：

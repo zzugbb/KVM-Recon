@@ -21,6 +21,8 @@
     "requestBodySummary": { "$ref": "#/definitions/bodySummary" },
     "responseBodySummary": { "$ref": "#/definitions/bodySummary" },
     "responseContentType": { "type": "string" },
+    "requestBodyCaptured": { "type": "boolean" },
+    "requestBodySkippedReason": { "type": "string" },
     "responseBodyCaptured": { "type": "boolean" },
     "responseBodySkippedReason": { "type": "string" },
     "redirectLocation": { "type": "string" },
@@ -46,7 +48,8 @@
       "type": "array",
       "items": { "enum": ["login", "kvm-token", "kvm-entry"] }
     },
-    "windowRole": { "enum": ["main", "popup"] }
+    "windowRole": { "enum": ["main", "popup"] },
+    "captureWindowId": { "type": "string" }
   },
   "definitions": {
     "bodySummary": {

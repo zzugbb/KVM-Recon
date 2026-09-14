@@ -155,6 +155,7 @@ describe('field capture regressions from existing on-site packs', () => {
 
   it.each([
     ['Dell /vnc/vconsole', 'wss://10.10.8.101/vnc/vconsole', '524642203030332e3030380a', 'RFB 003.008'],
+    ['Dell /vmc/vconsole', 'wss://10.10.9.101/vmc/vconsole?vck=1', '524642203030332e3030380a', 'RFB 003.008'],
     ['Dell :5900/', 'wss://10.10.8.80:5900/', '415043500000004401000104', 'DELL_APCP'],
     ['Dell :5900/vkvm/', 'wss://10.10.8.88:5900/vkvm/', '415043500000004401000104', 'DELL_APCP'],
   ])('keeps %s as unknown-h5 with reliable KVM WS evidence', (_name, wsUrl, headHex, magic) => {
@@ -224,6 +225,7 @@ describe('field capture regressions from existing on-site packs', () => {
         {
           ...http('login-1', 'https://10.10.8.107/UI/Rest/Login', ['login']),
           method: 'POST',
+          requestBodySummary: { bytes: 48, redactedFields: ['Password'] },
           responseHeaders: { 'set-cookie': 'SessionId=<redacted:sha256:sample>' },
         },
         http('token-1', 'https://10.10.8.107/bmc/php/gettoken.php', ['kvm-token']),

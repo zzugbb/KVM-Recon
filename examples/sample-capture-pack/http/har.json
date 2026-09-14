@@ -44,7 +44,7 @@
           "wait": -1,
           "receive": -1
         },
-        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"login-1\",\"redirectHop\":0,\"tags\":[\"login\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"CSRFToken\"],\"jsonShape\":{\"CSRFToken\":\"string\"},\"jsonPaths\":{\"$.CSRFToken\":\"string\"}}}"
+        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"login-1\",\"redirectHop\":0,\"tags\":[\"login\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"CSRFToken\"],\"jsonShape\":{\"CSRFToken\":\"string\"},\"jsonPaths\":{\"$.CSRFToken\":\"string\"}},\"windowRole\":\"main\",\"captureWindowId\":\"win-main\"}"
       },
       {
         "startedDateTime": "2026-08-24T13:55:02.000+08:00",
@@ -79,7 +79,7 @@
           "wait": -1,
           "receive": -1
         },
-        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"token-1\",\"redirectHop\":0,\"tags\":[\"kvm-token\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"token\"],\"jsonShape\":{\"token\":\"string\"},\"jsonPaths\":{\"$.token\":\"string\"}}}"
+        "comment": "{\"resourceType\":\"xhr\",\"networkRequestId\":\"token-1\",\"redirectHop\":0,\"tags\":[\"kvm-token\"],\"responseBodyCaptured\":true,\"responseStructure\":{\"bodyKind\":\"json-object\",\"jsonKeys\":[\"token\"],\"jsonShape\":{\"token\":\"string\"},\"jsonPaths\":{\"$.token\":\"string\"}},\"windowRole\":\"main\",\"captureWindowId\":\"win-main\"}"
       }
     ]
   }

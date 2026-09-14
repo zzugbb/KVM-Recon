@@ -42,6 +42,7 @@
             "items": { "type": "string" }
           },
           "windowRole": { "enum": ["main", "popup"] },
+          "captureWindowId": { "type": "string" },
           "firstFrame": { "type": "object" }
         }
       }
@@ -53,6 +54,8 @@
         "required": ["socketId"],
         "properties": {
           "socketId": { "type": "string" },
+          "captureWindowId": { "type": "string" },
+          "windowRole": { "type": "string" },
           "likelyLoginHttpIds": {
             "type": "array",
             "items": { "type": "string" }
@@ -97,7 +100,8 @@
         "responseStructure": { "type": "object" },
         "requestBodySample": {},
         "responseBodySample": {},
-        "windowRole": { "enum": ["main", "popup"] }
+        "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" }
       }
     }
   }

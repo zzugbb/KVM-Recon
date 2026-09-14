@@ -3,20 +3,24 @@ import type { CaptureTarget } from '../capture-pack/types';
 export type ScreenshotRole = 'login' | 'home' | 'kvm-entry' | 'viewer' | 'error' | 'unknown';
 export type CaptureWindowRole = 'main' | 'popup';
 
+type CaptureWindowIdFields = {
+  captureWindowId?: string;
+};
+
 type BrowserTimelineEvent =
   | {
       type: 'navigation' | 'hash-change';
       url: string;
       windowRole: CaptureWindowRole;
       timestamp: string;
-    }
+    } & CaptureWindowIdFields
   | {
       type: 'popup';
       url: string;
       disposition: string;
       windowRole: CaptureWindowRole;
       timestamp: string;
-    }
+    } & CaptureWindowIdFields
   | {
       type: 'storage-snapshot';
       localStorageKeys: string[];
@@ -28,7 +32,7 @@ type BrowserTimelineEvent =
       windowRole: CaptureWindowRole;
       captureRole: ScreenshotRole;
       timestamp: string;
-    }
+    } & CaptureWindowIdFields
   | {
       type: 'screenshot';
       path: string;
@@ -37,14 +41,14 @@ type BrowserTimelineEvent =
       windowRole: CaptureWindowRole;
       operatorConfirmed?: boolean;
       timestamp: string;
-    }
+    } & CaptureWindowIdFields
   | {
       type: 'selector-candidates';
       candidates: SelectorCandidate[];
       windowRole: CaptureWindowRole;
       captureRole: ScreenshotRole;
       timestamp: string;
-    }
+    } & CaptureWindowIdFields
   | {
       type: 'click';
       selector: string;
@@ -52,7 +56,7 @@ type BrowserTimelineEvent =
       tagName: string;
       windowRole: CaptureWindowRole;
       timestamp: string;
-    };
+    } & CaptureWindowIdFields;
 
 interface BrowserTimelineJson {
   jobId: string;
@@ -63,6 +67,7 @@ interface PopupEventInput {
   url: string;
   disposition: string;
   windowRole?: CaptureWindowRole;
+  captureWindowId?: string;
 }
 
 interface StorageSnapshotInput {
@@ -74,6 +79,7 @@ interface StorageSnapshotInput {
   sessionStorageRemoved?: string[];
   windowRole?: CaptureWindowRole;
   captureRole?: ScreenshotRole;
+  captureWindowId?: string;
 }
 
 export interface ClickSummary {
@@ -81,6 +87,7 @@ export interface ClickSummary {
   text: string;
   tagName: string;
   windowRole?: CaptureWindowRole;
+  captureWindowId?: string;
 }
 
 export function screenshotRoleFromLabel(label: string): ScreenshotRole {
@@ -125,6 +132,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function withCaptureWindowId<T>(event: T, captureWindowId?: string): T {
+  return captureWindowId ? { ...event, captureWindowId } : event;
+}
+
 export function buildBmcUrl(target: CaptureTarget): string {
   return `${target.scheme}://${target.host}:${target.port}/`;
 }
@@ -165,44 +176,64 @@ export function createBrowserTimeline(jobId: string) {
   const events: BrowserTimelineEvent[] = [];
 
   return {
-    recordNavigation(url: string, windowRole: CaptureWindowRole = 'main') {
-      events.push({
-        type: 'navigation',
-        url,
-        windowRole,
-        timestamp: nowIso(),
-      });
+    recordNavigation(url: string, windowRole: CaptureWindowRole = 'main', captureWindowId?: string) {
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'navigation',
+            url,
+            windowRole,
+            timestamp: nowIso(),
+          },
+          captureWindowId,
+        ),
+      );
     },
-    recordHashChange(url: string, windowRole: CaptureWindowRole = 'main') {
-      events.push({
-        type: 'hash-change',
-        url,
-        windowRole,
-        timestamp: nowIso(),
-      });
+    recordHashChange(url: string, windowRole: CaptureWindowRole = 'main', captureWindowId?: string) {
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'hash-change',
+            url,
+            windowRole,
+            timestamp: nowIso(),
+          },
+          captureWindowId,
+        ),
+      );
     },
     recordPopup(input: PopupEventInput) {
-      events.push({
-        type: 'popup',
-        url: input.url,
-        disposition: input.disposition,
-        windowRole: input.windowRole || 'main',
-        timestamp: nowIso(),
-      });
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'popup',
+            url: input.url,
+            disposition: input.disposition,
+            windowRole: input.windowRole || 'main',
+            timestamp: nowIso(),
+          },
+          input.captureWindowId,
+        ),
+      );
     },
     recordStorageSnapshot(input: StorageSnapshotInput) {
-      events.push({
-        type: 'storage-snapshot',
-        localStorageKeys: input.localStorageKeys,
-        sessionStorageKeys: input.sessionStorageKeys,
-        localStorageAdded: input.localStorageAdded || [],
-        localStorageRemoved: input.localStorageRemoved || [],
-        sessionStorageAdded: input.sessionStorageAdded || [],
-        sessionStorageRemoved: input.sessionStorageRemoved || [],
-        windowRole: input.windowRole || 'main',
-        captureRole: input.captureRole || 'unknown',
-        timestamp: nowIso(),
-      });
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'storage-snapshot',
+            localStorageKeys: input.localStorageKeys,
+            sessionStorageKeys: input.sessionStorageKeys,
+            localStorageAdded: input.localStorageAdded || [],
+            localStorageRemoved: input.localStorageRemoved || [],
+            sessionStorageAdded: input.sessionStorageAdded || [],
+            sessionStorageRemoved: input.sessionStorageRemoved || [],
+            windowRole: input.windowRole || 'main',
+            captureRole: input.captureRole || 'unknown',
+            timestamp: nowIso(),
+          },
+          input.captureWindowId,
+        ),
+      );
     },
     recordScreenshot(
       path: string,
@@ -210,39 +241,56 @@ export function createBrowserTimeline(jobId: string) {
       role: ScreenshotRole = 'unknown',
       windowRole: CaptureWindowRole = 'main',
       operatorConfirmed = false,
+      captureWindowId?: string,
     ) {
-      events.push({
-        type: 'screenshot',
-        path,
-        role,
-        windowRole,
-        ...(operatorConfirmed ? { operatorConfirmed: true } : {}),
-        ...(sourcePath ? { sourcePath } : {}),
-        timestamp: nowIso(),
-      });
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'screenshot',
+            path,
+            role,
+            windowRole,
+            ...(operatorConfirmed ? { operatorConfirmed: true } : {}),
+            ...(sourcePath ? { sourcePath } : {}),
+            timestamp: nowIso(),
+          },
+          captureWindowId,
+        ),
+      );
     },
     recordClick(input: ClickSummary, windowRole: CaptureWindowRole = input.windowRole || 'main') {
-      events.push({
-        type: 'click',
-        selector: input.selector,
-        text: input.text,
-        tagName: input.tagName,
-        windowRole,
-        timestamp: nowIso(),
-      });
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'click',
+            selector: input.selector,
+            text: input.text,
+            tagName: input.tagName,
+            windowRole,
+            timestamp: nowIso(),
+          },
+          input.captureWindowId,
+        ),
+      );
     },
     recordSelectorCandidates(
       candidates: SelectorCandidate[],
       windowRole: CaptureWindowRole = 'main',
       captureRole: ScreenshotRole = 'unknown',
+      captureWindowId?: string,
     ) {
-      events.push({
-        type: 'selector-candidates',
-        candidates,
-        windowRole,
-        captureRole,
-        timestamp: nowIso(),
-      });
+      events.push(
+        withCaptureWindowId(
+          {
+            type: 'selector-candidates',
+            candidates,
+            windowRole,
+            captureRole,
+            timestamp: nowIso(),
+          },
+          captureWindowId,
+        ),
+      );
     },
     toJSON(): BrowserTimelineJson {
       return {

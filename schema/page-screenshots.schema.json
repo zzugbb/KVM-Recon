@@ -10,6 +10,7 @@
       "path": { "type": "string" },
       "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
       "windowRole": { "enum": ["main", "popup"] },
+      "captureWindowId": { "type": "string" },
       "operatorConfirmed": { "type": "boolean" }
     }
   }

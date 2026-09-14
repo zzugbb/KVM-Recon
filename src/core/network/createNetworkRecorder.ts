@@ -1,4 +1,5 @@
 import { redactSensitiveData, redactUrl } from '../redaction/redactSensitiveData';
+import { KNOWN_KVM_WEBSOCKET_PATTERN } from '../signatures/kvmUrlPatterns';
 
 type HeaderMap = Record<string, string>;
 type HttpTag = 'login' | 'kvm-token' | 'kvm-entry';
@@ -30,6 +31,7 @@ interface HttpRequestInput {
   redirectHop?: number;
   redirectedFromId?: string;
   windowRole?: 'main' | 'popup';
+  captureWindowId?: string;
 }
 
 interface HttpResponseInput {
@@ -43,6 +45,11 @@ interface HttpResponseInput {
 interface HttpResponseBodyInput {
   id: string;
   responseBody: string;
+}
+
+interface HttpRequestBodyInput {
+  id: string;
+  requestBody: string;
 }
 
 export interface HttpRequestRecord {
@@ -72,6 +79,8 @@ export interface HttpRequestRecord {
     sample?: StructuredBodySample;
   };
   responseContentType?: string;
+  requestBodyCaptured?: boolean;
+  requestBodySkippedReason?: string;
   responseBodyCaptured?: boolean;
   responseBodySkippedReason?: string;
   redirectLocation?: string;
@@ -83,6 +92,7 @@ export interface HttpRequestRecord {
   };
   tags: HttpTag[];
   windowRole?: 'main' | 'popup';
+  captureWindowId?: string;
 }
 
 interface WebSocketCreatedInput {
@@ -92,6 +102,7 @@ interface WebSocketCreatedInput {
   subProtocols: string[];
   requestHeaders: HeaderMap;
   windowRole?: 'main' | 'popup';
+  captureWindowId?: string;
 }
 
 interface WebSocketHandshakeInput {
@@ -129,6 +140,7 @@ export interface WebSocketRecord {
   droppedFrameCount?: number;
   tags: WebSocketTag[];
   windowRole?: 'main' | 'popup';
+  captureWindowId?: string;
 }
 
 interface WebSocketHandshakeResponseInput {
@@ -200,7 +212,7 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
   }
   if (
     !isStaticAsset &&
-    /kvm|console|viewer|vconsole|ircport|\/wss\/irc|\/vnc\//.test(lower) &&
+    /kvm|console|viewer|vconsole|ircport|\/wss\/irc|\/v[mn]c\//.test(lower) &&
     !tags.includes('kvm-token')
   ) {
     tags.push('kvm-entry');
@@ -210,14 +222,12 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
 
 function tagWebSocket(url: string): WebSocketTag[] {
   const lower = url.toLowerCase();
-  if (
-    /\/kvm(?:\/|\?|$)|\/kvm\/video|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/.test(
-      lower,
-    )
-  ) {
+  if (KNOWN_KVM_WEBSOCKET_PATTERN.test(lower)) {
     return ['kvm-video'];
   }
-  if (/vm|media|cd-server/.test(lower)) return ['vmedia'];
+  if (/(?:^|\/)(?:vm|vmedia|media|cd-server)(?:\/|\?|$)/.test(lower) || /cd-server/.test(lower)) {
+    return ['vmedia'];
+  }
   return ['unknown'];
 }
 
@@ -552,6 +562,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         requestHeaders: redactHeaders(input.requestHeaders),
         responseHeaders: {},
         requestBodySummary: summarizeBody(input.requestBody, contentTypeFromHeaders(input.requestHeaders)),
+        requestBodyCaptured: Boolean(input.requestBody),
         responseBodySummary: summarizeBody(),
         responseContentType: '',
         responseBodyCaptured: false,
@@ -559,7 +570,25 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         responseStructure: structureBody(),
         tags: tagHttp(input),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
+        ...(input.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
       });
+    },
+    recordHttpRequestBody(input: HttpRequestBodyInput) {
+      const existing = httpRequests.get(input.id);
+      if (!existing) return;
+      markActivity();
+      existing.requestBodySummary = summarizeBody(
+        input.requestBody,
+        contentTypeFromHeaders(existing.requestHeaders),
+      );
+      existing.requestBodyCaptured = true;
+      delete existing.requestBodySkippedReason;
+    },
+    markHttpRequestBodySkipped(id: string, reason: string) {
+      const existing = httpRequests.get(id);
+      if (!existing) return;
+      existing.requestBodyCaptured = false;
+      existing.requestBodySkippedReason = reason;
     },
     recordHttpResponse(input: HttpResponseInput) {
       const existing = httpRequests.get(input.id);
@@ -626,6 +655,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
         droppedFrameCount: 0,
         tags: tagWebSocket(input.url),
         ...(input.windowRole ? { windowRole: input.windowRole } : {}),
+        ...(input.captureWindowId ? { captureWindowId: input.captureWindowId } : {}),
       });
     },
     recordWebSocketHandshake(input: WebSocketHandshakeInput) {

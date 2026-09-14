@@ -100,6 +100,8 @@ const sampleNetwork: AssembleCapturePackForExportInput['network'] = {
         jsonPaths: { '$.CSRFToken': 'string' },
       },
       tags: ['login' as const],
+      windowRole: 'main' as const,
+      captureWindowId: 'win-main',
     },
     {
       id: 'token-1',
@@ -123,6 +125,8 @@ const sampleNetwork: AssembleCapturePackForExportInput['network'] = {
         jsonPaths: { '$.token': 'string' },
       },
       tags: ['kvm-token' as const],
+      windowRole: 'main' as const,
+      captureWindowId: 'win-main',
     },
   ],
   webSockets: [
@@ -141,6 +145,8 @@ const sampleNetwork: AssembleCapturePackForExportInput['network'] = {
       sampledFrameCount: 1,
       droppedFrameCount: 11,
       tags: ['kvm-video' as const],
+      windowRole: 'main' as const,
+      captureWindowId: 'win-main',
     },
   ],
   webSocketFrames: [
@@ -164,6 +170,7 @@ const samplePage = {
       candidates: [{ role: 'kvm-entry', selector: '#kvm', confidence: 0.8 }],
       windowRole: 'main' as const,
       captureRole: 'kvm-entry' as const,
+      captureWindowId: 'win-main',
       timestamp: '2026-08-24T13:55:01.000+08:00',
     },
   ],

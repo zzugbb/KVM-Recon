@@ -98,4 +98,109 @@ describe('buildNetworkArtifacts', () => {
     expect(JSON.parse(artifacts[3].content)).toEqual(webSockets);
     expect(artifacts[4].content).toContain('"headHex":"17000001"');
   });
+
+  it('correlates adapter evidence with the same window, success, and two-minute window', () => {
+    const artifacts = buildNetworkArtifacts({
+      httpRequests: [
+        {
+          id: 'launch-other-window',
+          timestamp: '2026-08-24T12:00:00.000+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/kvm/token',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 21, redactedFields: ['token'] },
+          tags: ['kvm-token'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-a',
+        },
+        {
+          id: 'stale-launch',
+          timestamp: '2026-08-24T11:50:00.000+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/kvm/token',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 21, redactedFields: ['token'] },
+          tags: ['kvm-token'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-b',
+        },
+        {
+          id: 'failed-launch',
+          timestamp: '2026-08-24T12:00:00.500+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/kvm/token',
+          resourceType: 'xhr',
+          status: 500,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 0, redactedFields: [] },
+          tags: ['kvm-token'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-b',
+        },
+        {
+          id: 'console-status',
+          timestamp: '2026-08-24T12:00:00.600+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/console/status',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 8, redactedFields: [] },
+          tags: ['kvm-entry'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-b',
+        },
+        {
+          id: 'launch-same-window',
+          timestamp: '2026-08-24T12:00:00.700+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/api/kvm/token',
+          resourceType: 'xhr',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 21, redactedFields: ['token'] },
+          tags: ['kvm-token'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-b',
+        },
+      ],
+      webSockets: [
+        {
+          id: 'ws-1',
+          createdAt: '2026-08-24T12:00:01.000+08:00',
+          url: 'wss://bmc.example/kvm',
+          subProtocols: ['binary'],
+          requestHeaders: {},
+          binaryFrameCount: 1,
+          textFrameCount: 0,
+          tags: ['kvm-video'],
+          windowRole: 'popup',
+          captureWindowId: 'popup-b',
+        },
+      ],
+      webSocketFrames: [],
+    });
+
+    const adapterEvidence = JSON.parse(artifacts[2].content);
+    expect(adapterEvidence.correlations[0].likelyKvmLaunchHttpIds).toEqual(['launch-same-window']);
+    expect(adapterEvidence.kvmLaunchChain.map((item: { id: string }) => item.id)).toEqual([
+      'launch-other-window',
+      'stale-launch',
+      'launch-same-window',
+    ]);
+  });
 });

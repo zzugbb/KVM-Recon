@@ -1,3 +1,5 @@
+import { KNOWN_KVM_WEBSOCKET_PATTERN } from './kvmUrlPatterns';
+
 export interface ProbeSignatureInput {
   redfish?: {
     vendor?: string;
@@ -80,7 +82,7 @@ function hasDellTraffic(input: ProbeSignatureInput) {
   const vendor = `${input.redfish?.vendor || ''} ${input.redfish?.product || ''}`;
   return /dell|idrac|poweredge/i.test(vendor) || urlMatches(
     [...urls(input), ...wsUrls(input)],
-    /\/sysmgmt\/2015\/bmc\/session|\/vnc\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/restgui\/html5viewer|idrac/i,
+    /\/sysmgmt\/2015\/bmc\/session|\/v[mn]c\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/restgui\/html5viewer|idrac/i,
   );
 }
 
@@ -286,7 +288,7 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
     hasDellTraffic(input),
     hasHpeTraffic(input),
     urlMatches(urls(input), /\/api\/kvm\/token|\/kvmservice|\/kvm\/video|\/html5viewer|\/vconsole|\/irc/i),
-    urlMatches(wsUrls(input), /\/kvm(?:\/|\?|$)|\/vnc\/vconsole|:5900\/|\/wss\/ircport|:2198\//i),
+    urlMatches(wsUrls(input), KNOWN_KVM_WEBSOCKET_PATTERN),
   ].some(Boolean);
 
   return {

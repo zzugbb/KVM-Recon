@@ -126,4 +126,40 @@ describe('buildBrowserArtifacts', () => {
       },
     ]);
   });
+
+  it('keeps storage snapshots from two popups with different captureWindowId separate', () => {
+    const timeline = createBrowserTimeline('job-two-popups');
+    timeline.recordStorageSnapshot({
+      localStorageKeys: ['KVM_TOKEN'],
+      sessionStorageKeys: [],
+      windowRole: 'popup',
+      captureRole: 'viewer',
+      captureWindowId: 'popup-kvm',
+    });
+    timeline.recordStorageSnapshot({
+      localStorageKeys: ['HELP_PAGE'],
+      sessionStorageKeys: [],
+      windowRole: 'popup',
+      captureRole: 'viewer',
+      captureWindowId: 'popup-help',
+    });
+
+    const storage = JSON.parse(
+      buildBrowserArtifacts(timeline.toJSON()).find(artifact => artifact.path === 'page/storage.json')!
+        .content,
+    );
+    expect(storage.captureWindowIds).toEqual(['popup-kvm', 'popup-help']);
+    expect(storage.snapshots).toEqual([
+      expect.objectContaining({
+        windowRole: 'popup',
+        captureWindowId: 'popup-kvm',
+        localStorageKeys: ['KVM_TOKEN'],
+      }),
+      expect.objectContaining({
+        windowRole: 'popup',
+        captureWindowId: 'popup-help',
+        localStorageKeys: ['HELP_PAGE'],
+      }),
+    ]);
+  });
 });

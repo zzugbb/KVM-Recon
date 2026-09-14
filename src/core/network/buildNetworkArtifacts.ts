@@ -1,5 +1,10 @@
 import { APP_VERSION } from '../../version';
 import type { HttpRequestRecord, WebSocketFrameRecord, WebSocketRecord } from './createNetworkRecorder';
+import {
+  correlatedKvmLaunchHttpIds,
+  correlatedLoginHttpIds,
+  isExplicitKvmLaunchRequest,
+} from '../readiness/kvmLaunchCorrelation';
 
 interface NetworkArtifact {
   path: string;
@@ -68,8 +73,12 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
           responseBodyCaptured: request.responseBodyCaptured,
           responseBodySkippedReason: request.responseBodySkippedReason,
           requestBodySample: request.requestBodySummary.sample,
+          requestBodySkippedReason: request.requestBodySkippedReason,
+          requestBodyCaptured: request.requestBodyCaptured,
           responseBodySample: request.responseBodySummary.sample,
           responseStructure: request.responseStructure,
+          windowRole: request.windowRole,
+          captureWindowId: request.captureWindowId,
         }),
       })),
     },
@@ -77,11 +86,6 @@ function buildHar(httpRequests: HttpRequestRecord[]) {
 }
 
 function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
-  const keyRequestIds = new Set(
-    input.httpRequests
-      .filter(request => request.tags.length > 0)
-      .map(request => request.id),
-  );
   const firstFrameBySocket = new Map<string, WebSocketFrameRecord>();
   for (const frame of input.webSocketFrames) {
     if (!firstFrameBySocket.has(frame.socketId)) {
@@ -103,6 +107,8 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         redirectedFromId: request.redirectedFromId || '',
         redirectedToId: request.redirectedToId || '',
         tags: request.tags,
+        ...(request.windowRole ? { windowRole: request.windowRole } : {}),
+        ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
         requestJsonKeys: request.requestBodySummary.jsonKeys || [],
         responseJsonKeys: request.responseBodySummary.jsonKeys || [],
         redactedFields: [
@@ -114,7 +120,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         responseStructure: request.responseStructure,
       })),
     kvmLaunchChain: input.httpRequests
-      .filter(request => request.tags.includes('kvm-token') || request.tags.includes('kvm-entry'))
+      .filter(request => isExplicitKvmLaunchRequest(request, false))
       .map(request => ({
         id: request.id,
         method: request.method,
@@ -126,6 +132,8 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         redirectedFromId: request.redirectedFromId || '',
         redirectedToId: request.redirectedToId || '',
         tags: request.tags,
+        ...(request.windowRole ? { windowRole: request.windowRole } : {}),
+        ...(request.captureWindowId ? { captureWindowId: request.captureWindowId } : {}),
         requestBodySample: request.requestBodySummary.sample || null,
         responseBodySample: request.responseBodySummary.sample || null,
         responseStructure: request.responseStructure,
@@ -146,6 +154,7 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
         droppedFrameCount: socket.droppedFrameCount ?? 0,
         tags: socket.tags,
         ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
+        ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
         firstFrame: firstFrame
           ? {
               direction: firstFrame.direction,
@@ -157,22 +166,13 @@ function buildAdapterEvidence(input: BuildNetworkArtifactsInput) {
           : null,
       };
     }),
-    correlations: input.webSockets.map(socket => {
-      const preceding = input.httpRequests.filter(
-        request => keyRequestIds.has(request.id) && request.timestamp <= socket.createdAt,
-      );
-      return {
+    correlations: input.webSockets.map(socket => ({
         socketId: socket.id,
-        likelyLoginHttpIds: preceding
-          .filter(request => request.tags.includes('login'))
-          .slice(-4)
-          .map(request => request.id),
-        likelyKvmLaunchHttpIds: preceding
-          .filter(request => request.tags.includes('kvm-token') || request.tags.includes('kvm-entry'))
-          .slice(-6)
-          .map(request => request.id),
-      };
-    }),
+        ...(socket.captureWindowId ? { captureWindowId: socket.captureWindowId } : {}),
+        ...(socket.windowRole ? { windowRole: socket.windowRole } : {}),
+        likelyLoginHttpIds: correlatedLoginHttpIds(input.httpRequests, socket),
+        likelyKvmLaunchHttpIds: correlatedKvmLaunchHttpIds(input.httpRequests, socket),
+      })),
   };
 }
 

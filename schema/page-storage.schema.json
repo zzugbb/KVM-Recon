@@ -17,6 +17,11 @@
       "items": { "enum": ["main", "popup"] },
       "uniqueItems": true
     },
+    "captureWindowIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
     "snapshots": {
       "type": "array",
       "items": {
@@ -33,6 +38,7 @@
         ],
         "properties": {
           "windowRole": { "enum": ["main", "popup"] },
+          "captureWindowId": { "type": "string" },
           "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
           "localStorageKeys": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
           "sessionStorageKeys": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },

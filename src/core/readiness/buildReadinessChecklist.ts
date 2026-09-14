@@ -8,6 +8,12 @@ import type {
 } from '../capture-pack/types';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
+import { isKnownKvmWebSocketUrl } from '../signatures/kvmUrlPatterns';
+import {
+  criticalPayloadGaps,
+  hasCorrelatedKvmLaunch,
+  isExplicitKvmLaunchRequest,
+} from './kvmLaunchCorrelation';
 import type {
   HttpRequestRecord,
   NetworkIdleResult,
@@ -74,17 +80,6 @@ function isStaticAssetUrl(url: string) {
   return /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(url);
 }
 
-function requestHeader(request: HttpRequestRecord, name: string) {
-  return Object.entries(request.requestHeaders).find(([key]) => key.toLowerCase() === name)?.[1] || '';
-}
-
-function hasLegacyKvmReferer(request: HttpRequestRecord) {
-  const referer = `${requestHeader(request, 'referer')} ${requestHeader(request, 'referrer')}`.toLowerCase();
-  return /\/bmc\/(?:pages\/remote\/kvm_by_html5\.html|resources\/js\/module\/remote\/html5\/)/.test(
-    referer,
-  );
-}
-
 function isReliableLoginRequest(request: HttpRequestRecord) {
   if (isStaticAssetUrl(request.url)) return false;
   const loginUrl = urlContains(request.url, [
@@ -118,14 +113,6 @@ function isReliableLoginRequest(request: HttpRequestRecord) {
   return hasSessionHeader || hasSessionStructure || hasSuccessBody;
 }
 
-function isLegacyKvmSupportRequest(request: HttpRequestRecord) {
-  return (
-    urlContains(request.url, [
-      /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
-    ]) && hasLegacyKvmReferer(request)
-  );
-}
-
 function decodeHeadHex(headHex: string): string {
   const hex = headHex.replace(/[^0-9a-f]/gi, '');
   if (hex.length < 2 || hex.length % 2 !== 0) return '';
@@ -146,33 +133,21 @@ function loginEvidence(network: NetworkSnapshot | null | undefined): string[] {
 }
 
 function isSuccessfulKvmLaunchRequest(request: HttpRequestRecord) {
-  if (isStaticAssetUrl(request.url)) return false;
-  if (request.status == null || request.status < 200 || request.status >= 400) return false;
-  return (
-    (request.tags.includes('kvm-token') &&
-      (!urlContains(request.url, [
-        /\/bmc\/php\/(?:setpropertybymethod|getmultiproperty|processparameter|editcookie)\.php/i,
-      ]) ||
-        isLegacyKvmSupportRequest(request))) ||
-    request.tags.includes('kvm-entry') ||
-    isLegacyKvmSupportRequest(request) ||
-    urlContains(request.url, [
-      /\/api\/kvm\/token/i,
-      /kvmservice/i,
-      /setkvmkey/i,
-      /starth5kvm/i,
-      /\/kvm\/video/i,
-      /\/vnc\/vconsole/i,
-      /\/restgui\/(?:html5viewer|views\/configuration\/vconsole)/i,
-      /\/wss\/ircport/i,
-      /\/bmc\/pages\/remote\/kvm_by_html5\.html/i,
-      /\/bmc\/php\/gettoken\.php/i,
-    ])
-  );
+  return isExplicitKvmLaunchRequest(request);
 }
 
 function keyHttpRequests(network: NetworkSnapshot | null | undefined): HttpRequestRecord[] {
   return (network?.httpRequests || []).filter(isSuccessfulKvmLaunchRequest);
+}
+
+function kvmEntryEvidence(network: NetworkSnapshot | null | undefined): string[] {
+  return (network?.httpRequests || [])
+    .filter(request => {
+      if (isStaticAssetUrl(request.url)) return false;
+      if (request.status == null || request.status < 200 || request.status >= 400) return false;
+      return request.tags.includes('kvm-entry') || isExplicitKvmLaunchRequest(request);
+    })
+    .map(request => request.id);
 }
 
 function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] {
@@ -180,14 +155,7 @@ function keyHttpEvidence(network: NetworkSnapshot | null | undefined): string[] 
 }
 
 function isKnownKvmSocketUrl(url: string) {
-  return urlContains(url, [
-    /\/kvm(?:\/|\?|$)/i,
-    /\/kvm\/video/i,
-    /\/vnc\/vconsole/i,
-    /:5900\/(?:$|\?|vkvm\/?)/i,
-    /\/wss\/ircport/i,
-    /:(?:2198|2199|8208)\/(?:websocket)?(?:\?|$)/i,
-  ]);
+  return isKnownKvmWebSocketUrl(url);
 }
 
 function hasStrongKvmFrame(frames: WebSocketFrameRecord[]) {
@@ -210,24 +178,6 @@ function hasWeakAmiFrame(frames: WebSocketFrameRecord[]) {
       frame.magic === 'AMI_IVTP_BINARY' ||
       /^(13|14|17|22|35|3a|50|53)[0-9a-f]{6}/i.test(frame.headHex),
   );
-}
-
-const KVM_LAUNCH_ASSOCIATION_MS = 120_000;
-
-function hasCorrelatedKvmLaunch(requests: HttpRequestRecord[], socket: WebSocketRecord) {
-  const socketTime = Date.parse(socket.createdAt);
-  if (!Number.isFinite(socketTime)) return false;
-  return requests.some(request => {
-    if (!request.windowRole || !socket.windowRole || request.windowRole !== socket.windowRole) {
-      return false;
-    }
-    const requestTime = Date.parse(request.timestamp);
-    return (
-      Number.isFinite(requestTime) &&
-      requestTime <= socketTime &&
-      socketTime - requestTime <= KVM_LAUNCH_ASSOCIATION_MS
-    );
-  });
 }
 
 export function kvmWebSocketEvidence(network: NetworkSnapshot | null | undefined): string[] {
@@ -346,8 +296,9 @@ function readinessFromItems(items: ChecklistItem[]): CaptureReadiness {
 export function buildReadinessChecklist(input: BuildReadinessChecklistInput): CaptureChecklist {
   const connectionEvidence = probeConnectionEvidence(input.probe);
   const loginIds = loginEvidence(input.network);
-  const entryEvidence = [...selectorEvidence(input.page), ...keyHttpEvidence(input.network)];
+  const entryEvidence = [...selectorEvidence(input.page), ...kvmEntryEvidence(input.network)];
   const httpIds = keyHttpEvidence(input.network);
+  const payloadGaps = criticalPayloadGaps(input.network?.httpRequests || []);
   const wsIds = kvmWebSocketEvidence(input.network);
   const screenshots = screenshotEvidence(input.page);
   const tls = tlsEvidence(input.probe);
@@ -393,6 +344,16 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       userAction: httpIds.length
         ? ''
         : '请打开 KVM viewer 后等待 token、KvmService、SetKvmKey 或 KVM 入口相关请求完成。',
+    }),
+    item({
+      id: 'http.key_payload',
+      title: '关键登录/KVM 请求正文',
+      status: statusForEvidence(payloadGaps.length ? [] : ['payload-complete'], 'missing'),
+      severity: 'warning',
+      evidence: payloadGaps.length ? payloadGaps : ['payload-complete'],
+      userAction: payloadGaps.length
+        ? '关键登录 POST 或 KVM 启动接口缺少请求/响应正文。请在采集窗口完成登录并打开 KVM 后稍候再导出，避免空正文仍判 YES。'
+        : '',
     }),
     item({
       id: 'ws.kvm.established',

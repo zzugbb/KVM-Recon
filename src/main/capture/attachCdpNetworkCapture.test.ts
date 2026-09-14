@@ -213,11 +213,120 @@ describe('attachCdpNetworkCapture', () => {
       listener({}, 'Target.attachedToTarget', { sessionId: 'oopif-session' }, undefined);
     }
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(sentCommands).toContainEqual({
       command: 'Network.enable',
       sessionId: 'oopif-session',
     });
+    expect(sentCommands).toContainEqual({
+      command: 'Runtime.runIfWaitingForDebugger',
+      sessionId: 'oopif-session',
+    });
+    expect(
+      sentCommands.findIndex(item => item.command === 'Network.enable' && item.sessionId === 'oopif-session'),
+    ).toBeLessThan(
+      sentCommands.findIndex(
+        item => item.command === 'Runtime.runIfWaitingForDebugger' && item.sessionId === 'oopif-session',
+      ),
+    );
+  });
+
+  it('pauses auto-attached targets until Network.enable finishes', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const sentCommands: Array<{ command: string; sessionId?: string }> = [];
+    let releaseEnable: (() => void) | undefined;
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, params, sessionId) {
+        sentCommands.push({ command, sessionId });
+        if (command === 'Network.enable' && sessionId === 'oopif-session') {
+          await new Promise<void>(resolve => {
+            releaseEnable = resolve;
+          });
+        }
+        if (command === 'Target.setAutoAttach') {
+          expect(params).toMatchObject({ waitForDebuggerOnStart: true, flatten: true });
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder: createNetworkRecorder({ frameHeadBytes: 4 }),
+      now: () => '2026-08-24T12:00:00.000+08:00',
+    });
+
+    for (const listener of listeners) {
+      listener({}, 'Target.attachedToTarget', { sessionId: 'oopif-session' }, undefined);
+    }
+    await Promise.resolve();
+    expect(sentCommands.map(item => item.command)).not.toContain('Runtime.runIfWaitingForDebugger');
+    releaseEnable?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sentCommands).toContainEqual({
+      command: 'Runtime.runIfWaitingForDebugger',
+      sessionId: 'oopif-session',
+    });
+  });
+
+  it('loads POST bodies via Network.getRequestPostData when CDP omits postData', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command, params) {
+        if (command === 'Network.getRequestPostData') {
+          expect(params).toEqual({ requestId: 'login-1' });
+          return { postData: '{"UserName":"root","Password":"secret"}' };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-08-24T12:00:00.000+08:00',
+      captureWindowId: 'win-main',
+      windowRole: 'main',
+    });
+
+    for (const listener of listeners) {
+      listener({}, 'Network.requestWillBeSent', {
+        requestId: 'login-1',
+        type: 'XHR',
+        request: {
+          method: 'POST',
+          url: 'https://bmc.example/api/session',
+          headers: { 'content-type': 'application/json' },
+          hasPostData: true,
+        },
+      });
+    }
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request).toMatchObject({
+      captureWindowId: 'win-main',
+      requestBodyCaptured: true,
+      requestBodySummary: {
+        jsonKeys: ['UserName', 'Password'],
+        redactedFields: ['Password'],
+      },
+    });
+    expect(JSON.stringify(request)).not.toContain('secret');
   });
 
   it('records WebSocket handshake responses from CDP', async () => {

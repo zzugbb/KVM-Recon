@@ -22,10 +22,18 @@ export interface CaptureBrowserAdapterOptions {
   partition: string;
   targetHost: string;
   allowCertificateError(url: string): boolean;
-  onNavigation(input: { url: string; windowRole: CaptureWindowRole }): void;
-  onHashChange(input: { url: string; windowRole: CaptureWindowRole }): void;
-  onPopup(input: { url: string; disposition: string; windowRole: CaptureWindowRole }): void;
-  onNetworkDebugger(cdp: CdpDebuggerLike): Promise<void>;
+  onNavigation(input: { url: string; windowRole: CaptureWindowRole; captureWindowId?: string }): void;
+  onHashChange(input: { url: string; windowRole: CaptureWindowRole; captureWindowId?: string }): void;
+  onPopup(input: {
+    url: string;
+    disposition: string;
+    windowRole: CaptureWindowRole;
+    captureWindowId?: string;
+  }): void;
+  onNetworkDebugger(
+    cdp: CdpDebuggerLike,
+    context?: { windowRole: CaptureWindowRole; captureWindowId: string },
+  ): Promise<void>;
   onChromiumAccess(info: ChromiumAccessInfo): void;
   onAllWindowsClosed(): void;
 }
@@ -53,6 +61,7 @@ export interface CaptureBrowserWindowHandle {
   selectPageTarget?(options?: {
     requireKvmSurface?: boolean;
     preferredWindowRole?: CaptureWindowRole;
+    preferredCaptureWindowId?: string;
   }): Promise<CapturePageTarget>;
   collectStorageKeys(options?: PageTargetOptions): Promise<{
     localStorageKeys: string[];
@@ -61,7 +70,10 @@ export interface CaptureBrowserWindowHandle {
   collectSelectorCandidates(options?: PageTargetOptions): Promise<SelectorCandidate[]>;
   captureScreenshot(
     label: string,
-    options?: PageTargetOptions & { preferredWindowRole?: CaptureWindowRole },
+    options?: PageTargetOptions & {
+      preferredWindowRole?: CaptureWindowRole;
+      preferredCaptureWindowId?: string;
+    },
   ): Promise<{
     packPath: string;
     sourcePath: string;
@@ -98,6 +110,7 @@ async function recordClicks(
       selector: click.selector,
       text: click.text.slice(0, 80),
       tagName: click.tagName,
+      captureWindowId: click.captureWindowId || target?.windowId,
     }, click.windowRole || target?.windowRole || 'main');
   }
 }
@@ -132,10 +145,12 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     return timeline.toJSON().events.some(event => event.type === 'screenshot' && event.role === 'viewer');
   }
 
-  function reliableKvmWindowRole(): 'main' | 'popup' | undefined {
+  function reliableKvmWindow(): { windowRole?: CaptureWindowRole; captureWindowId?: string } | undefined {
     const snapshot = networkRecorder.toJSON();
     const socketIds = new Set(kvmWebSocketEvidence(snapshot));
-    return snapshot.webSockets.find(socket => socketIds.has(socket.id))?.windowRole;
+    const socket = snapshot.webSockets.find(item => socketIds.has(item.id));
+    if (!socket) return undefined;
+    return { windowRole: socket.windowRole, captureWindowId: socket.captureWindowId };
   }
 
   function hasReliableKvmEvidence() {
@@ -159,18 +174,21 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
     }
 
     try {
-      const preferredWindowRole = role === 'viewer' ? reliableKvmWindowRole() : undefined;
+      const preferredWindow = role === 'viewer' ? reliableKvmWindow() : undefined;
       const target = await windowHandle.selectPageTarget?.({
         requireKvmSurface: role === 'viewer' && !operatorConfirmed,
-        preferredWindowRole,
+        preferredWindowRole: preferredWindow?.windowRole,
+        preferredCaptureWindowId: preferredWindow?.captureWindowId,
       });
-      const windowRole = target?.windowRole || preferredWindowRole || 'main';
+      const windowRole = target?.windowRole || preferredWindow?.windowRole || 'main';
+      const captureWindowId = target?.windowId || preferredWindow?.captureWindowId;
       const pageTargetOptions = { target, expectedRole: role };
       const clicks = await windowHandle.drainClicks(pageTargetOptions);
       const storage = await windowHandle.collectStorageKeys(pageTargetOptions);
       const screenshot = await windowHandle.captureScreenshot(label, {
         ...pageTargetOptions,
-        preferredWindowRole,
+        preferredWindowRole: preferredWindow?.windowRole,
+        preferredCaptureWindowId: preferredWindow?.captureWindowId,
       });
       const selectors = await windowHandle.collectSelectorCandidates(pageTargetOptions);
 
@@ -181,12 +199,13 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
               selector: click.selector,
               text: click.text.slice(0, 80),
               tagName: click.tagName,
+              captureWindowId: click.captureWindowId || captureWindowId,
             },
             click.windowRole || windowRole,
           );
         }
       }
-      const storageKey = target?.windowId || windowRole;
+      const storageKey = captureWindowId || windowRole;
       const previousStorage = previousStorageByWindow.get(storageKey);
       const localDiff = diffKeyLists(previousStorage?.localStorageKeys, storage.localStorageKeys);
       const sessionDiff = diffKeyLists(previousStorage?.sessionStorageKeys, storage.sessionStorageKeys);
@@ -200,6 +219,7 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         sessionStorageRemoved: sessionDiff.removed,
         windowRole,
         captureRole: role,
+        captureWindowId,
       });
       timeline.recordScreenshot(
         screenshot.packPath,
@@ -207,8 +227,9 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
         screenshotRoleFromLabel(label),
         screenshot.windowRole || windowRole,
         operatorConfirmed,
+        screenshot.windowId || captureWindowId,
       );
-      timeline.recordSelectorCandidates(selectors, windowRole, role);
+      timeline.recordSelectorCandidates(selectors, windowRole, role, captureWindowId);
       return {
         captured: true,
         reason: '',
@@ -274,14 +295,19 @@ export function createCaptureBrowserController(input: CreateCaptureBrowserContro
             targetHost: input.target.host,
             url,
           }),
-        onNavigation: unlessPaused(event => timeline.recordNavigation(event.url, event.windowRole)),
-        onHashChange: unlessPaused(event => timeline.recordHashChange(event.url, event.windowRole)),
+        onNavigation: unlessPaused(event =>
+          timeline.recordNavigation(event.url, event.windowRole, event.captureWindowId),
+        ),
+        onHashChange: unlessPaused(event =>
+          timeline.recordHashChange(event.url, event.windowRole, event.captureWindowId),
+        ),
         onPopup: unlessPaused(popup => timeline.recordPopup(popup)),
-        onNetworkDebugger: cdp =>
+        onNetworkDebugger: (cdp, context) =>
           attachCdpNetworkCapture({
             cdp,
             recorder: networkRecorder,
-            windowRole: debuggerCount++ === 0 ? 'main' : 'popup',
+            windowRole: context?.windowRole || (debuggerCount++ === 0 ? 'main' : 'popup'),
+            captureWindowId: context?.captureWindowId,
           }),
         onChromiumAccess: info => {
           chromiumAccess = info;

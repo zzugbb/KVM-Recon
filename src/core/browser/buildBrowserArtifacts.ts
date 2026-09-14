@@ -28,6 +28,24 @@ function unique(values: string[]) {
   return [...new Set(values)];
 }
 
+function windowRoleOf(event: { [key: string]: unknown }): 'main' | 'popup' {
+  return event.windowRole === 'popup' ? 'popup' : 'main';
+}
+
+function captureWindowIdOf(event: { [key: string]: unknown }) {
+  return typeof event.captureWindowId === 'string' && event.captureWindowId
+    ? event.captureWindowId
+    : undefined;
+}
+
+function windowGroupKey(event: { [key: string]: unknown }, captureRoleValue: string) {
+  return `${captureWindowIdOf(event) || windowRoleOf(event)}:${captureRoleValue}`;
+}
+
+function withCaptureWindowId<T>(item: T, captureWindowId?: string): T {
+  return captureWindowId ? { ...item, captureWindowId } : item;
+}
+
 function captureRole(value: unknown): ScreenshotRole {
   return ['login', 'home', 'kvm-entry', 'viewer', 'error'].includes(String(value))
     ? (value as ScreenshotRole)
@@ -43,6 +61,7 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     string,
     {
       windowRole: 'main' | 'popup';
+      captureWindowId?: string;
       captureRole: string;
       localStorageKeys: string[];
       sessionStorageKeys: string[];
@@ -53,11 +72,13 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     }
   >();
   for (const event of storageEvents) {
-    const windowRole = event.windowRole === 'popup' ? 'popup' : 'main';
+    const windowRole = windowRoleOf(event);
     const eventCaptureRole = captureRole(event.captureRole);
-    const key = `${windowRole}:${eventCaptureRole}`;
+    const captureWindowId = captureWindowIdOf(event);
+    const key = windowGroupKey(event, eventCaptureRole);
     const group = storageGroups.get(key) || {
       windowRole,
+      ...(captureWindowId ? { captureWindowId } : {}),
       captureRole: eventCaptureRole,
       localStorageKeys: [],
       sessionStorageKeys: [],
@@ -79,21 +100,33 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     storageGroups.set(key, group);
   }
   const storageSnapshots = [...storageGroups.values()];
+  const captureWindowIds = unique(
+    storageSnapshots
+      .map(snapshot => snapshot.captureWindowId)
+      .filter((value): value is string => Boolean(value)),
+  );
   const selectorsByKey = new Map<
     string,
-    SelectorCandidate & { windowRole: 'main' | 'popup'; captureRole: string }
+    SelectorCandidate & { windowRole: 'main' | 'popup'; captureRole: string; captureWindowId?: string }
   >();
   for (const event of selectorEvents) {
-    const windowRole = event.windowRole === 'popup' ? 'popup' : 'main';
+    const windowRole = windowRoleOf(event);
     const eventCaptureRole = captureRole(event.captureRole);
+    const captureWindowId = captureWindowIdOf(event);
     const candidates = Array.isArray(event.candidates)
       ? (event.candidates as SelectorCandidate[])
       : [];
     for (const candidate of candidates) {
-      const key = `${windowRole}:${eventCaptureRole}:${candidate.role}:${candidate.selector}`;
+      const key = `${windowGroupKey(event, eventCaptureRole)}:${candidate.role}:${candidate.selector}`;
       const previous = selectorsByKey.get(key);
       if (!previous || candidate.confidence > previous.confidence) {
-        selectorsByKey.set(key, { ...candidate, windowRole, captureRole: eventCaptureRole });
+        selectorsByKey.set(
+          key,
+          withCaptureWindowId(
+            { ...candidate, windowRole, captureRole: eventCaptureRole },
+            captureWindowId,
+          ),
+        );
       }
     }
   }
@@ -102,14 +135,27 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
     .map(event => {
       const path = typeof event.path === 'string' ? toPackScreenshotPath(event.path) : '';
       if (!path) return null;
-      return {
-        path,
-        role: typeof event.role === 'string' ? event.role : 'unknown',
-        windowRole: event.windowRole === 'popup' ? 'popup' : 'main',
-        ...(event.operatorConfirmed === true ? { operatorConfirmed: true } : {}),
-      };
+      return withCaptureWindowId(
+        {
+          path,
+          role: typeof event.role === 'string' ? event.role : 'unknown',
+          windowRole: windowRoleOf(event),
+          ...(event.operatorConfirmed === true ? { operatorConfirmed: true } : {}),
+        },
+        captureWindowIdOf(event),
+      );
     })
-    .filter((item): item is { path: string; role: string; windowRole: string } => Boolean(item));
+    .filter(
+      (
+        item,
+      ): item is {
+        path: string;
+        role: string;
+        windowRole: 'main' | 'popup';
+        operatorConfirmed?: boolean;
+        captureWindowId?: string;
+      } => Boolean(item),
+    );
 
   return [
     {
@@ -117,18 +163,21 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
       content:
         timeline.events
           .map(event => {
-            const normalized = {
-              ...event,
-              windowRole: event.windowRole === 'popup' ? 'popup' : 'main',
-              ...(['storage-snapshot', 'selector-candidates'].includes(event.type)
-                ? { captureRole: captureRole(event.captureRole) }
-                : {}),
-            };
+            const normalized = withCaptureWindowId(
+              {
+                ...event,
+                windowRole: windowRoleOf(event),
+                ...(['storage-snapshot', 'selector-candidates'].includes(event.type)
+                  ? { captureRole: captureRole(event.captureRole) }
+                  : {}),
+              },
+              captureWindowIdOf(event),
+            );
             if (event.type !== 'screenshot') return JSON.stringify(normalized);
             const { sourcePath: _sourcePath, ...rest } = event;
             return JSON.stringify({
               ...rest,
-              windowRole: normalized.windowRole,
+              windowRole: windowRoleOf(rest),
               path: typeof rest.path === 'string' ? toPackScreenshotPath(rest.path) : rest.path,
             });
           })
@@ -145,6 +194,7 @@ export function buildBrowserArtifacts(timeline: BrowserTimelineJson): BrowserArt
         sessionStorageRemoved: unique(storageSnapshots.flatMap(snapshot => snapshot.sessionStorageRemoved)),
         windowRole: latestStorage?.windowRole === 'popup' ? 'popup' : 'main',
         windowRoles: unique(storageSnapshots.map(snapshot => snapshot.windowRole)),
+        ...(captureWindowIds.length ? { captureWindowIds } : {}),
         snapshots: storageSnapshots,
       }),
     },

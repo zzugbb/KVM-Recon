@@ -4,6 +4,7 @@
     "selector": "#kvm",
     "confidence": 0.8,
     "windowRole": "main",
-    "captureRole": "kvm-entry"
+    "captureRole": "kvm-entry",
+    "captureWindowId": "win-main"
   }
 ]

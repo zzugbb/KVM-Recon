@@ -19,6 +19,8 @@
     "droppedFrameCount": 11,
     "tags": [
       "kvm-video"
-    ]
+    ],
+    "windowRole": "main",
+    "captureWindowId": "win-main"
   }
 ]

@@ -11,6 +11,7 @@
       "selector": { "type": "string" },
       "confidence": { "type": "number" },
       "windowRole": { "enum": ["main", "popup"] },
+      "captureWindowId": { "type": "string" },
       "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] }
     }
   }

@@ -472,6 +472,7 @@ describe('createNetworkRecorder', () => {
 
   it.each([
     ['wss://10.0.0.10/vnc/vconsole', ['binary'], new Uint8Array(Buffer.from('RFB 003.008\n'))],
+    ['wss://10.0.0.10/vmc/vconsole?vck=1', ['binary'], new Uint8Array(Buffer.from('RFB 003.008\n'))],
     ['wss://10.0.0.10:5900/', ['lws-dvc-protocol'], new Uint8Array(Buffer.from('APCP'))],
     ['wss://10.0.0.10:5900/vkvm/', ['lws-dvc-protocol'], new Uint8Array(Buffer.from('APCP'))],
     ['wss://10.0.0.10/wss/ircport', [], new Uint8Array([0x42, 0x45, 0x45, 0x46])],

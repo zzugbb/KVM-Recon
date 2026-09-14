@@ -12,6 +12,8 @@
       "tags": [
         "login"
       ],
+      "windowRole": "main",
+      "captureWindowId": "win-main",
       "requestJsonKeys": [],
       "responseJsonKeys": [],
       "redactedFields": [
@@ -47,6 +49,8 @@
       "tags": [
         "kvm-token"
       ],
+      "windowRole": "main",
+      "captureWindowId": "win-main",
       "requestBodySample": null,
       "responseBodySample": null,
       "responseStructure": {
@@ -83,6 +87,8 @@
       "tags": [
         "kvm-video"
       ],
+      "windowRole": "main",
+      "captureWindowId": "win-main",
       "firstFrame": {
         "direction": "down",
         "opcode": "binary",
@@ -95,6 +101,8 @@
   "correlations": [
     {
       "socketId": "ws-1",
+      "captureWindowId": "win-main",
+      "windowRole": "main",
       "likelyLoginHttpIds": [
         "login-1"
       ],

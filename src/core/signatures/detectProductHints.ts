@@ -1,4 +1,5 @@
 import type { ProbeSignatureInput } from './detectKvmFamily';
+import { DELL_VCONSOLE_HTTP_PATTERN, DELL_VCONSOLE_WS_PATTERN, HPE_IRCPORT_WS_PATTERN } from './kvmUrlPatterns';
 
 export interface ProductHintInput {
   redfish?: ProbeSignatureInput['redfish'];
@@ -94,11 +95,9 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
     candidate('dell-idrac-h5', 0.55, [
       /dell|idrac|poweredge/i.test(text) ? 'vendor/product:Dell iDRAC' : '',
       hasUrl(input, /\/sysmgmt\/2015\/bmc\/session/i) ? 'http:/sysmgmt/2015/bmc/session' : '',
-      hasUrl(input, /\/vnc\/vconsole/i) ? 'ws:/vnc/vconsole' : '',
+      hasUrl(input, DELL_VCONSOLE_WS_PATTERN) ? 'ws:/vmc/vconsole' : '',
       hasUrl(input, /:5900\/(?:$|\?|vkvm\/?)/i) ? 'ws:5900' : '',
-      hasUrl(input, /\/restgui\/(?:html5viewer|views\/configuration\/vconsole)/i)
-        ? 'http:/restgui/html5viewer'
-        : '',
+      hasUrl(input, DELL_VCONSOLE_HTTP_PATTERN) ? 'http:/restgui/html5viewer' : '',
       hasFrame(input, /^RFB 003\.008/) ? 'frame:RFB 003.008' : '',
       hasFrame(input, /^APCP/) ? 'frame:APCP' : '',
     ]),
@@ -107,7 +106,7 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
       hasUrl(input, /\/json\/login_session/i) ? 'http:/json/login_session' : '',
       hasUrl(input, /\/js\/irc(?:KeyboardMouse)?\.js/i) ? 'http:/js/irc.js' : '',
       hasUrl(input, /\/html\/irc_common\.html/i) ? 'http:/html/irc_common.html' : '',
-      hasUrl(input, /\/wss\/ircport/i) ? 'ws:/wss/ircport' : '',
+      hasUrl(input, HPE_IRCPORT_WS_PATTERN) ? 'ws:/wss/ircport' : '',
     ]),
     h3cHdm2Evidence
       ? candidate('h3c-hdm2', h3cIdentity ? 0.62 : 0.54, [

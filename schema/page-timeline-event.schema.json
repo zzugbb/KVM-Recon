@@ -10,6 +10,7 @@
         "type": { "enum": ["navigation", "hash-change"] },
         "url": { "type": "string" },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "timestamp": { "type": "string" }
       }
     },
@@ -21,6 +22,7 @@
         "url": { "type": "string" },
         "disposition": { "type": "string" },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "timestamp": { "type": "string" }
       }
     },
@@ -36,6 +38,7 @@
         "sessionStorageAdded": { "type": "array", "items": { "type": "string" } },
         "sessionStorageRemoved": { "type": "array", "items": { "type": "string" } },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "timestamp": { "type": "string" }
       }
@@ -49,6 +52,7 @@
         "sourcePath": { "type": "string" },
         "role": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "operatorConfirmed": { "type": "boolean" },
         "timestamp": { "type": "string" }
       }
@@ -63,6 +67,7 @@
           "items": { "$ref": "#/definitions/selectorCandidate" }
         },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "captureRole": { "enum": ["login", "home", "kvm-entry", "viewer", "error", "unknown"] },
         "timestamp": { "type": "string" }
       }
@@ -76,6 +81,7 @@
         "text": { "type": "string" },
         "tagName": { "type": "string" },
         "windowRole": { "enum": ["main", "popup"] },
+        "captureWindowId": { "type": "string" },
         "timestamp": { "type": "string" }
       }
     }

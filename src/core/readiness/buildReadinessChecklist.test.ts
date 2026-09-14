@@ -264,6 +264,197 @@ describe('buildReadinessChecklist', () => {
     });
   });
 
+  it('does not treat a generic console status poll as a KVM launch for weak AMI frames', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-console-status', events: [] },
+      network: {
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          {
+            id: 'console-status',
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            method: 'GET',
+            url: 'https://10.0.0.10/api/console/status',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: { bytes: 12, redactedFields: [] },
+            tags: ['kvm-entry' as const],
+            windowRole: 'main' as const,
+            captureWindowId: 'win-main',
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-generic',
+            createdAt: '2026-09-14T10:00:01.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'main' as const,
+            captureWindowId: 'win-main',
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-generic',
+            timestamp: '2026-09-14T10:00:01.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+    expect(checklist.items.find(item => item.id === 'http.key_api')?.evidence).not.toContain(
+      'console-status',
+    );
+  });
+
+  it('does not correlate weak AMI frames across two popups that share windowRole', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: { jobId: 'job-two-popups', events: [] },
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[1],
+            timestamp: '2026-09-14T10:00:00.000+08:00',
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-kvm',
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-vmedia',
+            createdAt: '2026-09-14T10:00:02.000+08:00',
+            url: 'wss://10.0.0.10/websocket',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 1,
+            textFrameCount: 0,
+            tags: ['unknown' as const],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-help',
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-vmedia',
+            timestamp: '2026-09-14T10:00:02.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 4,
+            headHex: '17000001',
+            sampled: true,
+            magic: 'AMI_IVTP_BINARY',
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: [],
+    });
+  });
+
+  it('downgrades to PARTIAL when login Set-Cookie exists but POST body was not captured', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          {
+            ...completeNetwork.httpRequests[0],
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            requestBodySkippedReason: 'get-request-post-data-failed',
+            responseHeaders: { 'set-cookie': 'QSESSIONID=abc' },
+          },
+          completeNetwork.httpRequests[1],
+        ],
+        webSockets: completeNetwork.webSockets,
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'login.chain')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'http.key_payload')).toMatchObject({
+      status: 'missing',
+      severity: 'warning',
+    });
+  });
+
+  it('downgrades to PARTIAL when KVM token response body capture failed', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          {
+            ...completeNetwork.httpRequests[1],
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+            responseBodySkippedReason: 'get-response-body-failed',
+          },
+        ],
+        webSockets: completeNetwork.webSockets,
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'http.key_api')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'http.key_payload')?.status).toBe('missing');
+  });
+
+  it('downgrades to PARTIAL when an explicit KVM launch POST body is missing', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          {
+            ...completeNetwork.httpRequests[1],
+            method: 'POST',
+            url: 'https://10.0.0.10/api/kvm/token',
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            requestBodySkippedReason: 'get-request-post-data-failed',
+          },
+        ],
+        webSockets: completeNetwork.webSockets,
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'http.key_payload')?.evidence).toContain(
+      'token-1:kvm-request-body-missing',
+    );
+  });
+
   it('accepts a weak AMI frame only when a successful launch request is recent and in the same window', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,
@@ -274,6 +465,7 @@ describe('buildReadinessChecklist', () => {
             ...completeNetwork.httpRequests[1],
             timestamp: '2026-09-14T10:00:00.000+08:00',
             windowRole: 'popup' as const,
+            captureWindowId: 'popup-kvm',
           },
         ],
         webSockets: [
@@ -287,6 +479,7 @@ describe('buildReadinessChecklist', () => {
             textFrameCount: 0,
             tags: ['unknown' as const],
             windowRole: 'popup' as const,
+            captureWindowId: 'popup-kvm',
           },
         ],
         webSocketFrames: [

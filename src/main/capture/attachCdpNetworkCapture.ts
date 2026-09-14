@@ -27,6 +27,7 @@ interface AttachCdpNetworkCaptureInput {
   recorder: NetworkRecorder;
   now?: () => string;
   windowRole?: 'main' | 'popup';
+  captureWindowId?: string;
 }
 
 type HeaderMap = Record<string, string>;
@@ -220,12 +221,43 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
   }
 
+  async function recordRequestPostData(requestId: string, id: string, sessionId?: string) {
+    try {
+      const result = await input.cdp.sendCommand(
+        'Network.getRequestPostData',
+        { requestId },
+        sessionId,
+      );
+      const postData = isRecord(result) ? stringValue(result.postData) : '';
+      if (!postData) {
+        input.recorder.markHttpRequestBodySkipped(id, 'get-request-post-data-failed');
+        return;
+      }
+      input.recorder.recordHttpRequestBody({ id, requestBody: postData });
+    } catch {
+      // 捕获 POST 正文不可读取：CDP 只给 hasPostData、未内联 postData，且 getRequestPostData 失败
+      // 策略：记下缺失原因，导出时把关键登录/KVM 请求降为 PARTIAL，避免空正文仍判 YES
+      input.recorder.markHttpRequestBodySkipped(id, 'get-request-post-data-failed');
+    }
+  }
+
+  async function enableAttachedTarget(attachedSessionId: string) {
+    await input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
+    try {
+      await input.cdp.sendCommand('Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
+    } catch (error) {
+      // 捕获 iframe 未处于 waitForDebugger：旧目标或已自行恢复
+      // 策略：Network.enable 已完成即可继续采集，不阻断主窗口
+      void error;
+    }
+  }
+
   await input.cdp.attach('1.3');
   await input.cdp.sendCommand('Network.enable');
   try {
     await input.cdp.sendCommand('Target.setAutoAttach', {
       autoAttach: true,
-      waitForDebuggerOnStart: false,
+      waitForDebuggerOnStart: true,
       flatten: true,
     });
   } catch (error) {
@@ -238,7 +270,9 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     if (method === 'Target.attachedToTarget') {
       const attachedSessionId = stringValue(params.sessionId);
       if (attachedSessionId) {
-        void input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
+        // waitForDebuggerOnStart 已暂停该目标；必须先 Network.enable 再 runIfWaitingForDebugger，
+        // 因此这里用 pending 跟踪异步 enable，而不会漏掉 attach 后立刻发出的 token/WS。
+        input.recorder.trackPending(enableAttachedTarget(attachedSessionId));
       }
       return;
     }
@@ -268,6 +302,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const redirectHop = chain.hopIds.length;
       const id = redirectHop === 0 ? baseId : `${baseId}::redirect-${redirectHop}`;
       chain.hopIds.push(id);
+      const inlinePostData = stringValue(request.postData);
       input.recorder.recordHttpRequest({
         id,
         timestamp: now(),
@@ -275,12 +310,16 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         url,
         resourceType: stringValue(params.type),
         requestHeaders: headersValue(request.headers),
-        requestBody: stringValue(request.postData),
+        requestBody: inlinePostData,
         networkRequestId: baseId,
         redirectHop,
         redirectedFromId,
         windowRole: input.windowRole,
+        captureWindowId: input.captureWindowId,
       });
+      if (!inlinePostData && request.hasPostData === true) {
+        input.recorder.trackPending(recordRequestPostData(requestId, id, sessionId));
+      }
       responseMetadata.set(id, {
         id,
         url,
@@ -368,6 +407,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         subProtocols: [],
         requestHeaders: {},
         windowRole: input.windowRole,
+        captureWindowId: input.captureWindowId,
       });
       return;
     }

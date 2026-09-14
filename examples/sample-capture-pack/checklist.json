@@ -58,6 +58,16 @@
       "userAction": ""
     },
     {
+      "id": "http.key_payload",
+      "title": "关键登录/KVM 请求正文",
+      "status": "pass",
+      "severity": "warning",
+      "evidence": [
+        "payload-complete"
+      ],
+      "userAction": ""
+    },
+    {
       "id": "ws.kvm.established",
       "title": "KVM WebSocket",
       "status": "pass",

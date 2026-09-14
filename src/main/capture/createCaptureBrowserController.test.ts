@@ -136,24 +136,39 @@ describe('createCaptureBrowserController', () => {
 
     const adapter: CaptureBrowserAdapter = {
       async createWindow(nextOptions) {
-        await nextOptions.onNetworkDebugger({
-          async attach() {},
-          async sendCommand() {},
-          on() {},
-        });
+        await nextOptions.onNetworkDebugger(
+          {
+            async attach() {},
+            async sendCommand() {},
+            on() {},
+          },
+          { windowRole: 'main', captureWindowId: 'main-window' },
+        );
         return {
           async loadURL(url) {
-            nextOptions.onNavigation({ url, windowRole: 'main' });
+            nextOptions.onNavigation({
+              url,
+              windowRole: 'main',
+              captureWindowId: 'main-window',
+            });
             nextOptions.onPopup({
               url: `${url}kvm.html`,
               disposition: 'new-window',
               windowRole: 'main',
+              captureWindowId: 'main-window',
             });
-            await nextOptions.onNetworkDebugger(popupCdp);
+            await nextOptions.onNetworkDebugger(popupCdp, {
+              windowRole: 'popup',
+              captureWindowId: 'popup-window',
+            });
             focused = 'main';
           },
           async selectPageTarget(options) {
-            expect(options).toMatchObject({ requireKvmSurface: true, preferredWindowRole: 'popup' });
+            expect(options).toMatchObject({
+              requireKvmSurface: true,
+              preferredWindowRole: 'popup',
+              preferredCaptureWindowId: 'popup-window',
+            });
             return { windowId: 'popup-window', windowRole: 'popup' };
           },
           async collectStorageKeys(options) {
@@ -227,6 +242,7 @@ describe('createCaptureBrowserController', () => {
       url: 'wss://10.0.0.10/kvm',
       tags: ['kvm-video'],
       windowRole: 'popup',
+      captureWindowId: 'popup-window',
     });
     expect(controller.network().webSocketFrames[0]?.socketId).toBe('ws-popup');
     expect(controller.timeline().events.map(event => event.type)).toContain('popup');
@@ -246,7 +262,10 @@ describe('createCaptureBrowserController', () => {
     expect(
       controller.timeline().events
         .filter(event => ['click', 'storage-snapshot', 'screenshot', 'selector-candidates'].includes(event.type))
-        .every(event => event.windowRole === 'popup'),
+        .every(
+          event =>
+            event.windowRole === 'popup' && event.captureWindowId === 'popup-window',
+        ),
     ).toBe(true);
     expect(JSON.stringify(controller.timeline())).not.toMatch(/\/Users\//);
   });

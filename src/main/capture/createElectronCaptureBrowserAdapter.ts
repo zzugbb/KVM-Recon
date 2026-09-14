@@ -164,8 +164,17 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
-      async function pickScreenshotWindow(options?: { requireKvmSurface?: boolean; preferredWindowRole?: 'main' | 'popup' }) {
+      async function pickScreenshotWindow(options?: {
+        requireKvmSurface?: boolean;
+        preferredWindowRole?: 'main' | 'popup';
+        preferredCaptureWindowId?: string;
+      }) {
         const alive = [...windows].filter(windowAlive);
+        const byId = options?.preferredCaptureWindowId
+          ? alive.find(candidate => String(candidate.webContents.id) === options.preferredCaptureWindowId)
+          : undefined;
+        if (byId && !options?.requireKvmSurface) return byId;
+        if (byId && (await windowHasKvmSurface(byId))) return byId;
         const preferred = alive.filter(
           candidate => !options?.preferredWindowRole || windowRoles.get(candidate) === options.preferredWindowRole,
         );
@@ -229,7 +238,11 @@ export function createElectronCaptureBrowserAdapter(
           }
         });
         targetWindow.webContents.on('did-navigate', (_event, url) => {
-          options.onNavigation({ url, windowRole: windowRoles.get(targetWindow) || 'main' });
+          options.onNavigation({
+            url,
+            windowRole: windowRoles.get(targetWindow) || 'main',
+            captureWindowId: String(targetWindow.webContents.id),
+          });
         });
         targetWindow.webContents.session.setCertificateVerifyProc((_request, callback) => {
           callback(0);
@@ -243,7 +256,11 @@ export function createElectronCaptureBrowserAdapter(
           },
         );
         targetWindow.webContents.on('did-navigate-in-page', (_event, url) => {
-          options.onHashChange({ url, windowRole: windowRoles.get(targetWindow) || 'main' });
+          options.onHashChange({
+            url,
+            windowRole: windowRoles.get(targetWindow) || 'main',
+            captureWindowId: String(targetWindow.webContents.id),
+          });
         });
         targetWindow.webContents.on('did-finish-load', () => {
           options.onChromiumAccess({ reachable: true, authorizationError: '' });
@@ -283,6 +300,7 @@ export function createElectronCaptureBrowserAdapter(
             url: details.url,
             disposition: details.disposition,
             windowRole: windowRoles.get(targetWindow) || 'main',
+            captureWindowId: String(targetWindow.webContents.id),
           });
           return {
             action: 'allow',
@@ -301,7 +319,13 @@ export function createElectronCaptureBrowserAdapter(
           void attachWindow(childWindow, true);
         });
         if (attachDebugger) {
-          await options.onNetworkDebugger(targetWindow.webContents.debugger as unknown as CdpDebuggerLike);
+          await options.onNetworkDebugger(
+            targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
+            {
+              windowRole: windowRoles.get(targetWindow) || 'main',
+              captureWindowId: String(targetWindow.webContents.id),
+            },
+          );
           recordCaptureWindowLog(`capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`);
         }
       }
@@ -363,6 +387,7 @@ export function createElectronCaptureBrowserAdapter(
             : await pickScreenshotWindow({
                 requireKvmSurface,
                 preferredWindowRole: screenshotOptions?.preferredWindowRole,
+                preferredCaptureWindowId: screenshotOptions?.preferredCaptureWindowId,
               });
           if (!current) {
             throw new Error('No KVM viewer surface is ready for screenshot');
@@ -391,7 +416,11 @@ export function createElectronCaptureBrowserAdapter(
               true,
             );
             return (clicks as Array<{ selector: string; text: string; tagName: string }>).map(
-              click => ({ ...click, windowRole: windowRoles.get(current) || 'main' }),
+              click => ({
+                ...click,
+                windowRole: windowRoles.get(current) || 'main',
+                captureWindowId: String(current.webContents.id),
+              }),
             );
           } catch (error) {
             // 捕获点击摘要读取失败：窗口可能已关闭
