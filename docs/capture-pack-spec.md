@@ -205,7 +205,7 @@ HTTP 资料必须脱敏：
 - URL query 中的 token 等参数脱敏，路径保留。
 - 响应体默认只保存摘要；必要正文需经过字段级脱敏。
 - Chromium 重定向复用的 CDP `requestId` 会按 hop 拆成独立记录，并通过 `redirectedFromId` / `redirectedToId` 关联；每一跳保留方法、请求体、状态、Location 和响应头。
-- `requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` 中补充的 Cookie、Set-Cookie 等原始头会合并到对应请求 hop；响应 ExtraInfo 使用 `redirectHasExtraInfo` / `hasExtraInfo` 跳过没有附加事件的重定向 hop，避免后续响应头错位。
+- `requestWillBeSentExtraInfo` / `responseReceivedExtraInfo` 中补充的 Cookie、Set-Cookie 等原始头会合并到对应请求 hop；两类 ExtraInfo 都使用 `redirectHasExtraInfo` / `hasExtraInfo` 跳过没有附加事件的重定向 hop，避免后续请求头或响应头错位。
 
 `http/adapter-evidence.json` 从上述请求与 WebSocket 摘要派生，按链路聚合：
 

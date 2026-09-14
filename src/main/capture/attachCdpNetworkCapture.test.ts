@@ -428,6 +428,120 @@ describe('attachCdpNetworkCapture', () => {
     );
   });
 
+  it('uses CDP ExtraInfo flags to skip redirect hops without raw request headers', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'https://bmc.example/login',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      },
+    });
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-chain',
+      type: 'Document',
+      redirectHasExtraInfo: false,
+      redirectResponse: {
+        status: 302,
+        headers: { Location: '/home' },
+      },
+      request: {
+        method: 'GET',
+        url: 'https://bmc.example/home',
+        headers: {},
+      },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'login-chain',
+      hasExtraInfo: true,
+      response: {
+        status: 200,
+        mimeType: 'text/html',
+        headers: { 'content-type': 'text/html' },
+      },
+    });
+    emit('Network.requestWillBeSentExtraInfo', {
+      requestId: 'login-chain',
+      headers: {
+        Cookie: 'QSESSIONID=final-session',
+        Referer: 'https://bmc.example/login',
+      },
+    });
+
+    const requests = recorder.toJSON().httpRequests;
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({
+      id: 'login-chain',
+      method: 'POST',
+      status: 302,
+    });
+    expect(requests[0]?.requestHeaders).not.toHaveProperty('Cookie');
+    expect(requests[0]?.requestHeaders).not.toHaveProperty('Referer');
+    expect(requests[1]).toMatchObject({
+      id: 'login-chain::redirect-1',
+      method: 'GET',
+      status: 200,
+    });
+    expect(requests[1]?.requestHeaders).toHaveProperty('Cookie');
+    expect(requests[1]?.requestHeaders).toHaveProperty('Referer', 'https://bmc.example/login');
+    expect(JSON.stringify(requests)).not.toContain('final-session');
+  });
+
+  it('keeps final request ExtraInfo when a failed request has no response event', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand() {
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSentExtraInfo', {
+      requestId: 'failed-request',
+      headers: { Cookie: 'QSESSIONID=failed-session' },
+    });
+    emit('Network.requestWillBeSent', {
+      requestId: 'failed-request',
+      type: 'XHR',
+      request: {
+        method: 'GET',
+        url: 'https://bmc.example/api/status',
+        headers: {},
+      },
+    });
+    emit('Network.loadingFailed', { requestId: 'failed-request' });
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request?.requestHeaders).toHaveProperty('Cookie');
+    expect(request?.responseBodySkippedReason).toBe('loading-failed');
+    expect(JSON.stringify(request)).not.toContain('failed-session');
+  });
+
   it('skips inline, binary, and oversized response bodies', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const bodyCalls: string[] = [];

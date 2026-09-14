@@ -98,9 +98,11 @@ interface RequestChainState {
   hopIds: string[];
   pendingRequestHeaders: HeaderMap[];
   pendingResponseHeaders: Array<{ status: number; headers: HeaderMap }>;
+  requestExtraHopIds: string[];
+  requestExtraHopSet: Set<string>;
   responseExtraHopIds: string[];
   responseExtraHopSet: Set<string>;
-  requestExtraIndex: number;
+  extraInfoDecisionHopSet: Set<string>;
 }
 
 function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBytes: number) {
@@ -134,9 +136,11 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       hopIds: [],
       pendingRequestHeaders: [],
       pendingResponseHeaders: [],
+      requestExtraHopIds: [],
+      requestExtraHopSet: new Set(),
       responseExtraHopIds: [],
       responseExtraHopSet: new Set(),
-      requestExtraIndex: 0,
+      extraInfoDecisionHopSet: new Set(),
     };
     requestChains.set(baseId, created);
     return created;
@@ -149,15 +153,11 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
   function drainExtraInfo(baseId: string) {
     const chain = chainFor(baseId);
-    while (
-      chain.pendingRequestHeaders.length > 0 &&
-      chain.requestExtraIndex < chain.hopIds.length
-    ) {
+    while (chain.pendingRequestHeaders.length > 0 && chain.requestExtraHopIds.length > 0) {
       input.recorder.mergeHttpRequestHeaders(
-        chain.hopIds[chain.requestExtraIndex]!,
+        chain.requestExtraHopIds.shift()!,
         chain.pendingRequestHeaders.shift()!,
       );
-      chain.requestExtraIndex += 1;
     }
     while (chain.pendingResponseHeaders.length > 0 && chain.responseExtraHopIds.length > 0) {
       const extra = chain.pendingResponseHeaders.shift()!;
@@ -176,14 +176,26 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
   }
 
-  function expectResponseExtraInfo(baseId: string, id: string, expected: boolean) {
-    if (!expected) return;
+  function expectExtraInfo(baseId: string, id: string, expected: boolean) {
     const chain = chainFor(baseId);
+    chain.extraInfoDecisionHopSet.add(id);
+    if (!expected) return;
+    if (!chain.requestExtraHopSet.has(id)) {
+      chain.requestExtraHopIds.push(id);
+      chain.requestExtraHopSet.add(id);
+    }
     if (!chain.responseExtraHopSet.has(id)) {
       chain.responseExtraHopIds.push(id);
       chain.responseExtraHopSet.add(id);
     }
     drainExtraInfo(baseId);
+  }
+
+  function expectFinalExtraInfoIfUnknown(baseId: string, id: string) {
+    const chain = chainFor(baseId);
+    if (!chain.extraInfoDecisionHopSet.has(id)) {
+      expectExtraInfo(baseId, id, true);
+    }
   }
 
   async function recordResponseBody(requestId: string, id: string, sessionId?: string) {
@@ -242,7 +254,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const redirectResponse = isRecord(params.redirectResponse) ? params.redirectResponse : null;
       const redirectedFromId = redirectResponse ? chain.hopIds[chain.hopIds.length - 1] : undefined;
       if (redirectResponse && redirectedFromId) {
-        expectResponseExtraInfo(baseId, redirectedFromId, params.redirectHasExtraInfo !== false);
+        expectExtraInfo(baseId, redirectedFromId, params.redirectHasExtraInfo !== false);
         input.recorder.recordHttpResponse({
           id: redirectedFromId,
           status: numberValue(redirectResponse.status),
@@ -292,7 +304,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       if (ignoredRequestIds.has(baseId)) return;
       const id = activeHopId(baseId);
       const headers = headersValue(response.headers);
-      expectResponseExtraInfo(baseId, id, params.hasExtraInfo !== false);
+      expectExtraInfo(baseId, id, params.hasExtraInfo !== false);
       input.recorder.recordHttpResponse({
         id,
         status: numberValue(response.status),
@@ -324,6 +336,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const baseId = scopedId(requestId, sessionId);
       if (ignoredRequestIds.has(baseId)) return;
       const id = activeHopId(baseId);
+      expectFinalExtraInfoIfUnknown(baseId, id);
       input.recorder.markHttpRequestFinished(id);
       const reason = bodySkipReason(responseMetadata.get(id), numberValue(params.encodedDataLength));
       if (reason) {
@@ -338,6 +351,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const baseId = scopedId(stringValue(params.requestId), sessionId);
       if (ignoredRequestIds.has(baseId)) return;
       const id = activeHopId(baseId);
+      expectFinalExtraInfoIfUnknown(baseId, id);
       input.recorder.markHttpRequestFinished(id);
       input.recorder.markHttpResponseBodySkipped(id, 'loading-failed');
       return;

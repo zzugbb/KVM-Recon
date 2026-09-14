@@ -12,7 +12,7 @@
 - 探测改为无副作用路径，不再主动领取 AMI 一次性 KVM Token 或调用 KVM Action。
 - 登录就绪要求成功 POST 与会话证据；完整保留 HTTP 重定向 hop 和 CDP ExtraInfo 请求/响应头。
 - 对齐生产协议族优先级与 AMI/OpenBMC/Huawei 强指纹，扩展受控响应体、WS 帧采样和流式请求边界。
-- 使用 CDP ExtraInfo 标志精确关联重定向 hop；TLS、Redfish 与两个 randomtag 探针并发启动，并收紧 TLS subject 字段语义。
+- 使用 CDP ExtraInfo 标志精确关联请求与响应的重定向 hop；TLS、Redfish 与两个 randomtag 探针并发启动，并收紧 TLS subject 字段语义。
 - Capture Pack 增加 Git build ID、网络采集状态与响应体跳过原因，便于现场确认版本和资料完整性。
 - Electron 烟测在二进制缺失时快速失败，避免依赖加载阶段无限等待。
 - CI 显式安装 Electron 44 懒下载二进制，确保快速失败保护不会跳过真实启动烟测。
