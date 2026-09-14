@@ -58,7 +58,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 注意：WebSocket 只记录元数据和有界帧样本，不保存完整视频流；每条连接持续累计帧总数、采样数和丢弃数。HTTP JSON 与 URL-encoded 表单请求/响应会保留字段级脱敏后的结构化样本，短文本响应保留有限长度样本，便于离场后复原嵌套字段、表单参数和非敏感参数关系。图片、字体、媒体、样式、流式响应、二进制 MIME、`data:` / `blob:` 和超限正文不会读取。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
 
-HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP 请求和响应 ExtraInfo 中的 Cookie / Set-Cookie 等头会结合 `redirectHasExtraInfo` / `hasExtraInfo` 合并到对应 hop，不会因某一跳缺少 ExtraInfo 而错位。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待，避免持续连接把完整采集误降为 `PARTIAL`。
+HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP 请求和响应 ExtraInfo 中的 Cookie / Set-Cookie 等头会结合 `redirectHasExtraInfo` / `hasExtraInfo` 合并到对应 hop，不会因某一跳缺少 ExtraInfo 而错位；响应 ExtraInfo 的真实状态码和原始头始终优先于普通响应，头名按大小写不敏感方式合并。请求 ExtraInfo 合并后会重新计算链路标签。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待，避免持续连接把完整采集误降为 `PARTIAL`。
 
 ### 3.4 Probe Engine
 

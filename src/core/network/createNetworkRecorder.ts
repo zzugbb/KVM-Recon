@@ -37,6 +37,7 @@ interface HttpResponseInput {
   status: number;
   responseHeaders: HeaderMap;
   responseBody?: string;
+  source?: 'response' | 'extra-info';
 }
 
 interface HttpResponseBodyInput {
@@ -172,7 +173,7 @@ function hasLegacyKvmReferer(headers: HeaderMap) {
   );
 }
 
-function tagHttp(input: HttpRequestInput): HttpTag[] {
+function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeaders'>): HttpTag[] {
   const lower = input.url.toLowerCase();
   const isStaticAsset = /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(lower);
   const explicitLogin =
@@ -409,6 +410,18 @@ function redactHeaders(headers: HeaderMap): HeaderMap {
   return redactSensitiveData(headers).data;
 }
 
+function mergeHeadersCaseInsensitive(base: HeaderMap, incoming: HeaderMap): HeaderMap {
+  const merged = { ...base };
+  for (const [name, value] of Object.entries(incoming)) {
+    const existingName = Object.keys(merged).find(key => key.toLowerCase() === name.toLowerCase());
+    if (existingName && existingName !== name) {
+      delete merged[existingName];
+    }
+    merged[name] = value;
+  }
+  return merged;
+}
+
 function payloadToBytes(payload: string | Uint8Array): Uint8Array {
   if (typeof payload === 'string') {
     return new TextEncoder().encode(payload);
@@ -438,6 +451,7 @@ function toHex(bytes: Uint8Array, take: number) {
 
 export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const httpRequests = new Map<string, HttpRequestRecord>();
+  const httpResponseExtraInfo = new Map<string, { status: number; headers: HeaderMap }>();
   const webSockets = new Map<string, WebSocketRecord>();
   const webSocketFrames: WebSocketFrameRecord[] = [];
   const pendingTasks = new Set<Promise<unknown>>();
@@ -498,10 +512,11 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
     mergeHttpRequestHeaders(id: string, headers: HeaderMap) {
       const existing = httpRequests.get(id);
       if (!existing) return;
-      existing.requestHeaders = {
-        ...existing.requestHeaders,
-        ...redactHeaders(headers),
-      };
+      existing.requestHeaders = mergeHeadersCaseInsensitive(
+        existing.requestHeaders,
+        redactHeaders(headers),
+      );
+      existing.tags = tagHttp(existing);
       markActivity();
     },
     setPaused(next: boolean) {
@@ -546,11 +561,25 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       const existing = httpRequests.get(input.id);
       if (!existing) return;
       markActivity();
-      if (input.status > 0) existing.status = input.status;
-      existing.responseHeaders = {
-        ...existing.responseHeaders,
-        ...redactHeaders(input.responseHeaders),
-      };
+      const headers = redactHeaders(input.responseHeaders);
+      if (input.source === 'extra-info') {
+        const previousExtraInfo = httpResponseExtraInfo.get(input.id);
+        httpResponseExtraInfo.set(input.id, {
+          status: input.status > 0 ? input.status : previousExtraInfo?.status || 0,
+          headers: mergeHeadersCaseInsensitive(previousExtraInfo?.headers || {}, headers),
+        });
+      } else {
+        if (input.status > 0) existing.status = input.status;
+        existing.responseHeaders = mergeHeadersCaseInsensitive(existing.responseHeaders, headers);
+      }
+      const extraInfo = httpResponseExtraInfo.get(input.id);
+      if (extraInfo) {
+        if (extraInfo.status > 0) existing.status = extraInfo.status;
+        existing.responseHeaders = mergeHeadersCaseInsensitive(
+          existing.responseHeaders,
+          extraInfo.headers,
+        );
+      }
       existing.responseContentType = responseContentType(existing.responseHeaders);
       existing.redirectLocation = responseRedirectLocation(existing.responseHeaders);
       if (/text\/event-stream/i.test(existing.responseContentType)) {

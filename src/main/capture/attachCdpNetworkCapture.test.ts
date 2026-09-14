@@ -428,6 +428,98 @@ describe('attachCdpNetworkCapture', () => {
     );
   });
 
+  it.each(['before', 'after'] as const)(
+    'keeps response ExtraInfo authoritative when it arrives %s the ordinary response',
+    async order => {
+      const listeners: Array<
+        (event: unknown, method: string, params: Record<string, unknown>) => void
+      > = [];
+      const bodyCalls: string[] = [];
+      const cdp: CdpDebuggerLike = {
+        async attach() {},
+        async sendCommand(command, params) {
+          if (command === 'Network.getResponseBody') {
+            bodyCalls.push(String(params?.requestId || ''));
+            return { body: '{"cached":true}', base64Encoded: false };
+          }
+          return {};
+        },
+        on(event, listener) {
+          if (event === 'message') listeners.push(listener);
+        },
+      };
+      const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+      await attachCdpNetworkCapture({ cdp, recorder });
+      const emit = (method: string, params: Record<string, unknown>) => {
+        for (const listener of listeners) listener({}, method, params);
+      };
+      const ordinaryResponse = () =>
+        emit('Network.responseReceived', {
+          requestId: 'cached-request',
+          hasExtraInfo: true,
+          response: {
+            status: 200,
+            mimeType: 'image/png',
+            headers: {
+              'content-type': 'image/png',
+              etag: 'ordinary-etag',
+              'X-Ordinary': 'kept',
+            },
+          },
+        });
+      const extraInfoResponse = () =>
+        emit('Network.responseReceivedExtraInfo', {
+          requestId: 'cached-request',
+          statusCode: 304,
+          headers: {
+            'Content-Type': 'application/json; source=extra-info',
+            ETag: 'extra-etag',
+          },
+        });
+
+      emit('Network.requestWillBeSent', {
+        requestId: 'cached-request',
+        type: 'XHR',
+        request: {
+          method: 'GET',
+          url: 'https://bmc.example/api/status',
+          headers: {},
+        },
+      });
+      if (order === 'before') {
+        extraInfoResponse();
+        ordinaryResponse();
+      } else {
+        ordinaryResponse();
+        extraInfoResponse();
+      }
+      emit('Network.loadingFinished', {
+        requestId: 'cached-request',
+        encodedDataLength: 15,
+      });
+      await recorder.waitForIdle();
+
+      const response = recorder.toJSON().httpRequests[0];
+      expect(response?.status).toBe(304);
+      expect(response?.responseContentType).toBe('application/json; source=extra-info');
+      expect(response?.responseHeaders['Content-Type']).toBe(
+        'application/json; source=extra-info',
+      );
+      expect(response?.responseHeaders.ETag).toBe('extra-etag');
+      expect(response?.responseHeaders['X-Ordinary']).toBe('kept');
+      expect(response?.responseBodyCaptured).toBe(true);
+      expect(bodyCalls).toEqual(['cached-request']);
+      expect(
+        Object.keys(response?.responseHeaders || {}).filter(
+          name => name.toLowerCase() === 'content-type',
+        ),
+      ).toHaveLength(1);
+      expect(
+        Object.keys(response?.responseHeaders || {}).filter(name => name.toLowerCase() === 'etag'),
+      ).toHaveLength(1);
+    },
+  );
+
   it('uses CDP ExtraInfo flags to skip redirect hops without raw request headers', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const cdp: CdpDebuggerLike = {

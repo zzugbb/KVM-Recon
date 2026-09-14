@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { buildNetworkArtifacts } from './buildNetworkArtifacts';
 import { createNetworkRecorder } from './createNetworkRecorder';
 
 describe('createNetworkRecorder', () => {
@@ -360,6 +361,34 @@ describe('createNetworkRecorder', () => {
     const records = recorder.toJSON().httpRequests;
     expect(records[0]?.tags).toEqual([]);
     expect(records[1]?.tags).toEqual(['kvm-token']);
+  });
+
+  it('recomputes Huawei legacy tags after request ExtraInfo adds the viewer Referer', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'viewer-extra-info',
+      timestamp: '2026-09-14T09:00:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.107/bmc/php/getmultiproperty.php',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+
+    expect(recorder.toJSON().httpRequests[0]?.tags).toEqual([]);
+    recorder.mergeHttpRequestHeaders('viewer-extra-info', {
+      Referer: 'https://10.10.8.107/bmc/pages/remote/kvm_by_html5.html',
+    });
+
+    const snapshot = recorder.toJSON();
+    expect(snapshot.httpRequests[0]?.tags).toEqual(['kvm-token']);
+    const adapterEvidenceArtifact = buildNetworkArtifacts(snapshot).find(
+      artifact => artifact.path === 'http/adapter-evidence.json',
+    );
+    expect(adapterEvidenceArtifact).toBeDefined();
+    const adapterEvidence = JSON.parse(adapterEvidenceArtifact!.content);
+    expect(adapterEvidence.kvmLaunchChain).toEqual([
+      expect.objectContaining({ id: 'viewer-extra-info', tags: ['kvm-token'] }),
+    ]);
   });
 
   it('waits for in-flight HTTP requests before reporting network idle', async () => {

@@ -166,12 +166,14 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         id,
         status: extra.status,
         responseHeaders: extra.headers,
+        source: 'extra-info',
       });
       const metadata = responseMetadata.get(id);
-      if (metadata && !metadata.contentType) {
-        metadata.contentType =
-          Object.entries(extra.headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
-          '';
+      const extraContentType = Object.entries(extra.headers).find(
+        ([key]) => key.toLowerCase() === 'content-type',
+      )?.[1];
+      if (metadata && extraContentType) {
+        metadata.contentType = extraContentType;
       }
     }
   }
@@ -311,7 +313,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         responseHeaders: headers,
       });
       const metadata = responseMetadata.get(id);
-      if (metadata) {
+      if (metadata && !metadata.contentType) {
         metadata.contentType =
           stringValue(response.mimeType) ||
           Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ||
