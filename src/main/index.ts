@@ -23,6 +23,7 @@ import { createNodeProbeHttpClient } from '../core/probe/createNodeProbeHttpClie
 import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
 import { getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
+import { isE2eCaptureControllerLaunch, runProductionCaptureE2e } from './capture/runProductionCaptureE2e';
 
 const logger = createCaptureLogger();
 
@@ -659,7 +660,11 @@ function createMainWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (isE2eCaptureControllerLaunch()) {
+    await runProductionCaptureE2e();
+    return;
+  }
   app.on('certificate-error', (event, webContents, url, error, _certificate, callback) => {
     if (isCaptureSession(webContents.session)) {
       event.preventDefault();
@@ -683,7 +688,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' || isE2eSmokeLaunch()) {
+  if (process.platform !== 'darwin' || isE2eSmokeLaunch() || isE2eCaptureControllerLaunch()) {
     app.quit();
   }
 });

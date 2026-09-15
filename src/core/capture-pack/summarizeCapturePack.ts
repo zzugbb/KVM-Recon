@@ -129,6 +129,7 @@ export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<Captur
   const family = asRecord(manifest.family);
   const target = asRecord(manifest.target);
   const job = asRecord(manifest.job);
+  const tool = asRecord(manifest.tool);
   const jobObserved = asRecord(job.observed);
   const readiness = asRecord(manifest.readiness);
   const items = Array.isArray(checklist.items) ? checklist.items : [];
@@ -142,6 +143,7 @@ export async function summarizeCapturePackZip(bytes: Uint8Array): Promise<Captur
       family: typeof family.primary === 'string' ? family.primary : '',
       readiness:
         typeof readiness.status === 'string' ? readiness.status : String(checklist.readiness || ''),
+      packVersion: typeof tool.version === 'string' ? tool.version : '',
     }),
   );
 

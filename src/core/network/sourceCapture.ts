@@ -5,6 +5,8 @@ export const SOURCE_FILE_LIMIT_BYTES = 2 * 1024 * 1024;
 export const SOURCE_MAX_FILES = 24;
 export const SOURCE_TOTAL_BUDGET_BYTES = 8 * 1024 * 1024;
 export const SOURCE_REFERENCED_LIMIT = 256;
+// 24 文件 / 8 MiB 是硬上限：现场代表机（惠普约 9、新戴尔 4、旧戴尔最多约 20）未超。
+// 超过后重复采集也无法变成 YES，清单会明确提示不要反复重采。
 
 export type SourceKind = 'javascript' | 'html';
 

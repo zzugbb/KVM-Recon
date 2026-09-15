@@ -116,7 +116,7 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '| `probe/authenticated.json` | 登录后复验：Cookie 名和带会话后的路径（可选，无 Cookie 值） |',
       '| `http/requests.jsonl` | 登录、KVM token、入口相关 HTTP；看 tags 与 URL |',
       '| `http/har.json` | 同上，HAR 格式，便于用现成工具打开 |',
-      '| `http/sources.json` 与 `http/sources/` | Viewer HTML/JS：清单含 URL、SHA-256、窗口、是否截断；`referenced.required=true` 才是关键源码，信息性引用缺失不单独判损坏 |',
+      '| `http/sources.json` 与 `http/sources/` | Viewer HTML/JS：清单含 URL、SHA-256、窗口、是否截断；新包每条引用必须有布尔 `referenced.required`。`required=true` 才是关键源码；旧包缺该字段时按关键引用处理，不能当成非关键 |',
       '| `http/capture-status.json` | 导出时是否还有 in-flight 请求或 attach 失败 |',
       '| `page/scripts.json` | 页面实际引用的脚本/文档 URL（有 page-scripts 时才出现） |',
       '| `ws/sockets.json` | KVM WebSocket 的 URL、子协议、帧数量、是否 popup |',

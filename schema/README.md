@@ -30,4 +30,6 @@
 
 `http/har.json` 遵循 HAR 1.2，不另写一份项目内 Schema。`page/screenshots/` 下的 PNG 与 `artifacts/*` 不是 JSON。`page/scripts.json` 仅在采集到 `page-scripts` 时出现，字段与 timeline 中的引用清单一致，不另写 Schema。`page/timeline.jsonl` 的 `page-scripts` 行由 `page-timeline-event.schema.json` 覆盖。
 
+`http/sources.json` 的 `referenced.required` 从 0.2.7 起为必填布尔。缺该字段的旧包重新打开时按关键引用处理，不能把字段缺失当成「非关键」。完整源码最多 24 个文件、合计约 8 MiB；触达该上限后重新采集无法变成 YES。
+
 不在本工具内做在线分析；这些文件只用于离线校验资料包形状。

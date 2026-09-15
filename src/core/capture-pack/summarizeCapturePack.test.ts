@@ -225,4 +225,76 @@ describe('capture pack schema and local review', () => {
       }),
     ).toEqual([]);
   });
+
+  it('rejects 0.2.7 YES packs that omit referenced.required', () => {
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory: {
+          files: [
+            {
+              id: 'worker',
+              url: 'https://bmc.example/file.worker.js',
+              kind: 'javascript',
+              sha256: 'abcd',
+              bytes: 4,
+              truncated: false,
+              path: 'http/sources/worker.js',
+            },
+          ],
+          referenced: [
+            {
+              url: 'https://bmc.example/main.js',
+              kind: 'javascript',
+              captured: false,
+              missing: true,
+            },
+          ],
+        },
+        packPaths: ['http/sources/worker.js'],
+        fileBytes: new Map([['http/sources/worker.js', { bytes: 4, sha256: 'abcd' }]]),
+        family: 'unknown-h5',
+        readiness: 'YES',
+        packVersion: '0.2.7',
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        'http/sources.json.referenced[0] 缺少布尔型 required',
+        'http/sources.json.referenced[0] 关键页面引用缺失源码文件',
+      ]),
+    );
+  });
+
+  it('treats omitted required as critical on legacy packs instead of non-critical', () => {
+    const inventory = {
+      files: [
+        {
+          id: 'worker',
+          url: 'https://bmc.example/file.worker.js',
+          kind: 'javascript',
+          sha256: 'abcd',
+          bytes: 4,
+          truncated: false,
+          path: 'http/sources/worker.js',
+        },
+      ],
+      referenced: [
+        {
+          url: 'https://bmc.example/main.js',
+          kind: 'javascript',
+          captured: false,
+          missing: true,
+        },
+      ],
+    };
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory,
+        packPaths: ['http/sources/worker.js'],
+        fileBytes: new Map([['http/sources/worker.js', { bytes: 4, sha256: 'abcd' }]]),
+        family: 'unknown-h5',
+        readiness: 'YES',
+        packVersion: '0.2.6',
+      }),
+    ).toEqual(['http/sources.json.referenced[0] 关键页面引用缺失源码文件']);
+  });
 });

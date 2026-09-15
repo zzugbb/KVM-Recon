@@ -27,7 +27,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["url", "kind", "captured", "missing"],
+        "required": ["url", "kind", "captured", "missing", "required"],
         "properties": {
           "url": { "type": "string" },
           "kind": { "enum": ["javascript", "html"] },

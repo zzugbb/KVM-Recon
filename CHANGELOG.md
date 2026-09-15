@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+- 采集窗口在 `Network.enable` 前先完成 `about:blank` 提交，避免 Electron 44 空窗口卡死在开始采集；`Network.enable` 另有超时保护。
+- 新增生产 Adapter/Controller E2E：`controller.start()` 必须在时限内返回，并覆盖主窗口首个 Document、弹窗 Document/脚本、窗口血缘、`target=_blank` POST 与 referrer。
+- `http/sources.json` 的 `referenced.required` 在 0.2.7+ 为必填布尔；旧包缺字段时按关键引用处理，不能当成非关键放过 YES。
+- 源码预算维持 24 个文件 / 8 MiB 硬上限。触达上限时清单明确提示重新采集无效，不要反复重采。
+
 ## [0.2.7] - 2026-09-14
 
 - Viewer/登录源码按清单与完整性判定：未知族要求可靠 Viewer 窗口内的第一方脚本（含惠普 `application.js` / `iLO.js` 等普通文件名）以及 main/polyfills/runtime/worker 与 kvm/viewer 等关键词；首页其余脚本完整与否不再挡住 YES。

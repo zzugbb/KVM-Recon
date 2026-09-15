@@ -1,3 +1,8 @@
+import {
+  packRequiresReferencedRequiredField,
+  referencedSourceIsRequired,
+} from './packVersionContract';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -126,13 +131,17 @@ export function validateTimelineLineShape(value: unknown): string[] {
   return [];
 }
 
-export function validateSourceInventoryShape(value: unknown): string[] {
+export function validateSourceInventoryShape(
+  value: unknown,
+  options?: { packVersion?: string },
+): string[] {
   if (value == null) return [];
   if (!isRecord(value) || !Array.isArray(value.files)) {
     return ['http/sources.json 必须包含 files 数组'];
   }
   const errors: string[] = [];
   const paths = new Set<string>();
+  const requireRequiredField = packRequiresReferencedRequiredField(options?.packVersion);
   for (const [index, item] of value.files.entries()) {
     if (
       !isRecord(item) ||
@@ -157,6 +166,10 @@ export function validateSourceInventoryShape(value: unknown): string[] {
       for (const [index, item] of value.referenced.entries()) {
         if (!isRecord(item) || typeof item.url !== 'string') {
           errors.push(`http/sources.json.referenced[${index}] 缺少 url`);
+          continue;
+        }
+        if (requireRequiredField && typeof item.required !== 'boolean') {
+          errors.push(`http/sources.json.referenced[${index}] 缺少布尔型 required`);
         }
       }
     }
@@ -170,6 +183,7 @@ export function validateSourceInventoryIntegrity(input: {
   fileBytes: Map<string, { bytes: number; sha256: string }>;
   family?: string;
   readiness?: string;
+  packVersion?: string;
 }): string[] {
   const inventory = input.inventory;
   if (inventory == null) {
@@ -181,7 +195,7 @@ export function validateSourceInventoryIntegrity(input: {
     }
     return [];
   }
-  const errors = validateSourceInventoryShape(inventory);
+  const errors = validateSourceInventoryShape(inventory, { packVersion: input.packVersion });
   if (!isRecord(inventory) || !Array.isArray(inventory.files)) return errors;
   let completeFiles = 0;
   for (const [index, item] of inventory.files.entries()) {
@@ -205,7 +219,7 @@ export function validateSourceInventoryIntegrity(input: {
       if (
         isRecord(item) &&
         item.missing === true &&
-        item.required === true &&
+        referencedSourceIsRequired(item.required) &&
         input.readiness === 'YES'
       ) {
         errors.push(`http/sources.json.referenced[${index}] 关键页面引用缺失源码文件`);

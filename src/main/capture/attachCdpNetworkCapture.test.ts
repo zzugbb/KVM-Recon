@@ -152,6 +152,28 @@ describe('attachCdpNetworkCapture', () => {
     });
   });
 
+  it('times out a hung Network.enable so capture start cannot block forever', async () => {
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand(command) {
+        if (command === 'Network.enable') {
+          return new Promise(() => {});
+        }
+        return {};
+      },
+      on() {},
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      networkEnableTimeoutMs: 20,
+    });
+    expect(recorder.captureStatus().attachFailures).toEqual([
+      { sessionId: 'root', reason: 'cdp-attach-failed' },
+    ]);
+  });
+
   it('scopes OOPIF request ids and reads response bodies through the attached session', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
     const bodyCalls: Array<{ requestId: string; sessionId?: string }> = [];

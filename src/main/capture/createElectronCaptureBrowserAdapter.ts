@@ -13,6 +13,7 @@ import { nativePopupWindowOpenHandler, popupWindowFacts } from '../../core/brows
 import { SOURCE_REFERENCED_LIMIT } from '../../core/network/sourceCapture';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
+import { shouldCommitAboutBlankBeforeCdp } from './cdpRendererReady';
 
 interface CreateElectronCaptureBrowserAdapterOptions {
   screenshotDir: string;
@@ -153,8 +154,24 @@ export function createElectronCaptureBrowserAdapter(
           : debuggerCount === 0
             ? 'main'
             : 'popup';
-        const started = (async () => {
+        const started = Promise.resolve().then(async () => {
           try {
+            // Electron 44：空窗口尚未完成首次文档提交时 Network.enable 会一直挂起。
+            // 主窗口先提交 about:blank；弹窗可能已有 POST 导航，禁止改写成 blank。
+            if (
+              shouldCommitAboutBlankBeforeCdp({
+                windowRole,
+                url: contents.getURL(),
+              })
+            ) {
+              try {
+                await contents.loadURL('about:blank');
+              } catch (error) {
+                // 捕获 about:blank 预加载失败：窗口可能已销毁
+                // 策略：继续尝试 attach，由 Network.enable 超时或 attachFailure 降级
+                void error;
+              }
+            }
             await options.onNetworkDebugger(contents.debugger as unknown as CdpDebuggerLike, {
               windowRole,
               captureWindowId: String(contents.id),
@@ -169,7 +186,7 @@ export function createElectronCaptureBrowserAdapter(
             recordCaptureWindowLog(`capture-cdp-attach-failed window=${contents.id}`);
             void error;
           }
-        })();
+        });
         cdpByContentsId.set(contents.id, started);
         return started;
       }
@@ -387,9 +404,22 @@ export function createElectronCaptureBrowserAdapter(
             `capture-renderer-gone reason=${details.reason} exit=${details.exitCode}`,
           );
         });
-        targetWindow.webContents.setWindowOpenHandler(() =>
-          nativePopupWindowOpenHandler({ partition: options.partition }),
-        );
+        targetWindow.webContents.setWindowOpenHandler(() => {
+          const handler = nativePopupWindowOpenHandler({ partition: options.partition });
+          if (
+            process.argv.includes('--e2e-capture-controller') ||
+            process.env.KVM_RECON_E2E_CAPTURE === '1'
+          ) {
+            return {
+              ...handler,
+              overrideBrowserWindowOptions: {
+                ...handler.overrideBrowserWindowOptions,
+                show: false,
+              },
+            };
+          }
+          return handler;
+        });
         targetWindow.webContents.on('did-create-window', (childWindow, details) => {
           const facts = popupWindowFacts({
             childCaptureWindowId: String(childWindow.webContents.id),
@@ -414,9 +444,12 @@ export function createElectronCaptureBrowserAdapter(
         });
       }
 
+      const hideCaptureWindow =
+        process.argv.includes('--e2e-capture-controller') || process.env.KVM_RECON_E2E_CAPTURE === '1';
       const window = new BrowserWindow({
         width: 1280,
         height: 860,
+        show: !hideCaptureWindow,
         title: `KVM-Recon Capture - ${options.targetHost}`,
         webPreferences: {
           partition: options.partition,

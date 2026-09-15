@@ -32,6 +32,26 @@ interface AttachCdpNetworkCaptureInput {
   captureWindowId?: string;
   openerCaptureWindowId?: string;
   ancestorCaptureWindowIds?: string[];
+  networkEnableTimeoutMs?: number;
+}
+
+const DEFAULT_NETWORK_ENABLE_TIMEOUT_MS = 5000;
+
+async function awaitWithTimeout<T>(value: Promise<T> | T, timeoutMs: number, message: string): Promise<T> {
+  if (value == null || typeof (value as Promise<T>).then !== 'function') {
+    return value as T;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      value as Promise<T>,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 type HeaderMap = Record<string, string>;
@@ -516,10 +536,14 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     if (!(typeof input.cdp.isAttached === 'function' && input.cdp.isAttached())) {
       await input.cdp.attach('1.3');
     }
-    await input.cdp.sendCommand('Network.enable');
+    await awaitWithTimeout(
+      input.cdp.sendCommand('Network.enable'),
+      input.networkEnableTimeoutMs ?? DEFAULT_NETWORK_ENABLE_TIMEOUT_MS,
+      'Network.enable timed out before the renderer committed a document',
+    );
   } catch (error) {
-    // 捕获根窗口 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用或目标已销毁
-    // 策略：记入 attachFailures 让清单 PARTIAL，避免未处理拒绝；窗口仍可用于截图
+    // 捕获根窗口 debugger.attach 或 Network.enable 失败/超时：空窗口未提交文档时 Chromium 会挂起
+    // 策略：记入 attachFailures 让清单 PARTIAL，避免 start() 永久卡住；窗口仍可用于截图
     input.recorder.markAttachFailure(input.captureWindowId || 'root', 'cdp-attach-failed');
     void error;
     return;

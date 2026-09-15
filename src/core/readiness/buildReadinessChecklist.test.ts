@@ -1680,6 +1680,86 @@ describe('buildReadinessChecklist', () => {
     });
   });
 
+  it('tells operators that a source-budget cap cannot be fixed by recapture', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, host: 'bmc.example', vendor: '', product: '' },
+        paths: {},
+        familySignatures: { primary: 'not-h5', confidence: 0, candidates: [] },
+      },
+      page: {
+        ...pageWithScreenshot,
+        events: [
+          ...pageWithScreenshot.events,
+          {
+            type: 'page-scripts',
+            windowRole: 'popup',
+            captureWindowId: 'popup-kvm',
+            timestamp: '2026-09-14T12:00:03.000+08:00',
+            scripts: [
+              {
+                url: 'https://bmc.example/console/main.8f3a21.js',
+                kind: 'javascript',
+                initiator: 'script-tag',
+              },
+            ],
+          },
+        ],
+      },
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-09-14T12:00:00.000+08:00',
+            method: 'POST',
+            url: 'https://bmc.example/login',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'set-cookie': 'SID=<redacted:sha256:sample>' } as Record<string, string>,
+            requestBodySummary: { bytes: 16, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 8, redactedFields: [] },
+            tags: ['login' as const],
+          },
+          {
+            id: 'chunk-1',
+            timestamp: '2026-09-14T12:00:01.100+08:00',
+            method: 'GET',
+            url: 'https://bmc.example/console/main.8f3a21.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: { bytes: 4096, redactedFields: [] },
+            responseBodyCaptured: false,
+            responseBodySkippedReason: 'source-budget-exceeded:4096',
+            sourceKind: 'javascript' as const,
+            sourceBytes: 4096,
+            tags: [],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-kvm',
+          },
+        ],
+        webSockets: completeNetwork.webSockets.map(socket => ({
+          ...socket,
+          url: 'wss://bmc.example/kvm',
+          captureWindowId: 'popup-kvm',
+          windowRole: 'popup' as const,
+        })),
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 1 },
+    });
+
+    expect(checklist.readiness).toBe('PARTIAL');
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'missing',
+      userAction: expect.stringContaining('重新打开 Viewer 或重新采集无法突破'),
+    });
+  });
+
   it('marks an otherwise complete capture PARTIAL while requests are still in flight', () => {
     const checklist = buildReadinessChecklist({
       probe: completeProbe,

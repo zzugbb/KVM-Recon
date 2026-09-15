@@ -24,6 +24,8 @@ import {
   adapterSourceCoverage,
   pageReferencedScriptsFromEvents,
   pageScriptsEventsTruncated,
+  SOURCE_MAX_FILES,
+  SOURCE_TOTAL_BUDGET_BYTES,
   sourceInventoryEvidence,
 } from '../network/sourceCapture';
 
@@ -340,8 +342,11 @@ function viewerSourceItem(
     coverage.incomplete.length > 0 ||
     coverage.referencedTruncated
   ) {
-    const budgetOrTruncated = coverage.incomplete.some(request =>
-      /truncated|too-large|budget-exceeded/i.test(
+    const budgetExceeded = coverage.incomplete.some(request =>
+      /source-budget-exceeded/i.test(request.responseBodySkippedReason || ''),
+    );
+    const tooLargeOrTruncated = coverage.incomplete.some(request =>
+      /truncated|too-large/i.test(
         `${request.responseBodySkippedReason || ''} ${request.sourceTruncated ? 'truncated' : ''}`,
       ),
     );
@@ -359,9 +364,11 @@ function viewerSourceItem(
         ? '页面引用源码清单被截断，无法确认 Viewer 关键脚本是否采全。请关闭并重新打开 HTML5 KVM。'
         : coverage.missingReferenced.length
         ? '页面已引用 Viewer 主脚本/polyfill，但 Network 未采到正文（常见于弹窗在 debugger attach 前加载）。请关闭并重新打开 HTML5 KVM，不要只等待。'
-        : budgetOrTruncated
-          ? '源码超过 2 MiB 或总量预算，无法通过等待补齐。请重新打开/重载 Viewer，手动补采关键 bundle，或接受 PARTIAL。'
-          : 'Viewer 关键源码不完整。未知协议缺少完整源码时不能判 YES。',
+        : budgetExceeded
+          ? `关键源码数量或总量已达采集器上限（最多 ${SOURCE_MAX_FILES} 个文件、合计 ${Math.round(SOURCE_TOTAL_BUDGET_BYTES / (1024 * 1024))} MiB）。这是硬限制，重新打开 Viewer 或重新采集无法突破，请接受 PARTIAL。`
+          : tooLargeOrTruncated
+            ? '单文件超过 2 MiB 被截断或跳过。同一文件重新采集仍会截断，请接受 PARTIAL。'
+            : 'Viewer 关键源码不完整。未知协议缺少完整源码时不能判 YES。',
     });
   }
   return item({
