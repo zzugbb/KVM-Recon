@@ -58,7 +58,7 @@ Electron 优先级高于 Tauri 的原因是：Electron 自带 Chromium 和 CDP�
 
 注意：WebSocket 只记录元数据和有界帧样本，不保存完整视频流；每条连接持续累计帧总数、采样数和丢弃数。HTTP JSON 与 URL-encoded 表单请求/响应会保留字段级脱敏后的结构化样本，短文本响应保留有限长度样本，便于离场后复原嵌套字段、表单参数和非敏感参数关系。图片、字体、媒体、样式、流式响应、二进制 MIME、`data:` / `blob:` 和超限正文不会读取。点击摘要在采集进度轮询中写入时间线。不采集 Cookie 的写入调用来源；导出包只保留脱敏后的 cookie **名**。
 
-HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP 请求和响应 ExtraInfo 中的 Cookie / Set-Cookie 等头会结合 `redirectHasExtraInfo` / `hasExtraInfo` 合并到对应 hop，不会因某一跳缺少 ExtraInfo 而错位；响应 ExtraInfo 的真实状态码和原始头始终优先于普通响应，头名按大小写不敏感方式合并。请求 ExtraInfo 合并后会重新计算链路标签。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待，避免持续连接把完整采集误降为 `PARTIAL`。
+HTTP 重定向按 hop 保存，避免 Chromium 复用 `requestId` 时覆盖登录跳转或 Viewer 跳转。CDP 请求和响应 ExtraInfo 中的 Cookie / Set-Cookie 等头会结合 `redirectHasExtraInfo` / `hasExtraInfo` 合并到对应 hop，不会因某一跳缺少 ExtraInfo 而错位；响应 ExtraInfo 的真实状态码和原始头始终优先于普通响应，头名按大小写不敏感方式合并。请求 ExtraInfo 合并后会重新计算链路标签。EventSource、SSE 和可识别的长轮询不参与普通 HTTP 空闲等待。Dedicated Worker / shared worker 入口脚本常在父会话发出 `requestWillBeSent`，在 Worker 子会话收到响应与 `loadingFinished`；采集器会把同一 `requestId` 关联回父记录，并在子会话 `Network.enable` 后补读 JS 正文。Worker 源码采到后该请求离开 in-flight；加载失败或 target detach 仍无正文时保留 `loading-failed`，清单为 PARTIAL。
 
 ### 3.4 Probe Engine
 
@@ -72,7 +72,7 @@ Node.js 本地探测引擎。开始采集时先做未登录探测；登录后可
 - OpenBMC H5 指纹：正文验证后的 `/randomtag`，以及 OpenBMC 证书信息。
 - 华为 iBMC 指纹：Redfish `Vendor`、`Oem.Huawei`、`SoftwareName=iBMC` / `SmsName=iBMC` 与证书身份。
 
-Recon 不主动请求 `/api/session`、`/api/kvm/token`、`KvmService`、`SetKvmKey` 等会话、一次性 Token 或操作接口。这些链路仅从现场人员在浏览器中的真实操作流量记录，避免预取 Token、占用会话槽或改变 BMC 状态。
+Recon 不主动请求 `/api/session`、`/api/kvm/token`、`/api/settings/media/h5viewercfg`、`KvmService`、`SetKvmKey` 等会话、一次性 Token 或操作接口。这些链路仅从现场人员在浏览器中的真实操作流量记录，避免预取 Token、占用会话槽或改变 BMC 状态。
 
 路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为结构化 JSON 或明确的短非 HTML 指纹文本；`text/plain` 但正文为 JSON 的响应按 JSON 解析；Redfish 根同时兼容 `/redfish/v1` 与 `/redfish/v1/`。401/403/405 只记录为路径事实，不再直接算接口命中。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。探测结果同时导出 `probe/path-details.json`，保留每个路径的状态码、内容类型、重定向和响应结构特征。
 
@@ -102,7 +102,7 @@ Recon 不主动请求 `/api/session`、`/api/kvm/token`、`KvmService`、`SetKvm
 
 无 HTML5 KVM 路径迹象时为 `not-h5`；有 H5 迹象但未命中已知族时为 `unknown-h5`。后两个是未识别采集桶，不是网关 Adapter 名；已知三族也须用流量核对是否同构。下游起名见 `docs/kvm-family.md`。
 
-打分不只看匿名路径是否探通：证书组织名（如 `O=OpenBMC`）、TLS CN、已采集 HTTP/WS URL、WebSocket 子协议与帧头（如 RFB、APCP、FEF6、IVTP）一并加权。现场清单、作业列表和导出包走同一套重判。页面 document 导航不计入 AMI HTTP 证据。AMI 只靠路径存在不再给 0.9；不再因 AMI `/api` 路径否决 OpenBMC；通用 `KvmService` 不再造成 H3C G6 等 HTML5 KVM 误判为 Huawei。
+打分不只看匿名路径是否探通：证书组织名（如 `O=OpenBMC`）、TLS CN、已采集 HTTP/WS URL、WebSocket 子协议与帧头（如 RFB、APCP、FEF6、IVTP）一并加权。现场清单、作业列表和导出包走同一套重判。页面 document 导航不计入 AMI HTTP 证据。AMI 只靠路径存在不再给 0.9；AMI 明确启动接口同时包括 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，`/api/session` 加上其中任一即可作为强流量证据。不再因 AMI `/api` 路径否决 OpenBMC；通用 `KvmService` 不再造成 H3C G6 等 HTML5 KVM 误判为 Huawei。
 
 ### 3.6 Redactor
 
@@ -130,7 +130,7 @@ Recon 不主动请求 `/api/session`、`/api/kvm/token`、`KvmService`、`SetKvm
 
 输出 `YES`、`PARTIAL`、`NO` 三类离场结论。
 
-Readiness 综合登录链路、KVM 启动链路、WebSocket 升级、子协议和真实帧证据判断，不依赖单一 `kvm-video` 标签。登录链路必须是成功的 POST，并有 Session Cookie、Token 或成功响应结构；GET 登录页、DELETE、失败状态、未完成请求和 `/bmc/php/gettoken.php` 均不能充当登录成功。Huawei legacy 的 `/bmc/php/gettoken.php` 等 PHP 表单接口只纳入 KVM 启动链。通用 `/websocket` 文本心跳不触发 viewer 截图；viewer 截图只有在正确窗口或子 target 收到可靠 KVM 证据后才自动生成。导出前会等待普通在途 HTTP 请求、响应体读取任务和短静默窗口，降低 `status=null` 或空响应体竞态；流式请求不阻塞该等待。
+Readiness 综合登录链路、KVM 启动链路、WebSocket 升级、子协议和真实帧证据判断，不依赖单一 `kvm-video` 标签。登录链路必须是成功的 POST，并有 Session Cookie、Token 或成功响应结构；GET 登录页、DELETE、失败状态、未完成请求和 `/bmc/php/gettoken.php` 均不能充当登录成功。Huawei legacy 的 `/bmc/php/gettoken.php` 等 PHP 表单接口只纳入 KVM 启动链。AMI 启动链接受 `/api/kvm/token` 或 `/api/settings/media/h5viewercfg`。通用 `/websocket` 文本心跳不触发 viewer 截图；viewer 截图只有在正确窗口或子 target 收到可靠 KVM 证据后才自动生成。导出前会等待普通在途 HTTP 请求、响应体读取任务和短静默窗口；`http/capture-status.json` 保留全部 in-flight ID。`network.capture.complete` 只对登录、KVM Token/启动接口、Viewer/Worker 源码等会影响离线资料完整性的未完成请求降级。同一 method + 规范化 URL 已有成功且正文完整的重复轮询，导出瞬间仍在途时不单独把整包打成 `PARTIAL`。唯一的关键启动请求或 Worker 入口脚本未完成时仍为 `PARTIAL`。流式请求不阻塞空闲等待。
 
 ### 3.8 Exporter
 

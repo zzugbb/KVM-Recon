@@ -25,6 +25,8 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 采集器只会打五个**采集桶**（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`）。这不是网关 Adapter 主键：`unknown-h5` / `not-h5` 不能写进 registry；已知三族也要先用包内 HTTP/WS 核对是否同构。新 Adapter 用市面 BMC 产品名（如 `dell-idrac-h5`）。详见 `docs/kvm-family.md`。现场铭牌只作为证据。
 
+AMI MegaRAC HTML5 启动接口同时支持 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，只记录现场真实操作，不主动探测。`network.capture.complete` 的 PARTIAL 只针对登录、KVM 启动/Token、Viewer/Worker 源码等真正缺失的请求；已成功采过的重复轮询不会单独降级。Worker 入口脚本必须保存正文，旧包缺正文不能靠规则改成已采到。
+
 ## 下载
 
 从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。

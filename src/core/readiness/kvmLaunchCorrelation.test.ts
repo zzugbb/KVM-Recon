@@ -4,6 +4,7 @@ import {
   correlatedKvmLaunchHttpIds,
   correlatedLoginHttpIds,
   isCriticalResponseBodyMissing,
+  isExplicitKvmLaunchRequest,
   sameCaptureContext,
 } from './kvmLaunchCorrelation';
 import type { HttpRequestRecord, WebSocketRecord } from '../network/createNetworkRecorder';
@@ -123,5 +124,70 @@ describe('kvmLaunchCorrelation', () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it('treats AMI h5viewercfg as an explicit KVM launch API', () => {
+    const cfg = http('cfg-1', 'https://10.130.34.1/api/settings/media/h5viewercfg', {
+      tags: ['kvm-token'],
+      captureWindowId: 'win-main',
+      windowRole: 'main',
+      responseBodySummary: {
+        bytes: 96,
+        redactedFields: ['token'],
+        jsonKeys: ['token', 'session', 'server_ip', 'kvm_service_status'],
+      },
+    });
+    const viewer = socket({
+      url: 'wss://10.130.34.1/kvm',
+      tags: ['kvm-video'],
+      captureWindowId: 'popup-viewer',
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      windowRole: 'popup',
+    });
+
+    expect(isExplicitKvmLaunchRequest(cfg)).toBe(true);
+    expect(isExplicitKvmLaunchRequest({ ...cfg, tags: ['kvm-entry'] })).toBe(true);
+    expect(correlatedKvmLaunchHttpIds([cfg], viewer)).toEqual(['cfg-1']);
+  });
+
+  it('associates two concurrent Viewers by capture window lineage instead of request count', () => {
+    const cfgA = http('cfg-a', 'https://10.130.34.1/api/settings/media/h5viewercfg', {
+      captureWindowId: 'popup-a',
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      windowRole: 'popup',
+    });
+    const cfgB = http('cfg-b', 'https://10.130.34.1/api/settings/media/h5viewercfg', {
+      timestamp: '2026-09-14T10:00:01.000+08:00',
+      captureWindowId: 'popup-b',
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      windowRole: 'popup',
+    });
+    const wsA = socket({
+      id: 'ws-a',
+      url: 'wss://10.130.34.1/kvm',
+      tags: ['kvm-video'],
+      captureWindowId: 'popup-a',
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      windowRole: 'popup',
+    });
+    const wsB = socket({
+      id: 'ws-b',
+      createdAt: '2026-09-14T10:00:03.000+08:00',
+      url: 'wss://10.130.34.1/kvm',
+      tags: ['kvm-video'],
+      captureWindowId: 'popup-b',
+      openerCaptureWindowId: 'win-main',
+      ancestorCaptureWindowIds: ['win-main'],
+      windowRole: 'popup',
+    });
+
+    expect(sameCaptureContext(cfgA, wsB)).toBe(false);
+    expect(sameCaptureContext(cfgB, wsA)).toBe(false);
+    expect(correlatedKvmLaunchHttpIds([cfgA, cfgB], wsA)).toEqual(['cfg-a']);
+    expect(correlatedKvmLaunchHttpIds([cfgA, cfgB], wsB)).toEqual(['cfg-b']);
   });
 });

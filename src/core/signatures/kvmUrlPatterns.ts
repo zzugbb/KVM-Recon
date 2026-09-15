@@ -13,8 +13,12 @@ export const HUAWEI_VMEDIA_WS_PATTERN = /:8208\/(?:websocket)?(?:\?|$)/i;
 export const KNOWN_KVM_WEBSOCKET_PATTERN =
   /\/kvm(?:\/|\?|$)|\/kvm\/video|\/v[mn]c\/vconsole|:5900\/(?:$|\?|vkvm\/?)|\/wss\/ircport|:(?:2198|2199)\/(?:websocket)?(?:\?|$)/i;
 
+export const AMI_KVM_TOKEN_URL_PATTERN = /\/api\/kvm\/token(?:\/|\?|$)/i;
+
+export const AMI_H5VIEWERCFG_URL_PATTERN = /\/api\/settings\/media\/h5viewercfg(?:\/|\?|$)/i;
+
 export const EXPLICIT_KVM_LAUNCH_URL_PATTERN =
-  /\/api\/kvm\/token|kvmservice|setkvmkey|starth5kvm|\/kvm\/video|\/v[mn]c\/vconsole|\/restgui\/(?:html5viewer|vconsole)|\/wss\/ircport|\/bmc\/pages\/remote\/kvm_by_html5\.html|\/bmc\/php\/gettoken\.php|\/sysmgmt\/[^/]+\/server\/vconsole/i;
+  /\/api\/kvm\/token|\/api\/settings\/media\/h5viewercfg|kvmservice|setkvmkey|starth5kvm|\/kvm\/video|\/v[mn]c\/vconsole|\/restgui\/(?:html5viewer|vconsole)|\/wss\/ircport|\/bmc\/pages\/remote\/kvm_by_html5\.html|\/bmc\/php\/gettoken\.php|\/sysmgmt\/[^/]+\/server\/vconsole/i;
 
 export function isHuaweiVmediaWebSocketUrl(url: string) {
   return HUAWEI_VMEDIA_WS_PATTERN.test(url);

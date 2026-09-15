@@ -229,7 +229,7 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
     tags.push('login');
   }
   if (
-    /kvm\/token|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file|\/bmc\/php\/gettoken\.php/.test(
+    /kvm\/token|h5viewercfg|setkvmkey|starth5kvm|kvmservice|generate(?:startup)?file|\/bmc\/php\/gettoken\.php/.test(
       lower,
     ) ||
     legacyKvmSupport

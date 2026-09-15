@@ -15,7 +15,7 @@
 - 关键 Viewer/认证源码资料：not_applicable / warning；证据：无；补采动作：无
 - KVM WebSocket：pass / blocking；证据：ws-1；补采动作：无
 - KVM 画面截图：missing / warning；证据：无；补采动作：打开 HTML5 KVM 后会自动截图，无需再点「采集当前画面」。
-- 网络响应采集完整性：pass / warning；证据：timedOut=false, pendingTaskCount=0, inFlightRequestCount=0；补采动作：无
+- 网络响应采集完整性：pass / warning；证据：timedOut=false, pendingTaskCount=0, inFlightRequestCount=0, materialInFlightCount=0；补采动作：无
 - TLS 证书信息：pass / info；证据：TLSv1.2, CN=bmc.local；补采动作：无
 - 导出脱敏检查通过：pass / blocking；证据：redactedFields=3；补采动作：无
 

@@ -158,7 +158,7 @@ export function buildPackReadmeArtifact(input: BuildPackReadmeArtifactInput): Ca
       '### 本包已经能回答',
       '',
       `- 采集桶是 ${input.kvmFamily}，离场结论是 ${input.readiness}。`,
-      `- 登录相关 HTTP 在 \`http/requests.jsonl\`（tags 含 login / kvm-token / kvm-entry）。`,
+      `- 登录相关 HTTP 在 \`http/requests.jsonl\`（tags 含 login / kvm-token / kvm-entry；AMI 的 kvm-token 可能是 \`/api/kvm/token\` 或 \`/api/settings/media/h5viewercfg\`）。`,
       `- KVM 画面通道看 \`ws/sockets.json\` 与 \`ws/frames.jsonl\`。URL：${joinOrNone(input.webSocketUrls)}。`,
       `- 有没有 viewer 截图：${input.screenshotCount > 0 ? `有 ${input.screenshotCount} 张` : '没有'}。`,
       `- 还缺什么：阻断 ${titleList(input.blockingTitles)}；警告 ${titleList(input.warningTitles)}。`,

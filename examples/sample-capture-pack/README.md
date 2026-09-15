@@ -73,7 +73,7 @@ zip 名和 `manifest.family.primary` 只是采集器对三套已知指纹的打�
 ### 本包已经能回答
 
 - 采集桶是 ami-megarac，离场结论是 PARTIAL。
-- 登录相关 HTTP 在 `http/requests.jsonl`（tags 含 login / kvm-token / kvm-entry）。
+- 登录相关 HTTP 在 `http/requests.jsonl`（tags 含 login / kvm-token / kvm-entry；AMI 的 kvm-token 可能是 `/api/kvm/token` 或 `/api/settings/media/h5viewercfg`）。
 - KVM 画面通道看 `ws/sockets.json` 与 `ws/frames.jsonl`。URL：wss://10.0.0.10/kvm。
 - 有没有 viewer 截图：没有。
 - 还缺什么：阻断 （无）；警告 KVM 画面截图。

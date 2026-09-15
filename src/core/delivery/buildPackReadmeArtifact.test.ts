@@ -43,6 +43,7 @@ describe('buildPackReadmeArtifact', () => {
     expect(artifact.content).toContain('probe/product-hints.json');
     expect(artifact.content).toContain('http/adapter-evidence.json');
     expect(artifact.content).toContain('必须问人或看网关仓库');
+    expect(artifact.content).toContain('/api/settings/media/h5viewercfg');
     expect(artifact.content).toContain('KVM 画面截图：2');
     expect(artifact.content).toContain('有没有 viewer 截图：有 2 张');
     expect(artifact.content).toContain('核对真实族再动手');

@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-09-15
+
+- AMI HTML5 同时识别 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg` 为明确 KVM 启动/Token 接口；后者不再当成宽泛 `kvm-entry`。`/api/session` + `h5viewercfg` 可作为 AMI 流量证据。采集器仍不主动探测这些接口。
+- Worker/OOPIF 子会话里，入口脚本可能在父会话发出 `requestWillBeSent`、在 Worker 会话收到 `responseReceived`/`loadingFinished`。采集器按 session 回退到未加前缀的 `requestId`，并在 Worker `Network.enable` 后补读源码，请求会正常结束 in-flight。
+- Worker 真正加载失败、detach 时仍无正文，或页面引用了 Worker 却采不到源码时，保持 PARTIAL，并保留明确原因。
+- `http/capture-status.json` 仍记录全部在途请求。`network.capture.complete` 只对会影响离线资料的未完成请求降级：登录、KVM Token/启动接口、Viewer/Worker 源码。同一 method + 规范化 URL 已有成功且正文完整的重复轮询不再单独把整包打成 PARTIAL。
+- 两个 Viewer 并存时仍按 `captureWindowId` / 祖先链关联启动 HTTP 与 `/kvm` WebSocket，不按请求数量串链。
+
 ## [0.2.8] - 2026-09-15
 
 - 根 CDP 会话读取 HTML/JS/`getRequestPostData` 时不再传入空 `sessionId`，避免 Electron 44 报 `Empty session id is not allowed` 导致源码正文全空。

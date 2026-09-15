@@ -20,7 +20,7 @@ KVM-Recon 会在 zip 名和 `manifest.family.primary` 里写一个标签。那�
 
 `unknown-h5` 和 `not-h5` **永远不要**写进网关配置。它们只表示「工具还不认识」，不是一种 BMC 产品。
 
-现场填写的厂商/型号（浪潮、Dell、HPE）是铭牌，不能当 `kvmFamily`。同一品牌可以走出两族（例如浪潮既有 AMI MegaRAC，也有 OpenBMC H5）。已知 AMI / Huawei / OpenBMC 协议的贴牌设备仍归已有采集桶。
+现场填写的厂商/型号（浪潮、Dell、HPE）是铭牌，不能当 `kvmFamily`。同一品牌可以走出两族（例如浪潮既有 AMI MegaRAC，也有 OpenBMC H5）。已知 AMI / Huawei / OpenBMC 协议的贴牌设备仍归已有采集桶。AMI MegaRAC 的 HTML5 启动链有两条，都只从真实操作流量识别，不主动探测：`/api/kvm/token`，以及部分固件使用的 `/api/settings/media/h5viewercfg`（响应含 token/session 等启动参数，随后 `wss://BMC/kvm`）。`/api/session` 加上其中任一即可作为 AMI 流量证据。
 
 zip 名就算写错，`http/`、`ws/`、`page/` 仍是浏览器真实流量，不会按错族去伪造接口。产品提示不参与当前 ZIP 文件名。
 

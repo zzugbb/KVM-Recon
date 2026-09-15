@@ -810,7 +810,9 @@ describe('buildReadinessChecklist', () => {
         'timedOut=true',
         'pendingTaskCount=1',
         'inFlightRequestCount=1',
+        'materialInFlightCount=1',
         'inFlight=session-1::request-9',
+        'materialInFlight=session-1::request-9',
       ],
     });
   });
@@ -1778,5 +1780,245 @@ describe('buildReadinessChecklist', () => {
       status: 'needs_user_action',
       evidence: expect.arrayContaining(['pendingTaskCount=1', 'inFlight=viewer-js']),
     });
+  });
+
+  it('accepts AMI h5viewercfg as the key KVM launch API with payload evidence', () => {
+    const h5viewercfg = {
+      id: 'h5viewercfg-1',
+      timestamp: '2026-09-15T07:36:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.130.34.1/api/settings/media/h5viewercfg',
+      resourceType: 'xhr',
+      status: 200,
+      requestHeaders: {},
+      responseHeaders: { 'content-type': 'application/json' },
+      requestBodySummary: { bytes: 0, redactedFields: [] },
+      responseBodySummary: {
+        bytes: 128,
+        redactedFields: ['token'],
+        jsonKeys: ['token', 'session', 'server_ip', 'kvm_service_status'],
+      },
+      responseBodyCaptured: true,
+      tags: ['kvm-token' as const],
+      captureWindowId: 'win-main',
+      windowRole: 'main' as const,
+    };
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [completeNetwork.httpRequests[0], h5viewercfg],
+        webSockets: [
+          {
+            ...completeNetwork.webSockets[0],
+            url: 'wss://10.130.34.1/kvm',
+            captureWindowId: 'popup-viewer',
+            openerCaptureWindowId: 'win-main',
+            ancestorCaptureWindowIds: ['win-main'],
+            windowRole: 'popup' as const,
+          },
+        ],
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 4 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.key_api')).toMatchObject({
+      status: 'pass',
+      evidence: ['h5viewercfg-1'],
+    });
+    expect(checklist.items.find(item => item.id === 'http.key_payload')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'bmc.fingerprint')?.evidence).toEqual(
+      expect.arrayContaining(['http:/api/session', 'http:/api/settings/media/h5viewercfg']),
+    );
+  });
+
+  it('keeps PARTIAL when the only KVM launch request is still in flight', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          {
+            ...completeNetwork.httpRequests[1],
+            id: 'token-inflight',
+            status: null,
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: true,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['token-inflight'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.key_api')?.status).toBe('missing');
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: expect.arrayContaining(['materialInFlight=token-inflight']),
+    });
+    expect(checklist.readiness).toBe('PARTIAL');
+  });
+
+  it('does not degrade network completeness for a duplicate poll when a complete twin exists', () => {
+    const kvmService = {
+      id: 'kvm-service-1',
+      timestamp: '2026-09-15T07:14:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService',
+      resourceType: 'xhr',
+      status: 200,
+      requestHeaders: {},
+      responseHeaders: { 'content-type': 'application/json' },
+      requestBodySummary: { bytes: 2, redactedFields: [] },
+      responseBodySummary: { bytes: 64, redactedFields: [] },
+      responseBodyCaptured: true,
+      tags: ['kvm-token' as const],
+    };
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          kvmService,
+          {
+            ...kvmService,
+            id: 'kvm-service-poll',
+            timestamp: '2026-09-15T07:14:31.000+08:00',
+            status: null,
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: true,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['kvm-service-poll'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'pass',
+      evidence: expect.arrayContaining([
+        'timedOut=true',
+        'inFlight=kvm-service-poll',
+        'materialInFlightCount=0',
+      ]),
+    });
+    expect(checklist.readiness).toBe('YES');
+  });
+
+  it('keeps PARTIAL when unique Viewer/Worker source is still in flight or missing its body', () => {
+    const worker = {
+      id: 'decode-worker',
+      timestamp: '2026-09-15T07:06:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js',
+      resourceType: 'script',
+      status: null as number | null,
+      requestHeaders: {},
+      responseHeaders: {},
+      requestBodySummary: { bytes: 0, redactedFields: [] },
+      responseBodySummary: { bytes: 0, redactedFields: [] },
+      responseBodyCaptured: false,
+      tags: [] as Array<'login' | 'kvm-token' | 'kvm-entry'>,
+    };
+    const unknownProbe = {
+      ...completeProbe,
+      familySignatures: { primary: 'unknown-h5' as const, confidence: 0, candidates: [] },
+    };
+    const inflight = buildReadinessChecklist({
+      probe: unknownProbe,
+      page: {
+        jobId: 'job-worker',
+        events: [
+          ...pageWithScreenshot.events,
+          {
+            type: 'page-scripts',
+            captureWindowId: 'popup-viewer',
+            scripts: [
+              {
+                url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js',
+                kind: 'javascript',
+                initiator: 'worker',
+              },
+            ],
+          },
+        ],
+      },
+      network: {
+        ...completeNetwork,
+        httpRequests: [...completeNetwork.httpRequests, worker],
+        webSockets: [
+          {
+            ...completeNetwork.webSockets[0],
+            captureWindowId: 'popup-viewer',
+            windowRole: 'popup' as const,
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['decode-worker'],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+    expect(inflight.items.find(item => item.id === 'network.capture.complete')?.status).toBe(
+      'needs_user_action',
+    );
+
+    const failed = buildReadinessChecklist({
+      probe: unknownProbe,
+      page: {
+        jobId: 'job-worker-failed',
+        events: [
+          ...pageWithScreenshot.events,
+          {
+            type: 'page-scripts',
+            captureWindowId: 'popup-viewer',
+            scripts: [
+              {
+                url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js',
+                kind: 'javascript',
+                initiator: 'worker',
+              },
+            ],
+          },
+        ],
+      },
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          {
+            ...worker,
+            status: 200,
+            responseBodySkippedReason: 'loading-failed',
+          },
+        ],
+        webSockets: [
+          {
+            ...completeNetwork.webSockets[0],
+            captureWindowId: 'popup-viewer',
+            windowRole: 'popup' as const,
+          },
+        ],
+      },
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+    expect(failed.items.find(item => item.id === 'http.viewer_source')?.status).toBe('missing');
+    expect(failed.readiness).toBe('PARTIAL');
   });
 });

@@ -88,6 +88,7 @@ describe('probeBmcBasics', () => {
     expect(result.familySignatures.confidence).toBe(0.9);
     expect(calls).not.toContain('/api/session');
     expect(calls).not.toContain('/api/kvm/token');
+    expect(calls).not.toContain('/api/settings/media/h5viewercfg');
     expect(calls).not.toContain(
       '/redfish/v1/Managers/1/KvmService/Actions/KvmService.SetKvmKey',
     );

@@ -9,6 +9,7 @@
     "pendingTaskCount": { "type": "integer", "minimum": 0 },
     "inFlightRequestIds": {
       "type": "array",
+      "description": "All in-flight HTTP request IDs at export time, including duplicate BMC polls. Readiness only degrades for material unique gaps.",
       "items": { "type": "string" },
       "uniqueItems": true
     },

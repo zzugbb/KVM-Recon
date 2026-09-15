@@ -43,6 +43,24 @@ describe('detectKvmFamily', () => {
     expect(result.confidence).toBe(0.9);
   });
 
+  it('treats /api/session plus h5viewercfg as AMI traffic without requiring /api/kvm/token', () => {
+    const result = detectKvmFamily({
+      traffic: {
+        httpUrls: [
+          'https://10.130.34.1/api/session',
+          'https://10.130.34.1/api/settings/media/h5viewercfg',
+        ],
+      },
+    });
+
+    expect(result.primary).toBe('ami-megarac');
+    expect(result.confidence).toBe(0.9);
+    expect(result.candidates[0].evidence).toEqual([
+      'http:/api/session',
+      'http:/api/settings/media/h5viewercfg',
+    ]);
+  });
+
   it('detects OpenBMC H5 when /kvm/video exists without AMI /api evidence', () => {
     const result = detectKvmFamily({
       paths: {

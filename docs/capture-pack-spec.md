@@ -25,7 +25,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代采集桶。
 - `http/adapter-evidence.json`：登录链路、KVM 启动链路、WebSocket 升级和 HTTP/WS 关联索引，供离场实现 Adapter 时快速复盘。
-- `http/capture-status.json`：导出前网络空闲等待结果；超时会记录响应体任务数和仍在途的请求 ID，并把就绪结论降为 `PARTIAL`。
+- `http/capture-status.json`：导出前网络空闲等待结果；记录响应体任务数和**全部**仍在途的请求 ID，供诊断。就绪项 `network.capture.complete` 只根据会影响离线适配资料的未完成请求降为 `PARTIAL`（登录、KVM Token/启动接口、Viewer/Worker 源码）。已有成功且正文完整的重复轮询不会单独降级。
 
 独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、网络空闲状态、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
 
@@ -81,7 +81,7 @@ capture-pack/
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.8",
+    "version": "0.2.9",
     "buildId": "3d7a6e2c4f10"
   },
   "job": {
@@ -266,7 +266,7 @@ HTTP 资料必须脱敏：
 `magic` 为可选识别结果（例如可打印的握手字符串）。`closedAt` 在浏览器报告 WebSocket 关闭时填写；连接仍在时该字段可省略。
 `windowRole` 为 `main`（首个采集窗口）或 `popup`（新窗口），仅用于展示。内部关联与自动截图使用 `captureWindowId`（采集会话内每个 BrowserWindow 的稳定 ID）。弹窗子窗口额外记录 `openerCaptureWindowId`：主窗口请求 token、子窗口建立 WS 视为同一上下文；两个兄弟弹窗不关联。旧包没有窗口 ID 时，才退回比较 `windowRole`。
 
-KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vmc/vconsole` 与 `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。华为 `:8208` 是虚拟媒体端口，不能作为 KVM 视频证据。通用 `/websocket` 上的纯文本首页心跳、告警帧、仅上行认证/控制包，或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。可靠判定至少要求采样记录中存在 `direction=down`。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同一 `captureWindowId` / 直接父子窗口（`openerCaptureWindowId`）、2 分钟内、状态成功且非静态资源的**明确** KVM 启动 HTTP 请求；`kvm.js`、`/api/console/status` 等宽泛 `kvm-entry` 不构成启动链。关键登录 POST 与 KVM token 响应正文缺失、加载失败或超限时清单为 PARTIAL，不能只靠 URL+200 判 YES。Viewer/登录相关 HTML、JavaScript 应保留脱敏样本（超大脚本保存截断前缀）；无样本时 `http.viewer_source` 为 PARTIAL，即使 WS 已通也不能保证离场后能写新 Adapter。
+KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、Dell `/vmc/vconsole` 与 `/vnc/vconsole`、Dell `:5900/`、Dell `:5900/vkvm/`、HPE `/wss/ircport`、Huawei legacy `:2198/` 等形态；子协议和二进制首帧（如 RFB、Dell APCP、Huawei FEF6、AMI IVTP）也会参与判断。华为 `:8208` 是虚拟媒体端口，不能作为 KVM 视频证据。通用 `/websocket` 上的纯文本首页心跳、告警帧、仅上行认证/控制包，或仅命中 AMI 弱首字节的普通二进制帧都不能单独作为可靠 KVM 证据。可靠判定至少要求采样记录中存在 `direction=down`。弱 AMI 帧必须具备可信 KVM URL/WebSocket 标签，或关联到同一 `captureWindowId` / 直接父子窗口（`openerCaptureWindowId`）、2 分钟内、状态成功且非静态资源的**明确** KVM 启动 HTTP 请求；AMI 明确启动接口包括 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`。`kvm.js`、`/api/console/status` 等宽泛 `kvm-entry` 不构成启动链。两个 Viewer 并存时按窗口血缘关联，不能按请求数量串链。关键登录 POST 与 KVM 启动/Token 响应正文缺失、加载失败或超限时清单为 PARTIAL，不能只靠 URL+200 判 YES。Viewer/Worker 入口脚本应保存源码正文；CDP Worker 子会话漏关联导致 `status=null` 且一直 in-flight 时视为采集缺陷。Worker 真正失败或缺少正文时 `http.viewer_source` 为 PARTIAL，即使视频已解码也不能把旧包伪装成已采到源码。`network.capture.complete` 见上文：重复轮询与关键未完成请求不同。
 
 限制：
 

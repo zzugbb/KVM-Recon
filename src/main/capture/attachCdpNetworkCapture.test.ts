@@ -1237,4 +1237,196 @@ describe('attachCdpNetworkCapture', () => {
     expect(String(request?.responseBodySummary.sample).length).toBeGreaterThan(512);
     expect(recorder.sourceFiles()[0]?.text).toBe(body);
   });
+
+  it('joins Worker target response events to the parent script request and stores source', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const workerBody = 'self.onmessage = function () { /* decode_worker */ };';
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command, params, sessionId) => {
+        if (command === 'Network.getResponseBody' && sessionId === 'worker-session') {
+          expect(params?.requestId).toBe('C1D48F7B0123456789ABCDEF01234567');
+          return { body: workerBody, base64Encoded: false };
+        }
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-09-15T07:06:00.000+08:00',
+    });
+
+    const emit = (
+      method: string,
+      params: Record<string, unknown>,
+      sessionId?: string,
+    ) => {
+      for (const listener of listeners) listener({}, method, params, sessionId);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'C1D48F7B0123456789ABCDEF01234567',
+      type: 'Script',
+      request: {
+        method: 'GET',
+        url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js',
+        headers: {},
+      },
+    });
+    emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: {
+        type: 'worker',
+        url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js',
+      },
+    });
+    await recorder.waitForIdle();
+    emit(
+      'Network.responseReceived',
+      {
+        requestId: 'C1D48F7B0123456789ABCDEF01234567',
+        type: 'Script',
+        response: {
+          status: 200,
+          mimeType: 'application/javascript',
+          headers: { 'content-type': 'application/javascript' },
+        },
+      },
+      'worker-session',
+    );
+    emit(
+      'Network.loadingFinished',
+      { requestId: 'C1D48F7B0123456789ABCDEF01234567', encodedDataLength: workerBody.length },
+      'worker-session',
+    );
+    await recorder.waitForIdle();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(request).toMatchObject({
+      id: 'C1D48F7B0123456789ABCDEF01234567',
+      status: 200,
+      responseBodyCaptured: true,
+    });
+    expect(recorder.captureStatus().inFlightRequestIds).toEqual([]);
+    expect(recorder.sourceFiles().some(file => file.text.includes('decode_worker'))).toBe(true);
+  });
+
+  it('salvages Worker main-script source after the child session Network.enable', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    let enableWorker: (() => void) | undefined;
+    const workerBody = 'importScripts("Decoder.js");';
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command, _params, sessionId) => {
+        if (command === 'Network.enable' && sessionId === 'worker-session') {
+          await new Promise<void>(resolve => {
+            enableWorker = resolve;
+          });
+          return {};
+        }
+        if (command === 'Network.getResponseBody' && sessionId === 'worker-session') {
+          return { body: workerBody, base64Encoded: false };
+        }
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder, now: () => '2026-09-15T07:14:00.000+08:00' });
+
+    for (const listener of listeners) {
+      listener(
+        {},
+        'Network.requestWillBeSent',
+        {
+          requestId: '3917F6530123456789ABCDEF01234567',
+          type: 'Script',
+          request: {
+            method: 'GET',
+            url: 'https://10.128.6.235/DecodeWorker.js',
+            headers: {},
+          },
+        },
+      );
+      listener(
+        {},
+        'Target.attachedToTarget',
+        {
+          sessionId: 'worker-session',
+          targetInfo: { type: 'worker', url: 'https://10.128.6.235/DecodeWorker.js' },
+        },
+      );
+    }
+    expect(recorder.captureStatus().inFlightRequestIds).toEqual(['3917F6530123456789ABCDEF01234567']);
+    enableWorker?.();
+    await recorder.waitForIdle();
+
+    expect(recorder.toJSON().httpRequests[0]).toMatchObject({
+      id: '3917F6530123456789ABCDEF01234567',
+      status: 200,
+      responseBodyCaptured: true,
+    });
+    expect(recorder.captureStatus().inFlightRequestIds).toEqual([]);
+    expect(recorder.sourceFiles()[0]?.text).toContain('Decoder.js');
+  });
+
+  it('finishes a Worker request as loading-failed when the child target detaches without a body', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command, _params, sessionId) => {
+        if (command === 'Network.getResponseBody' && sessionId === 'worker-session') {
+          throw new Error('No resource with given identifier found');
+        }
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4, idleTimeoutMs: 250 });
+    await attachCdpNetworkCapture({ cdp, recorder, now: () => '2026-09-15T07:06:00.000+08:00' });
+    for (const listener of listeners) {
+      listener(
+        {},
+        'Network.requestWillBeSent',
+        {
+          requestId: 'DEADWORKER0123456789ABCDEF012345',
+          type: 'Script',
+          request: {
+            method: 'GET',
+            url: 'https://bmc.example/decode_worker.js',
+            headers: {},
+          },
+        },
+      );
+      listener(
+        {},
+        'Target.attachedToTarget',
+        {
+          sessionId: 'worker-session',
+          targetInfo: { type: 'worker', url: 'https://bmc.example/decode_worker.js' },
+        },
+      );
+    }
+    await new Promise(resolve => setTimeout(resolve, 30));
+    for (const listener of listeners) {
+      listener({}, 'Target.detachedFromTarget', { sessionId: 'worker-session' });
+    }
+    await recorder.waitForIdle();
+
+    expect(recorder.toJSON().httpRequests[0]).toMatchObject({
+      id: 'DEADWORKER0123456789ABCDEF012345',
+      responseBodySkippedReason: 'loading-failed',
+    });
+    expect(recorder.captureStatus().inFlightRequestIds).toEqual([]);
+    expect(recorder.sourceFiles()).toEqual([]);
+  });
 });

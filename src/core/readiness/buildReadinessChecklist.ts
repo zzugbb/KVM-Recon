@@ -14,6 +14,7 @@ import {
   hasCorrelatedKvmLaunch,
   isExplicitKvmLaunchRequest,
 } from './kvmLaunchCorrelation';
+import { materialInFlightRequestIds } from './networkCaptureCompleteness';
 import type {
   HttpRequestRecord,
   NetworkIdleResult,
@@ -384,28 +385,34 @@ function viewerSourceItem(
   });
 }
 
-function networkCaptureIncomplete(networkIdle: NetworkIdleResult | null | undefined) {
+function networkCaptureIncomplete(
+  networkIdle: NetworkIdleResult | null | undefined,
+  requests: HttpRequestRecord[] | undefined,
+) {
   if (!networkIdle) return false;
-  return Boolean(
-    networkIdle.timedOut ||
-      (networkIdle.attachFailures || []).length ||
-      networkIdle.pendingTaskCount > 0 ||
-      networkIdle.inFlightRequestIds.length > 0,
-  );
+  if ((networkIdle.attachFailures || []).length > 0) return true;
+  if (networkIdle.pendingTaskCount > 0) return true;
+  return materialInFlightRequestIds(networkIdle.inFlightRequestIds, requests).length > 0;
 }
 
-function networkCaptureEvidence(networkIdle: NetworkIdleResult | null | undefined) {
+function networkCaptureEvidence(
+  networkIdle: NetworkIdleResult | null | undefined,
+  requests: HttpRequestRecord[] | undefined,
+) {
   const attachFailures = networkIdle?.attachFailures || [];
   const pendingTaskCount = networkIdle?.pendingTaskCount ?? 0;
   const inFlight = networkIdle?.inFlightRequestIds || [];
+  const material = materialInFlightRequestIds(inFlight, requests);
   if (!networkIdle) {
-    return ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0'];
+    return ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0', 'materialInFlightCount=0'];
   }
   return [
     `timedOut=${Boolean(networkIdle.timedOut)}`,
     `pendingTaskCount=${pendingTaskCount}`,
     `inFlightRequestCount=${inFlight.length}`,
+    `materialInFlightCount=${material.length}`,
     ...inFlight.map(id => `inFlight=${id}`),
+    ...material.map(id => `materialInFlight=${id}`),
     ...attachFailures.map(failure => `attachFailed=${failure.sessionId}:${failure.reason}`),
   ];
 }
@@ -490,7 +497,7 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
       evidence: httpIds,
       userAction: httpIds.length
         ? ''
-        : '请打开 KVM viewer 后等待 token、KvmService、SetKvmKey 或 KVM 入口相关请求完成。',
+        : '请打开 KVM viewer 后等待 token、h5viewercfg、KvmService、SetKvmKey 或明确 KVM 启动接口完成。不要手工探测这些接口。',
     }),
     item({
       id: 'http.key_payload',
@@ -526,11 +533,13 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     item({
       id: 'network.capture.complete',
       title: '网络响应采集完整性',
-      status: networkCaptureIncomplete(input.networkIdle) ? 'needs_user_action' : 'pass',
+      status: networkCaptureIncomplete(input.networkIdle, input.network?.httpRequests)
+        ? 'needs_user_action'
+        : 'pass',
       severity: 'warning',
-      evidence: networkCaptureEvidence(input.networkIdle),
-      userAction: networkCaptureIncomplete(input.networkIdle)
-        ? '网络尚未静默，或弹窗/OOPIF 未能启用 Network。请在采集窗口等待请求结束后再导出，避免实时 YES 与导出 PARTIAL 不一致。'
+      evidence: networkCaptureEvidence(input.networkIdle, input.network?.httpRequests),
+      userAction: networkCaptureIncomplete(input.networkIdle, input.network?.httpRequests)
+        ? '仍有会影响离线资料的请求未完成（登录、KVM Token/启动接口或 Viewer/Worker 源码）。请等待这些请求结束后再导出。BMC 页面上已成功采过的重复轮询不会单独把资料包打成 PARTIAL。'
         : '',
     }),
     item({

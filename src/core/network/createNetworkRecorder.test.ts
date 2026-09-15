@@ -66,6 +66,41 @@ describe('createNetworkRecorder', () => {
     expect(records[1].tags).toEqual(['kvm-token']);
   });
 
+  it('tags AMI h5viewercfg as kvm-token rather than a generic kvm-entry', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'h5viewercfg-1',
+      timestamp: '2026-09-15T07:36:00.000+08:00',
+      method: 'GET',
+      url: 'https://10.130.34.1/api/settings/media/h5viewercfg',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+    recorder.recordHttpResponse({
+      id: 'h5viewercfg-1',
+      status: 200,
+      responseHeaders: { 'content-type': 'application/json' },
+      responseBody: '{"token":"kvm-token","session":1,"server_ip":"10.130.34.1","kvm_service_status":1}',
+    });
+    recorder.recordHttpRequest({
+      id: 'token-1',
+      timestamp: '2026-09-15T07:36:01.000+08:00',
+      method: 'GET',
+      url: 'https://10.128.4.88/api/kvm/token',
+      resourceType: 'xhr',
+      requestHeaders: {},
+    });
+
+    const records = recorder.toJSON().httpRequests;
+    expect(records[0]).toMatchObject({
+      tags: ['kvm-token'],
+      responseBodySummary: {
+        jsonKeys: ['token', 'session', 'server_ip', 'kvm_service_status'],
+      },
+    });
+    expect(records[1]?.tags).toEqual(['kvm-token']);
+  });
+
   it('records WebSocket sockets and samples frame metadata without full payloads', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
 

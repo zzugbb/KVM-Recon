@@ -1,4 +1,9 @@
-import { HUAWEI_KVM_WS_PATTERN, KNOWN_KVM_WEBSOCKET_PATTERN } from './kvmUrlPatterns';
+import {
+  AMI_H5VIEWERCFG_URL_PATTERN,
+  AMI_KVM_TOKEN_URL_PATTERN,
+  HUAWEI_KVM_WS_PATTERN,
+  KNOWN_KVM_WEBSOCKET_PATTERN,
+} from './kvmUrlPatterns';
 
 export interface ProbeSignatureInput {
   redfish?: {
@@ -103,10 +108,16 @@ function detectAmi(input: ProbeSignatureInput): KvmFamilyCandidate | null {
     urlMatches(urls(input), /\/api\/(?:secure_session|session|session_encrypted)(\/|\?|$)/i)
       ? 'http:/api/session'
       : '',
-    urlMatches(urls(input), /\/api\/kvm\/token(\/|\?|$)/i) ? 'http:/api/kvm/token' : '',
+    urlMatches(urls(input), AMI_KVM_TOKEN_URL_PATTERN) ? 'http:/api/kvm/token' : '',
+    urlMatches(urls(input), AMI_H5VIEWERCFG_URL_PATTERN)
+      ? 'http:/api/settings/media/h5viewercfg'
+      : '',
   ].filter(Boolean);
+  const hasAmiLaunch =
+    trafficEvidence.includes('http:/api/kvm/token') ||
+    trafficEvidence.includes('http:/api/settings/media/h5viewercfg');
   const strongTraffic =
-    trafficEvidence.includes('http:/api/kvm/token') &&
+    hasAmiLaunch &&
     trafficEvidence.some(item => item === 'http:/api/session' || item === 'http:/api/randomtag');
   if (
     trafficEvidence.length === 0 &&
@@ -287,7 +298,10 @@ export function detectKvmFamily(input: ProbeSignatureInput): KvmFamilyDetectionR
     hasHdm2Traffic(input),
     hasDellTraffic(input),
     hasHpeTraffic(input),
-    urlMatches(urls(input), /\/api\/kvm\/token|\/kvmservice|\/kvm\/video|\/html5viewer|\/vconsole|\/irc/i),
+    urlMatches(
+      urls(input),
+      /\/api\/kvm\/token|\/api\/settings\/media\/h5viewercfg|\/kvmservice|\/kvm\/video|\/html5viewer|\/vconsole|\/irc/i,
+    ),
     urlMatches(wsUrls(input), KNOWN_KVM_WEBSOCKET_PATTERN),
   ].some(Boolean);
 
