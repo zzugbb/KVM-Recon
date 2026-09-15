@@ -4,6 +4,7 @@ export const SOURCE_TEXT_SAMPLE_LIMIT = 64 * 1024;
 export const SOURCE_FILE_LIMIT_BYTES = 2 * 1024 * 1024;
 export const SOURCE_MAX_FILES = 24;
 export const SOURCE_TOTAL_BUDGET_BYTES = 8 * 1024 * 1024;
+export const SOURCE_REFERENCED_LIMIT = 256;
 
 export type SourceKind = 'javascript' | 'html';
 
@@ -27,6 +28,9 @@ export interface PageReferencedScript {
 
 const ADAPTER_SOURCE_HINT =
   /kvm|viewer|console|vnc|irc|vconsole|h5|encrypt|login|session|auth|websocket|vkvm|html5/i;
+
+const VIEWER_SOURCE_HINT =
+  /kvm|viewer|console|vnc|irc|vconsole|h5|html5|vkvm|websocket|encrypt/i;
 
 const VENDOR_LIBRARY_HINT =
   /(?:^|\/)(?:jquery|bootstrap|lodash|underscore|moment|webfont|fontawesome|chart\.min|d3\.min)(?:[-./]|$)|cdnjs|jsdelivr|unpkg|googleapis/i;
@@ -87,6 +91,33 @@ export function sourceUrlKey(url: string) {
   }
 }
 
+export function sourceUrlIdentity(url: string) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return String(url || '').split('#')[0];
+  }
+}
+
+export function isKeyAdapterSourceUrl(url: string) {
+  return VIEWER_SOURCE_HINT.test(url) || PRIMARY_BUNDLE_HINT.test(url) || WORKER_HINT.test(url);
+}
+
+export function isViewerSourceContext(
+  item: { windowRole?: string; captureWindowId?: string },
+  viewerWindowIds: Iterable<string> = [],
+) {
+  if (item.windowRole === 'popup') return true;
+  const windowId = item.captureWindowId;
+  if (!windowId) return false;
+  for (const id of viewerWindowIds) {
+    if (id && id === windowId) return true;
+  }
+  return false;
+}
+
 export function isLikelySourceUrl(url: string) {
   if (!url || /^(?:data|blob):/i.test(url)) return false;
   return /\.(?:m?js|html?)(?:[?#]|$)/i.test(url) || /(?:^|\/)(?:main|polyfills?|runtime|worker)[^/]*$/i.test(url);
@@ -114,57 +145,100 @@ export function isFirstPartySource(request: HttpRequestRecord, host?: string) {
 }
 
 export function isRequiredReferencedSource(
-  url: string,
-  input: { host?: string; unclassified: boolean },
+  item: PageReferencedScript | string,
+  input: { host?: string; unclassified: boolean; viewerWindowIds?: Iterable<string> },
 ) {
-  if (!isLikelySourceUrl(url) && !ADAPTER_SOURCE_HINT.test(url)) return false;
+  const record = typeof item === 'string' ? { url: item } : item;
+  const url = record.url;
+  if (!isLikelySourceUrl(url) && !isKeyAdapterSourceUrl(url)) return false;
   if (VENDOR_LIBRARY_HINT.test(url)) return false;
   if (!isFirstPartyUrl(url, input.host)) return false;
   if (!input.unclassified) return ADAPTER_SOURCE_HINT.test(url);
-  if (/\.(?:m?js)(?:[?#]|$)/i.test(url) || WORKER_HINT.test(url)) return true;
-  return ADAPTER_SOURCE_HINT.test(url);
+  return isKeyAdapterSourceUrl(url);
 }
 
 export function adapterSourceCandidates(
   requests: HttpRequestRecord[],
-  input: { host?: string; unclassified: boolean },
+  input: { host?: string; unclassified: boolean; viewerWindowIds?: Iterable<string> },
 ) {
   const sources = requests.filter(isSourceResourceRecord);
   const keywordHits = sources.filter(request => ADAPTER_SOURCE_HINT.test(request.url));
   if (!input.unclassified) return keywordHits;
-  const firstParty = sources.filter(
-    request => isFirstPartySource(request, input.host) && !VENDOR_LIBRARY_HINT.test(request.url),
-  );
   const byId = new Map<string, HttpRequestRecord>();
-  for (const request of [...keywordHits, ...firstParty]) {
+  for (const request of sources) {
+    if (VENDOR_LIBRARY_HINT.test(request.url)) continue;
+    if (!isFirstPartySource(request, input.host)) continue;
+    const keyDep = isKeyAdapterSourceUrl(request.url);
+    const viewerHtml =
+      /^document$/i.test(request.resourceType) &&
+      isViewerSourceContext(request, input.viewerWindowIds || []);
+    if (!keyDep && !viewerHtml) continue;
     byId.set(request.id, request);
   }
   return [...byId.values()];
 }
 
-export function matchSourceRequest(requests: HttpRequestRecord[], url: string) {
-  const key = sourceUrlKey(url);
-  return requests.find(request => sourceUrlKey(request.url) === key);
+function pickBestSourceRequest(requests: HttpRequestRecord[]) {
+  return requests.find(request => isCompleteAdapterSource(request)) || requests.at(-1);
+}
+
+export function matchSourceRequest(
+  requests: HttpRequestRecord[],
+  url: string,
+  context?: { captureWindowId?: string; windowRole?: string },
+) {
+  const identity = sourceUrlIdentity(url);
+  const matches = requests.filter(request => sourceUrlIdentity(request.url) === identity);
+  if (!matches.length) return undefined;
+  if (context?.captureWindowId) {
+    const sameWindow = matches.filter(request => request.captureWindowId === context.captureWindowId);
+    if (sameWindow.length) return pickBestSourceRequest(sameWindow);
+    return pickBestSourceRequest(matches.filter(request => !request.captureWindowId));
+  }
+  if (context?.windowRole) {
+    const sameRole = matches.filter(request => request.windowRole === context.windowRole);
+    if (sameRole.length) return pickBestSourceRequest(sameRole);
+    return pickBestSourceRequest(matches.filter(request => !request.windowRole));
+  }
+  return pickBestSourceRequest(matches);
+}
+
+export function pageScriptsEventsTruncated(
+  events: Array<{ type?: string; truncated?: unknown }> | null | undefined,
+) {
+  return (events || []).some(event => event.type === 'page-scripts' && event.truncated === true);
 }
 
 export function pageReferencedScriptsFromEvents(
-  events: Array<{ type?: string; scripts?: unknown }> | null | undefined,
+  events:
+    | Array<{
+        type?: string;
+        scripts?: unknown;
+        captureWindowId?: unknown;
+        windowRole?: unknown;
+      }>
+    | null
+    | undefined,
 ): PageReferencedScript[] {
   const byKey = new Map<string, PageReferencedScript>();
   for (const event of events || []) {
     if (event.type !== 'page-scripts' || !Array.isArray(event.scripts)) continue;
+    const eventWindowId = typeof event.captureWindowId === 'string' ? event.captureWindowId : '';
+    const eventWindowRole = typeof event.windowRole === 'string' ? event.windowRole : '';
     for (const item of event.scripts) {
       if (!item || typeof item !== 'object') continue;
       const record = item as PageReferencedScript;
       if (typeof record.url !== 'string' || !record.url) continue;
-      const key = sourceUrlKey(record.url);
+      const captureWindowId = record.captureWindowId || eventWindowId;
+      const windowRole = record.windowRole || eventWindowRole;
+      const key = `${sourceUrlIdentity(record.url)}|${captureWindowId}|${windowRole}`;
       if (!byKey.has(key)) {
         byKey.set(key, {
           url: record.url,
           kind: record.kind === 'html' ? 'html' : 'javascript',
           ...(record.initiator ? { initiator: record.initiator } : {}),
-          ...(record.captureWindowId ? { captureWindowId: record.captureWindowId } : {}),
-          ...(record.windowRole ? { windowRole: record.windowRole } : {}),
+          ...(captureWindowId ? { captureWindowId } : {}),
+          ...(windowRole ? { windowRole } : {}),
         });
       }
     }
@@ -180,7 +254,7 @@ export function collectReferencedScriptsFromFacts(input: {
   const byKey = new Map<string, PageReferencedScript>();
   const push = (url: string, kind: SourceKind, initiator: string) => {
     if (!url || /^(?:data|blob):/i.test(url)) return;
-    const key = sourceUrlKey(url);
+    const key = sourceUrlIdentity(url);
     if (byKey.has(key)) return;
     byKey.set(key, { url, kind, initiator });
   };
@@ -255,16 +329,18 @@ export function adapterSourceCoverage(input: {
   referenced: PageReferencedScript[];
   host?: string;
   unclassified: boolean;
+  viewerWindowIds?: Iterable<string>;
+  referencedTruncated?: boolean;
 }) {
   const candidates = adapterSourceCandidates(input.requests, input);
   const requiredReferenced = input.referenced.filter(item =>
-    isRequiredReferencedSource(item.url, input),
+    isRequiredReferencedSource(item, input),
   );
   const missingReferenced = requiredReferenced.filter(
-    item => !matchSourceRequest(input.requests, item.url),
+    item => !matchSourceRequest(input.requests, item.url, item),
   );
   const capturedRequired = requiredReferenced
-    .map(item => matchSourceRequest(input.requests, item.url))
+    .map(item => matchSourceRequest(input.requests, item.url, item))
     .filter((request): request is HttpRequestRecord => Boolean(request));
   const incomplete = [...new Set([...candidates, ...capturedRequired])].filter(
     request => !isCompleteAdapterSource(request),
@@ -274,6 +350,7 @@ export function adapterSourceCoverage(input: {
     requiredReferenced,
     missingReferenced,
     incomplete,
+    referencedTruncated: Boolean(input.referencedTruncated),
   };
 }
 
@@ -291,10 +368,12 @@ export function buildSourceInventory(input: {
     truncated: file.truncated,
     path: sourceFilePath(file.id, file.kind),
   }));
-  const fileByUrl = new Map(input.sourceFiles.map(file => [sourceUrlKey(file.url), file] as const));
+  const fileByIdentity = new Map(
+    input.sourceFiles.map(file => [sourceUrlIdentity(file.url), file] as const),
+  );
   const referenced = input.referenced.map(item => {
-    const file = fileByUrl.get(sourceUrlKey(item.url));
-    const request = matchSourceRequest(input.requests || [], item.url);
+    const file = fileByIdentity.get(sourceUrlIdentity(item.url));
+    const request = matchSourceRequest(input.requests || [], item.url, item);
     return {
       url: item.url,
       kind: item.kind,

@@ -63,6 +63,8 @@ type BrowserTimelineEvent =
       type: 'page-scripts';
       scripts: Array<{ url: string; kind: 'javascript' | 'html'; initiator?: string }>;
       windowRole: CaptureWindowRole;
+      truncated?: boolean;
+      total?: number;
       timestamp: string;
     } & CaptureWindowIdFields;
 
@@ -293,6 +295,7 @@ export function createBrowserTimeline(jobId: string) {
       scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>,
       windowRole: CaptureWindowRole = 'main',
       captureWindowId?: string,
+      options?: { truncated?: boolean; total?: number },
     ) {
       events.push(
         withCaptureWindowId(
@@ -306,6 +309,8 @@ export function createBrowserTimeline(jobId: string) {
                 ...(item.initiator ? { initiator: item.initiator } : {}),
               })),
             windowRole,
+            ...(options?.truncated ? { truncated: true } : {}),
+            ...(options?.total != null ? { total: options.total } : {}),
             timestamp: nowIso(),
           },
           captureWindowId,

@@ -7,6 +7,7 @@ import {
   classifySourceKind,
   isCompleteAdapterSource,
   isJavascriptSourceText,
+  pageReferencedScriptsFromEvents,
 } from './sourceCapture';
 
 function request(extra: Partial<HttpRequestRecord> & Pick<HttpRequestRecord, 'id' | 'url'>): HttpRequestRecord {
@@ -50,7 +51,7 @@ describe('sourceCapture', () => {
     ).toEqual([]);
   });
 
-  it('includes hashed first-party chunks for unclassified families', () => {
+  it('does not require homepage hashed chunks for unclassified families', () => {
     const chunk = request({
       id: 'chunk',
       url: 'https://bmc.example/static/js/8f3a21.chunk.js',
@@ -62,14 +63,63 @@ describe('sourceCapture', () => {
       url: 'https://bmc.example/js/jquery.min.js',
       resourceType: 'script',
     });
-    expect(adapterSourceCandidates([chunk, jquery], { host: 'bmc.example', unclassified: false })).toEqual(
+    const home = request({
+      id: 'home',
+      url: 'https://bmc.example/assets/app.home.js',
+      resourceType: 'script',
+      windowRole: 'main',
+    });
+    expect(adapterSourceCandidates([chunk, jquery, home], { host: 'bmc.example', unclassified: false })).toEqual(
       [],
     );
     expect(
-      adapterSourceCandidates([chunk, jquery], { host: 'bmc.example', unclassified: true }).map(
+      adapterSourceCandidates([chunk, jquery, home], { host: 'bmc.example', unclassified: true }).map(
         item => item.id,
       ),
-    ).toEqual(['chunk']);
+    ).toEqual([]);
+  });
+
+  it('requires viewer primary bundles and workers, not every first-party script', () => {
+    const homeScripts = Array.from({ length: 40 }, (_, index) =>
+      request({
+        id: `home-${index}`,
+        url: `https://10.10.8.101/static/js/${index}.chunk.js`,
+        resourceType: 'script',
+        windowRole: 'main',
+        responseBodyCaptured: false,
+        sourceTruncated: true,
+      }),
+    );
+    const main = request({
+      id: 'main',
+      url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+      resourceType: 'script',
+      windowRole: 'popup',
+      captureWindowId: 'popup-kvm',
+      responseBodyCaptured: true,
+      sourceSha256: 'a'.repeat(64),
+      sourceBytes: 1200,
+      sourceTruncated: false,
+      responseBodySummary: { bytes: 1200, redactedFields: [], sample: `function startKvm(){${'A'.repeat(64)}}` },
+    });
+    const worker = request({
+      id: 'worker',
+      url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
+      resourceType: 'script',
+      windowRole: 'popup',
+      captureWindowId: 'popup-kvm',
+      responseBodyCaptured: true,
+      sourceSha256: 'd'.repeat(64),
+      sourceBytes: 1200,
+      sourceTruncated: false,
+      responseBodySummary: { bytes: 1200, redactedFields: [], sample: `self.onmessage=function(){${'A'.repeat(64)}}` },
+    });
+    expect(
+      adapterSourceCandidates([...homeScripts, main, worker], {
+        host: '10.10.8.101',
+        unclassified: true,
+      }).map(item => item.id),
+    ).toEqual(['main', 'worker']);
   });
 
   it('rejects truncated prefixes even when the sample is longer than 32 characters', () => {
@@ -124,5 +174,74 @@ describe('sourceCapture', () => {
       'https://10.10.8.101/vmc/vconsole/polyfills.41fe.js',
     ]);
     expect(coverage.candidates.map(item => item.id)).toEqual(['worker']);
+  });
+
+  it('inherits page-scripts window context and keeps query parameters', () => {
+    const scripts = pageReferencedScriptsFromEvents([
+      {
+        type: 'page-scripts',
+        captureWindowId: 'popup-kvm',
+        windowRole: 'popup',
+        scripts: [{ url: 'https://10.10.8.107/kvmclient.js?resource_id=12', kind: 'javascript' }],
+      },
+    ]);
+    expect(scripts).toEqual([
+      {
+        url: 'https://10.10.8.107/kvmclient.js?resource_id=12',
+        kind: 'javascript',
+        captureWindowId: 'popup-kvm',
+        windowRole: 'popup',
+      },
+    ]);
+  });
+
+  it('does not let another window or query-less URL fill the current Viewer source', () => {
+    const mainWindow = request({
+      id: 'main-old',
+      url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+      resourceType: 'script',
+      captureWindowId: 'win-main',
+      windowRole: 'main',
+      responseBodyCaptured: true,
+      sourceSha256: 'a'.repeat(64),
+      sourceBytes: 1200,
+      sourceTruncated: false,
+      responseBodySummary: { bytes: 1200, redactedFields: [], sample: `function startKvm(){${'A'.repeat(64)}}` },
+    });
+    const otherSession = request({
+      id: 'worker-old',
+      url: 'https://10.10.8.101/kvmclient.js',
+      resourceType: 'script',
+      captureWindowId: 'popup-old',
+      windowRole: 'popup',
+      responseBodyCaptured: true,
+      sourceSha256: 'b'.repeat(64),
+      sourceBytes: 800,
+      sourceTruncated: false,
+      responseBodySummary: { bytes: 800, redactedFields: [], sample: `function kvm(){${'A'.repeat(64)}}` },
+    });
+    const coverage = adapterSourceCoverage({
+      requests: [mainWindow, otherSession],
+      referenced: [
+        {
+          url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+          kind: 'javascript',
+          captureWindowId: 'popup-kvm',
+          windowRole: 'popup',
+        },
+        {
+          url: 'https://10.10.8.101/kvmclient.js?resource_id=12',
+          kind: 'javascript',
+          captureWindowId: 'popup-kvm',
+          windowRole: 'popup',
+        },
+      ],
+      host: '10.10.8.101',
+      unclassified: true,
+    });
+    expect(coverage.missingReferenced.map(item => item.url)).toEqual([
+      'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+      'https://10.10.8.101/kvmclient.js?resource_id=12',
+    ]);
   });
 });

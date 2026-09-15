@@ -109,6 +109,8 @@
         },
         "windowRole": { "enum": ["main", "popup"] },
         "captureWindowId": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "total": { "type": "integer" },
         "timestamp": { "type": "string" }
       }
     }

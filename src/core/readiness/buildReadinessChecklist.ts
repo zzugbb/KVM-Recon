@@ -23,6 +23,7 @@ import type {
 import {
   adapterSourceCoverage,
   pageReferencedScriptsFromEvents,
+  pageScriptsEventsTruncated,
   sourceInventoryEvidence,
 } from '../network/sourceCapture';
 
@@ -297,14 +298,23 @@ function viewerSourceItem(
 ): ChecklistItem {
   const family = probe ? scoreCapturedKvmFamily(probe, network) : { primary: 'unknown-h5' as const };
   const unclassified = family.primary === 'unknown-h5' || family.primary === 'not-h5';
+  const viewerWindowIds = reliableKvmWindows(network)
+    .map(window => window.captureWindowId)
+    .filter((id): id is string => Boolean(id));
   const coverage = adapterSourceCoverage({
     requests: network?.httpRequests || [],
     referenced: pageReferencedScriptsFromEvents(page?.events || []),
     host: probe?.basic.host,
     unclassified,
+    viewerWindowIds,
+    referencedTruncated: pageScriptsEventsTruncated(page?.events || []),
   });
   const missingUrls = coverage.missingReferenced.map(item => `missing:${item.url}`);
-  if (coverage.candidates.length === 0 && coverage.requiredReferenced.length === 0) {
+  if (
+    coverage.candidates.length === 0 &&
+    coverage.requiredReferenced.length === 0 &&
+    !coverage.referencedTruncated
+  ) {
     if (unclassified && kvmWebSocketEvidence(network).length > 0) {
       return item({
         id: 'http.viewer_source',
@@ -325,7 +335,11 @@ function viewerSourceItem(
       userAction: '',
     });
   }
-  if (coverage.missingReferenced.length > 0 || coverage.incomplete.length > 0) {
+  if (
+    coverage.missingReferenced.length > 0 ||
+    coverage.incomplete.length > 0 ||
+    coverage.referencedTruncated
+  ) {
     const budgetOrTruncated = coverage.incomplete.some(request =>
       /truncated|too-large|budget-exceeded/i.test(
         `${request.responseBodySkippedReason || ''} ${request.sourceTruncated ? 'truncated' : ''}`,
@@ -336,12 +350,18 @@ function viewerSourceItem(
       title: '关键 Viewer/认证源码资料',
       status: 'missing',
       severity: 'warning',
-      evidence: [...missingUrls, ...coverage.incomplete.map(sourceInventoryEvidence)],
-      userAction: coverage.missingReferenced.length
+      evidence: [
+        ...missingUrls,
+        ...coverage.incomplete.map(sourceInventoryEvidence),
+        ...(coverage.referencedTruncated ? ['referenced-truncated'] : []),
+      ],
+      userAction: coverage.referencedTruncated
+        ? '页面引用源码清单被截断，无法确认 Viewer 关键脚本是否采全。请关闭并重新打开 HTML5 KVM。'
+        : coverage.missingReferenced.length
         ? '页面已引用 Viewer 主脚本/polyfill，但 Network 未采到正文（常见于弹窗在 debugger attach 前加载）。请关闭并重新打开 HTML5 KVM，不要只等待。'
         : budgetOrTruncated
           ? '源码超过 2 MiB 或总量预算，无法通过等待补齐。请重新打开/重载 Viewer，手动补采关键 bundle，或接受 PARTIAL。'
-          : 'Viewer/登录源码不完整。未知协议缺少完整源码时不能判 YES。',
+          : 'Viewer 关键源码不完整。未知协议缺少完整源码时不能判 YES。',
     });
   }
   return item({

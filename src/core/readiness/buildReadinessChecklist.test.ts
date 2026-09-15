@@ -1318,7 +1318,7 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('YES');
   });
 
-  it('treats hashed first-party chunks as required sources for unknown families', () => {
+  it('treats viewer primary bundles as required sources for unknown families', () => {
     const unknownNetwork = {
       httpRequests: [
         {
@@ -1335,10 +1335,26 @@ describe('buildReadinessChecklist', () => {
           tags: ['login' as const],
         },
         {
+          id: 'home-chunk',
+          timestamp: '2026-09-14T12:00:00.500+08:00',
+          method: 'GET',
+          url: 'https://bmc.example/static/js/8f3a21.chunk.js',
+          resourceType: 'script',
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: { 'content-type': 'application/javascript' },
+          requestBodySummary: { bytes: 0, redactedFields: [] },
+          responseBodySummary: { bytes: 1200, redactedFields: [] },
+          responseBodyCaptured: false,
+          sourceTruncated: true,
+          tags: [],
+          windowRole: 'main' as const,
+        },
+        {
           id: 'chunk-1',
           timestamp: '2026-09-14T12:00:01.000+08:00',
           method: 'GET',
-          url: 'https://bmc.example/static/js/8f3a21.chunk.js',
+          url: 'https://bmc.example/static/js/main.8f3a21.js',
           resourceType: 'script',
           status: 200,
           requestHeaders: {},
@@ -1355,6 +1371,8 @@ describe('buildReadinessChecklist', () => {
           sourceBytes: 1200,
           sourceTruncated: false,
           tags: [],
+          windowRole: 'popup' as const,
+          captureWindowId: 'popup-kvm',
         },
       ],
       webSockets: [
@@ -1534,7 +1552,7 @@ describe('buildReadinessChecklist', () => {
             id: 'chunk-1',
             timestamp: '2026-09-14T12:00:01.100+08:00',
             method: 'GET',
-            url: 'https://bmc.example/static/js/8f3a21.chunk.js',
+            url: 'https://bmc.example/console/main.8f3a21.js',
             resourceType: 'script',
             status: 200,
             requestHeaders: {},

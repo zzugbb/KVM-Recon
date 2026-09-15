@@ -9,10 +9,10 @@
 
 ## [0.2.7] - 2026-09-14
 
-- Viewer/登录源码按清单与完整性判定：未知族哈希 chunk 也纳入候选；截断前缀或漏采关键源码不再假通过。
-- 从 `document.scripts` / `performance` / iframe 建立页面引用源码清单，并与 Network/`http/sources.json` 做覆盖率核对；只采到 worker、漏掉 `main`/`polyfills` 时未知族为 PARTIAL。
-- 对已知 http(s) Viewer URL 先 attach CDP 再导航，避免弹窗在 debugger attach 前加载主脚本。
-- 源码读取按 `encodedDataLength` 提前拒绝超过 2 MiB 的响应；最多保存 24 个文件、合计约 8 MiB，超预算记 `source-budget-exceeded`。
+- Viewer/登录源码按清单与完整性判定：未知族只要求 Viewer 关键依赖（main/polyfills/runtime/worker 与 kvm/viewer 等），首页/登录页其余脚本完整与否不再挡住 YES。
+- 从 `document.scripts` / `performance` / iframe 建立页面引用源码清单，并与 Network/`http/sources.json` 按窗口和完整 URL（含 query）核对；只采到 worker、漏掉 `main`/`polyfills` 时未知族为 PARTIAL。
+- HTTP(S) 弹窗保留原生 `window.open`（`allow`），以保留 Window 句柄、`window.opener`、frameName、referrer 和 `target=_blank` POST；CDP 在 `did-create-window` 后尽快 attach。
+- 源码读取按 `Network.dataReceived.dataLength`（解压大小）与 `encodedDataLength` 的较大值提前拒绝超过 2 MiB 的响应；最多保存 24 个文件、合计约 8 MiB，超预算记 `source-budget-exceeded`。
 - JavaScript 识别同时看 CDP `resourceType=Script` 与 IIFE/`!function` 正文，错误 MIME 不再只留 512 字符。
 - 导出独立源码文件 `http/sources/*.js|html` 与 `http/sources.json`（最长约 2 MiB），JSONL 仍只保留 64 KiB 摘要。
 - 打开/对比 zip 时校验源码清单路径、字节数与 SHA-256；未知族 YES 必须含完整源码。

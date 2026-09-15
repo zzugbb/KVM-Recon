@@ -1,6 +1,9 @@
 export interface PopupWindowDetails {
   url?: string;
   disposition?: string;
+  frameName?: string;
+  referrer?: { policy?: string; url?: string };
+  postBody?: unknown;
 }
 
 export interface PopupWindowFactsInput {
@@ -24,8 +27,21 @@ export function childWindowLineage(input: {
   };
 }
 
-export function shouldAttachBeforePopupNavigate(url: string) {
-  return /^https?:/i.test(String(url || '').trim());
+export function nativePopupWindowOpenHandler(input: { partition: string }) {
+  return {
+    action: 'allow' as const,
+    overrideBrowserWindowOptions: {
+      width: 1280,
+      height: 860,
+      webPreferences: {
+        partition: input.partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: false,
+      },
+    },
+  };
 }
 
 export function popupWindowFacts(input: PopupWindowFactsInput) {

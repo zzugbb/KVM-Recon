@@ -958,6 +958,61 @@ describe('attachCdpNetworkCapture', () => {
     expect(recorder.sourceFiles()).toEqual([]);
   });
 
+  it('does not read a gzip-compressed Viewer script whose decoded length exceeds 2 MiB', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    let getBodyCalls = 0;
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command) {
+        if (command === 'Network.getResponseBody') {
+          getBodyCalls += 1;
+          return { body: 'function startKvm() {}', base64Encoded: false };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      request: { method: 'GET', url: 'https://bmc.example/html5viewer.js', headers: {} },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'viewer-js',
+      type: 'Script',
+      response: {
+        status: 200,
+        mimeType: 'application/javascript',
+        headers: { 'content-type': 'application/javascript', 'content-encoding': 'gzip' },
+      },
+    });
+    emit('Network.dataReceived', {
+      requestId: 'viewer-js',
+      dataLength: 2.5 * 1024 * 1024,
+      encodedDataLength: 400 * 1024,
+    });
+    emit('Network.loadingFinished', {
+      requestId: 'viewer-js',
+      encodedDataLength: 400 * 1024,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const request = recorder.toJSON().httpRequests[0];
+    expect(getBodyCalls).toBe(0);
+    expect(request?.responseBodyCaptured).toBe(false);
+    expect(request?.responseBodySkippedReason).toMatch(/^source-too-large-to-read:/);
+    expect(recorder.sourceFiles()).toEqual([]);
+  });
+
   it('captures IIFE Viewer bundles even when the MIME type is wrong', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const body = `(()=>{window.startKvm=function(){${'B'.repeat(800)}}})();`;

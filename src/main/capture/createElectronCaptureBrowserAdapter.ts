@@ -9,7 +9,8 @@ import type {
   CapturePageTarget,
 } from './createCaptureBrowserController';
 import { pickCaptureWindow } from '../../core/browser/pickCaptureWindow';
-import { popupWindowFacts, shouldAttachBeforePopupNavigate } from '../../core/browser/popupWindowFacts';
+import { nativePopupWindowOpenHandler, popupWindowFacts } from '../../core/browser/popupWindowFacts';
+import { SOURCE_REFERENCED_LIMIT } from '../../core/network/sourceCapture';
 import type { CdpDebuggerLike } from './attachCdpNetworkCapture';
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 
@@ -73,7 +74,7 @@ const referencedScriptsCollector = `
   const seen = new Set();
   const push = (url, kind, initiator) => {
     if (!url || String(url).startsWith('data:') || String(url).startsWith('blob:')) return;
-    const key = String(url).split('#')[0].split('?')[0];
+    const key = String(url).split('#')[0];
     if (seen.has(key)) return;
     seen.add(key);
     items.push({ url: String(url), kind, initiator });
@@ -98,7 +99,11 @@ const referencedScriptsCollector = `
     }
   };
   walk(document);
-  return items.slice(0, 80);
+  return {
+    scripts: items.slice(0, ${SOURCE_REFERENCED_LIMIT}),
+    truncated: items.length > ${SOURCE_REFERENCED_LIMIT},
+    total: items.length
+  };
 })()
 `;
 
@@ -234,47 +239,6 @@ export function createElectronCaptureBrowserAdapter(
         }
       }
 
-      async function openOwnedPopup(
-        opener: BrowserWindow,
-        details: { url?: string; disposition?: string },
-        popupOptions: ConstructorParameters<typeof BrowserWindow>[0],
-      ) {
-        const child = new BrowserWindow({
-          ...popupOptions,
-          title: `KVM-Recon Capture - ${options.targetHost}`,
-        });
-        const facts = popupWindowFacts({
-          childCaptureWindowId: String(child.webContents.id),
-          openerCaptureWindowId: String(opener.webContents.id),
-          openerAncestorCaptureWindowIds: windowAncestors.get(opener),
-          details,
-          fallbackUrl: details.url,
-        });
-        options.onPopup(facts);
-        try {
-          await attachWindow(child, true, {
-            openerCaptureWindowId: facts.openerCaptureWindowId,
-            ancestorCaptureWindowIds: facts.ancestorCaptureWindowIds,
-          });
-          if (facts.url) {
-            await child.loadURL(facts.url);
-          }
-        } catch (error) {
-          // 捕获自建弹窗 attach 或导航失败：CDP 可能被占用，或 Viewer URL 已失效
-          // 策略：记入 attachFailures；仍尝试 loadURL 让用户能看到 KVM，清单 PARTIAL
-          options.onAttachFailure?.(facts.captureWindowId, 'popup-attach-failed');
-          recordCaptureWindowLog(`capture-popup-attach-failed window=${facts.captureWindowId}`);
-          try {
-            if (facts.url && windowAlive(child)) {
-              await child.loadURL(facts.url);
-            }
-          } catch (loadError) {
-            void loadError;
-          }
-          void error;
-        }
-      }
-
       async function attachWindow(
         targetWindow: BrowserWindow,
         attachDebugger: boolean,
@@ -293,6 +257,33 @@ export function createElectronCaptureBrowserAdapter(
               ? [...lineage.ancestorCaptureWindowIds]
               : [lineage.openerCaptureWindowId],
           );
+        }
+        if (attachDebugger) {
+          try {
+            await options.onNetworkDebugger(
+              targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
+              {
+                windowRole: windowRoles.get(targetWindow) || 'main',
+                captureWindowId: String(targetWindow.webContents.id),
+                openerCaptureWindowId: windowOpeners.get(targetWindow),
+                ancestorCaptureWindowIds: windowAncestors.get(targetWindow),
+              },
+            );
+            recordCaptureWindowLog(
+              `capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`,
+            );
+          } catch (error) {
+            // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
+            // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝
+            options.onAttachFailure?.(
+              String(targetWindow.webContents.id),
+              'cdp-attach-failed',
+            );
+            recordCaptureWindowLog(
+              `capture-cdp-attach-failed window=${targetWindow.webContents.id}`,
+            );
+            void error;
+          }
         }
         targetWindow.on('focus', () => {
           if (windowAlive(targetWindow)) foreground = targetWindow;
@@ -367,27 +358,9 @@ export function createElectronCaptureBrowserAdapter(
             `capture-renderer-gone reason=${details.reason} exit=${details.exitCode}`,
           );
         });
-        targetWindow.webContents.setWindowOpenHandler(details => {
-          const popupOptions = {
-            width: 1280,
-            height: 860,
-            webPreferences: {
-              partition: options.partition,
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: false,
-              webSecurity: false,
-            },
-          };
-          if (shouldAttachBeforePopupNavigate(String(details.url || ''))) {
-            void openOwnedPopup(targetWindow, details, popupOptions);
-            return { action: 'deny' };
-          }
-          return {
-            action: 'allow',
-            overrideBrowserWindowOptions: popupOptions,
-          };
-        });
+        targetWindow.webContents.setWindowOpenHandler(() =>
+          nativePopupWindowOpenHandler({ partition: options.partition }),
+        );
         targetWindow.webContents.on('did-create-window', (childWindow, details) => {
           const facts = popupWindowFacts({
             childCaptureWindowId: String(childWindow.webContents.id),
@@ -410,33 +383,6 @@ export function createElectronCaptureBrowserAdapter(
             void error;
           });
         });
-        if (attachDebugger) {
-          try {
-            await options.onNetworkDebugger(
-              targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
-              {
-                windowRole: windowRoles.get(targetWindow) || 'main',
-                captureWindowId: String(targetWindow.webContents.id),
-                openerCaptureWindowId: windowOpeners.get(targetWindow),
-                ancestorCaptureWindowIds: windowAncestors.get(targetWindow),
-              },
-            );
-            recordCaptureWindowLog(
-              `capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`,
-            );
-          } catch (error) {
-            // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
-            // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝
-            options.onAttachFailure?.(
-              String(targetWindow.webContents.id),
-              'cdp-attach-failed',
-            );
-            recordCaptureWindowLog(
-              `capture-cdp-attach-failed window=${targetWindow.webContents.id}`,
-            );
-            void error;
-          }
-        }
       }
 
       const window = new BrowserWindow({
@@ -543,18 +489,28 @@ export function createElectronCaptureBrowserAdapter(
             windowRole: 'main' | 'popup';
             captureWindowId: string;
             scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>;
+            truncated?: boolean;
+            total?: number;
           }> = [];
-          for (const targetWindow of [...windows]) {
-            if (!windowAlive(targetWindow)) continue;
+          for (const current of [...windows]) {
+            if (!windowAlive(current)) continue;
             try {
-              const scripts = await targetWindow.webContents.executeJavaScript(
+              const result = (await current.webContents.executeJavaScript(
                 referencedScriptsCollector,
                 true,
-              );
+              )) as { scripts?: unknown; truncated?: unknown; total?: unknown } | unknown[];
+              const scripts = Array.isArray(result)
+                ? result
+                : Array.isArray(result.scripts)
+                  ? result.scripts
+                  : [];
               groups.push({
-                windowRole: windowRoles.get(targetWindow) || 'main',
-                captureWindowId: String(targetWindow.webContents.id),
-                scripts: Array.isArray(scripts) ? scripts : [],
+                windowRole: windowRoles.get(current) || 'main',
+                captureWindowId: String(current.webContents.id),
+                scripts: scripts as Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>,
+                ...(!Array.isArray(result) && result.truncated
+                  ? { truncated: true, total: Number(result.total) || scripts.length }
+                  : {}),
               });
             } catch (error) {
               // 捕获页面引用脚本清单失败：文档可能尚未就绪或跨域 iframe 不可读

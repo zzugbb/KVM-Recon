@@ -124,19 +124,24 @@ interface RequestChainState {
   extraInfoDecisionHopSet: Set<string>;
 }
 
-function bodySkipReason(metadata: ResponseCaptureMetadata | undefined, encodedBytes: number) {
+function bodySkipReason(
+  metadata: ResponseCaptureMetadata | undefined,
+  encodedBytes: number,
+  decodedBytes = 0,
+) {
   if (!metadata) return 'missing-response-metadata';
   if (/^(?:data|blob):/i.test(metadata.url)) return 'inline-or-blob-url';
-  if (encodedBytes > MAX_RESPONSE_BODY_BYTES && !isSourceMetadata(metadata)) {
-    return `response-too-large:${encodedBytes}`;
+  const observedBytes = Math.max(encodedBytes, decodedBytes);
+  if (observedBytes > MAX_RESPONSE_BODY_BYTES && !isSourceMetadata(metadata)) {
+    return `response-too-large:${observedBytes}`;
   }
   if (/^(?:eventsource|websocket)$/i.test(metadata.resourceType)) return 'streaming-resource';
   if (/^(?:image|media|font|stylesheet)$/i.test(metadata.resourceType)) {
     return `binary-resource:${metadata.resourceType.toLowerCase()}`;
   }
   if (isSourceMetadata(metadata)) {
-    if (encodedBytes > SOURCE_FILE_LIMIT_BYTES) {
-      return `source-too-large-to-read:${encodedBytes}`;
+    if (observedBytes > SOURCE_FILE_LIMIT_BYTES) {
+      return `source-too-large-to-read:${observedBytes}`;
     }
     return '';
   }
@@ -154,6 +159,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
   const now = input.now ?? (() => new Date().toISOString());
   const requestChains = new Map<string, RequestChainState>();
   const responseMetadata = new Map<string, ResponseCaptureMetadata>();
+  const decodedBodyBytes = new Map<string, number>();
   const ignoredRequestIds = new Set<string>();
 
   function chainFor(baseId: string) {
@@ -426,6 +432,15 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       return;
     }
 
+    if (method === 'Network.dataReceived') {
+      const requestId = stringValue(params.requestId);
+      const baseId = scopedId(requestId, sessionId);
+      if (ignoredRequestIds.has(baseId)) return;
+      const id = activeHopId(baseId);
+      decodedBodyBytes.set(id, (decodedBodyBytes.get(id) || 0) + numberValue(params.dataLength));
+      return;
+    }
+
     if (method === 'Network.loadingFinished') {
       const requestId = stringValue(params.requestId);
       const baseId = scopedId(requestId, sessionId);
@@ -433,7 +448,11 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const id = activeHopId(baseId);
       expectFinalExtraInfoIfUnknown(baseId, id);
       input.recorder.markHttpRequestFinished(id);
-      const reason = bodySkipReason(responseMetadata.get(id), numberValue(params.encodedDataLength));
+      const reason = bodySkipReason(
+        responseMetadata.get(id),
+        numberValue(params.encodedDataLength),
+        decodedBodyBytes.get(id) || 0,
+      );
       if (reason) {
         input.recorder.markHttpResponseBodySkipped(id, reason);
       } else {

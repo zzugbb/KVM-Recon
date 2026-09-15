@@ -11,7 +11,7 @@ import {
 } from '../../core/browser/browserCaptureCore';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 import { kvmWebSocketEvidence, reliableKvmWindows } from '../../core/readiness/buildReadinessChecklist';
-import { sourceUrlKey } from '../../core/network/sourceCapture';
+import { sourceUrlIdentity } from '../../core/network/sourceCapture';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface ChromiumAccessInfo {
@@ -97,6 +97,8 @@ export interface CaptureBrowserWindowHandle {
       windowRole: CaptureWindowRole;
       captureWindowId: string;
       scripts: Array<{ url: string; kind?: 'javascript' | 'html'; initiator?: string }>;
+      truncated?: boolean;
+      total?: number;
     }>
   >;
   collectSessionCookies(targetUrl: string): Promise<Array<{ name: string; value: string }>>;
@@ -127,11 +129,17 @@ async function recordReferencedScripts(
   for (const group of groups) {
     const scripts = (group.scripts || []).filter(item => typeof item.url === 'string' && item.url);
     if (!scripts.length) continue;
-    const fingerprint = scripts.map(item => sourceUrlKey(item.url)).sort().join('\n');
+    const fingerprint = [
+      group.truncated ? 'truncated' : 'complete',
+      String(group.total || scripts.length),
+      ...scripts.map(item => sourceUrlIdentity(item.url)).sort(),
+    ].join('\n');
     const key = group.captureWindowId || group.windowRole;
     if (previousScriptsFingerprint.get(key) === fingerprint) continue;
     previousScriptsFingerprint.set(key, fingerprint);
-    timeline.recordPageScripts(scripts, group.windowRole, group.captureWindowId);
+    timeline.recordPageScripts(scripts, group.windowRole, group.captureWindowId, {
+      ...(group.truncated ? { truncated: true, total: group.total } : {}),
+    });
   }
 }
 

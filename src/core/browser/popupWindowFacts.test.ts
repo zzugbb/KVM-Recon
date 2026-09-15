@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { popupWindowFacts, shouldAttachBeforePopupNavigate } from './popupWindowFacts';
+import { nativePopupWindowOpenHandler, popupWindowFacts } from './popupWindowFacts';
 
 describe('popupWindowFacts', () => {
   it('keeps concurrent popups from sharing a global pending URL', () => {
@@ -55,10 +55,10 @@ describe('popupWindowFacts', () => {
     });
   });
 
-  it('attaches before navigating known http(s) popup URLs, and allows blank windows', () => {
-    expect(shouldAttachBeforePopupNavigate('https://10.10.8.101/vmc/vconsole')).toBe(true);
-    expect(shouldAttachBeforePopupNavigate('http://10.10.8.94/viewer.html')).toBe(true);
-    expect(shouldAttachBeforePopupNavigate('about:blank')).toBe(false);
-    expect(shouldAttachBeforePopupNavigate('')).toBe(false);
+  it('always allows native window.open so opener, frameName and postBody are preserved', () => {
+    const httpPopup = nativePopupWindowOpenHandler({ partition: 'kvm-recon-job' });
+    expect(httpPopup.action).toBe('allow');
+    expect(httpPopup.overrideBrowserWindowOptions.webPreferences?.partition).toBe('kvm-recon-job');
+    expect(nativePopupWindowOpenHandler({ partition: 'kvm-recon-job' }).action).toBe('allow');
   });
 });
