@@ -1429,4 +1429,138 @@ describe('attachCdpNetworkCapture', () => {
     expect(recorder.captureStatus().inFlightRequestIds).toEqual([]);
     expect(recorder.sourceFiles()).toEqual([]);
   });
+
+  it('does not alias a Worker requestId onto an unrelated parent request', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const workerBody = 'importScripts("DataStream.js");';
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command, params, sessionId) => {
+        if (command === 'Network.getResponseBody' && sessionId === 'worker-session') {
+          if (params?.requestId === 'C1D48F7B0123456789ABCDEF01234567') {
+            return { body: workerBody, base64Encoded: false };
+          }
+          return { body: 'export default 1;', base64Encoded: false };
+        }
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({
+      frameHeadBytes: 4,
+      idleQuietMs: 10,
+      idleTimeoutMs: 400,
+    });
+    await attachCdpNetworkCapture({
+      cdp,
+      recorder,
+      now: () => '2026-09-15T07:06:00.000+08:00',
+    });
+    const emit = (
+      method: string,
+      params: Record<string, unknown>,
+      sessionId?: string,
+    ) => {
+      for (const listener of listeners) listener({}, method, params, sessionId);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: '1',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'https://10.128.4.88/api/session',
+        headers: {},
+      },
+    });
+    emit('Network.requestWillBeSent', {
+      requestId: 'C1D48F7B0123456789ABCDEF01234567',
+      type: 'Script',
+      request: {
+        method: 'GET',
+        url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js?v=2',
+        headers: {},
+      },
+    });
+    emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: {
+        type: 'worker',
+        url: 'https://10.128.4.88/libs/kvm/ast/decode_worker.js?v=2',
+      },
+    });
+    emit(
+      'Network.requestWillBeSent',
+      {
+        requestId: '1',
+        type: 'Script',
+        request: {
+          method: 'GET',
+          url: 'https://10.128.4.88/libs/kvm/ast/DataStream.js',
+          headers: {},
+        },
+      },
+      'worker-session',
+    );
+    emit(
+      'Network.responseReceived',
+      {
+        requestId: 'C1D48F7B0123456789ABCDEF01234567',
+        type: 'Script',
+        response: {
+          status: 200,
+          mimeType: 'application/javascript',
+          headers: { 'content-type': 'application/javascript' },
+        },
+      },
+      'worker-session',
+    );
+    emit(
+      'Network.loadingFinished',
+      { requestId: 'C1D48F7B0123456789ABCDEF01234567', encodedDataLength: workerBody.length },
+      'worker-session',
+    );
+    emit(
+      'Network.responseReceived',
+      {
+        requestId: '1',
+        type: 'Script',
+        response: {
+          status: 200,
+          mimeType: 'application/javascript',
+          headers: { 'content-type': 'application/javascript' },
+        },
+      },
+      'worker-session',
+    );
+    emit(
+      'Network.loadingFinished',
+      { requestId: '1', encodedDataLength: 16 },
+      'worker-session',
+    );
+    await recorder.waitForIdle();
+
+    const snapshot = recorder.toJSON();
+    const session = snapshot.httpRequests.find(item => item.id === '1');
+    const worker = snapshot.httpRequests.find(
+      item => item.id === 'C1D48F7B0123456789ABCDEF01234567',
+    );
+    const imported = snapshot.httpRequests.find(item => item.id === 'worker-session::1');
+    expect(session).toMatchObject({
+      url: expect.stringContaining('/api/session'),
+      status: null,
+    });
+    expect(worker).toMatchObject({
+      url: expect.stringContaining('decode_worker.js?v=2'),
+      status: 200,
+      responseBodyCaptured: true,
+    });
+    expect(imported).toMatchObject({
+      url: expect.stringContaining('DataStream.js'),
+      status: 200,
+    });
+    expect(recorder.captureStatus().inFlightRequestIds).toEqual(['1']);
+  });
 });

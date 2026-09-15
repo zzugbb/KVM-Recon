@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 
-import { SOURCE_FILE_LIMIT_BYTES, sourceUrlKey } from '../../core/network/sourceCapture';
+import { SOURCE_FILE_LIMIT_BYTES, sourceUrlIdentity } from '../../core/network/sourceCapture';
 import type { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 
 type NetworkRecorder = ReturnType<typeof createNetworkRecorder>;
@@ -131,7 +131,7 @@ function isWorkerTargetType(type: string) {
 function workerScriptUrlsMatch(left: string, right: string) {
   if (!left || !right) return false;
   if (left === right) return true;
-  return sourceUrlKey(left) === sourceUrlKey(right);
+  return sourceUrlIdentity(left) === sourceUrlIdentity(right);
 }
 
 const MAX_RESPONSE_BODY_BYTES = 1024 * 1024;
@@ -210,6 +210,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
   const capturedBodyIds = new Set<string>();
   const workerSessions = new Map<string, { url: string; type: string }>();
   const workerSessionRequestIds = new Map<string, Set<string>>();
+  const workerRequestAliases = new Map<string, string>();
 
   function hasTrackedRequest(baseId: string) {
     return requestChains.has(baseId) || ignoredRequestIds.has(baseId);
@@ -221,26 +222,35 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     workerSessionRequestIds.set(sessionId, ids);
   }
 
-  function isWorkerOwnedScript(baseId: string) {
-    const chain = requestChains.get(baseId);
-    const hopId = chain?.hopIds[chain.hopIds.length - 1] || baseId;
-    const metadata = responseMetadata.get(hopId) || responseMetadata.get(baseId);
-    if (!metadata) return false;
-    return (
-      /script/i.test(metadata.resourceType) ||
-      /\.(?:m?js)(?:[?#]|$)/i.test(metadata.url) ||
-      /worker/i.test(metadata.url)
-    );
+  function parentScriptsMatchingWorkerUrl(targetUrl: string) {
+    const matches: ResponseCaptureMetadata[] = [];
+    const seen = new Set<string>();
+    for (const metadata of responseMetadata.values()) {
+      if (!isSourceMetadata(metadata) && !/script/i.test(metadata.resourceType)) continue;
+      if (!workerScriptUrlsMatch(metadata.url, targetUrl)) continue;
+      if (seen.has(metadata.id)) continue;
+      seen.add(metadata.id);
+      matches.push(metadata);
+    }
+    return matches;
+  }
+
+  function registerWorkerMainScriptAlias(sessionId: string, targetUrl: string) {
+    if (!sessionId || !targetUrl) return;
+    const matches = parentScriptsMatchingWorkerUrl(targetUrl);
+    if (matches.length !== 1) return;
+    const parent = matches[0];
+    const rawId = parent.cdpRequestId || parent.id;
+    workerRequestAliases.set(scopedId(rawId, sessionId), parent.id);
+    rememberWorkerRequest(sessionId, parent.id);
   }
 
   function resolveBaseId(requestId: string, eventSessionId?: string) {
     const scoped = scopedId(requestId, eventSessionId);
     if (hasTrackedRequest(scoped)) return scoped;
-    if (eventSessionId && hasTrackedRequest(requestId)) {
-      if (workerSessions.has(eventSessionId) || isWorkerOwnedScript(requestId)) {
-        rememberWorkerRequest(eventSessionId, requestId);
-        return requestId;
-      }
+    if (eventSessionId) {
+      const aliased = workerRequestAliases.get(scoped);
+      if (aliased && hasTrackedRequest(aliased)) return aliased;
     }
     return scoped;
   }
@@ -367,25 +377,24 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
   }
 
   async function salvageWorkerMainScript(attachedSessionId: string, targetUrl: string) {
+    const matches = parentScriptsMatchingWorkerUrl(targetUrl);
+    if (matches.length !== 1) return;
+    const metadata = matches[0];
+    const id = metadata.id;
     const inflight = new Set(input.recorder.captureStatus().inFlightRequestIds);
-    for (const [id, metadata] of responseMetadata) {
-      if (!workerScriptUrlsMatch(metadata.url, targetUrl)) continue;
-      if (!isSourceMetadata(metadata) && !/script/i.test(metadata.resourceType)) continue;
-      if (!inflight.has(id) && capturedBodyIds.has(id)) continue;
-      rememberWorkerRequest(attachedSessionId, id);
-      const rawRequestId = metadata.cdpRequestId || id;
-      const recorded = await tryRecordResponseBody(rawRequestId, id, attachedSessionId, false);
-      if (!recorded) continue;
-      if (!inflight.has(id)) continue;
-      input.recorder.recordHttpResponse({
-        id,
-        status: 200,
-        responseHeaders: {
-          'content-type': metadata.contentType || 'application/javascript',
-        },
-      });
-      input.recorder.markHttpRequestFinished(id);
-    }
+    if (!inflight.has(id) && capturedBodyIds.has(id)) return;
+    registerWorkerMainScriptAlias(attachedSessionId, targetUrl);
+    const rawRequestId = metadata.cdpRequestId || id;
+    const recorded = await tryRecordResponseBody(rawRequestId, id, attachedSessionId, false);
+    if (!recorded || !inflight.has(id)) return;
+    input.recorder.recordHttpResponse({
+      id,
+      status: 200,
+      responseHeaders: {
+        'content-type': metadata.contentType || 'application/javascript',
+      },
+    });
+    input.recorder.markHttpRequestFinished(id);
   }
 
   async function recordRequestPostData(requestId: string, id: string, sessionId?: string) {
@@ -445,16 +454,15 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       const targetUrl = stringValue(targetInfo.url);
       if (attachedSessionId && isWorkerTargetType(targetType)) {
         workerSessions.set(attachedSessionId, { url: targetUrl, type: targetType });
-        for (const [id, metadata] of responseMetadata) {
-          if (workerScriptUrlsMatch(metadata.url, targetUrl)) {
-            rememberWorkerRequest(attachedSessionId, id);
-          }
-        }
+        registerWorkerMainScriptAlias(attachedSessionId, targetUrl);
       }
       if (attachedSessionId) {
         // waitForDebuggerOnStart 已暂停该目标；必须先 Network.enable 再 runIfWaitingForDebugger，
         // 因此这里用 pending 跟踪异步 enable，而不会漏掉 attach 后立刻发出的 token/WS。
-        input.recorder.trackPending(enableAttachedTarget(attachedSessionId, targetType, targetUrl));
+        input.recorder.trackPending(enableAttachedTarget(attachedSessionId, targetType, targetUrl), {
+          kind: 'target-attach',
+          requestId: attachedSessionId,
+        });
       }
       return;
     }
@@ -472,6 +480,12 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       }
       workerSessions.delete(detachedSessionId);
       workerSessionRequestIds.delete(detachedSessionId);
+      for (const [scoped, parentId] of [...workerRequestAliases.entries()]) {
+        if (scoped.startsWith(`${detachedSessionId}::`)) {
+          workerRequestAliases.delete(scoped);
+          void parentId;
+        }
+      }
       return;
     }
 
@@ -518,7 +532,10 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
         ancestorCaptureWindowIds: input.ancestorCaptureWindowIds,
       });
       if (!inlinePostData && request.hasPostData === true) {
-        input.recorder.trackPending(recordRequestPostData(requestId, id, sessionId));
+        input.recorder.trackPending(recordRequestPostData(requestId, id, sessionId), {
+          kind: 'request-body',
+          requestId: id,
+        });
       }
       responseMetadata.set(id, {
         id,
@@ -597,7 +614,10 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       if (reason) {
         input.recorder.markHttpResponseBodySkipped(id, reason);
       } else {
-        input.recorder.trackPending(recordResponseBody(requestId, id, sessionId));
+        input.recorder.trackPending(recordResponseBody(requestId, id, sessionId), {
+          kind: 'response-body',
+          requestId: id,
+        });
       }
       return;
     }

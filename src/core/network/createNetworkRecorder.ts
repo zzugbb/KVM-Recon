@@ -191,10 +191,16 @@ interface NetworkRecorderSnapshot {
   webSocketFrames: WebSocketFrameRecord[];
 }
 
+export interface PendingNetworkTask {
+  kind: 'response-body' | 'request-body' | 'target-attach' | 'unknown';
+  requestId?: string;
+}
+
 export interface NetworkIdleResult {
   timedOut: boolean;
   pendingTaskCount: number;
   inFlightRequestIds: string[];
+  pendingTasks?: PendingNetworkTask[];
   attachFailures?: Array<{ sessionId: string; reason: string }>;
 }
 
@@ -513,7 +519,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   const httpResponseExtraInfo = new Map<string, { status: number; headers: HeaderMap }>();
   const webSockets = new Map<string, WebSocketRecord>();
   const webSocketFrames: WebSocketFrameRecord[] = [];
-  const pendingTasks = new Set<Promise<unknown>>();
+  const pendingTasks = new Map<Promise<unknown>, PendingNetworkTask>();
   const inFlightHttpRequestIds = new Set<string>();
   const sampledFrameCounts = new Map<string, number>();
   const sampledFrameDirections = new Map<string, Set<'up' | 'down'>>();
@@ -532,10 +538,12 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   }
 
   function captureStatusResult(timedOut = false): NetworkIdleResult {
+    const pending = [...pendingTasks.values()];
     return {
       timedOut,
       pendingTaskCount: pendingTasks.size,
       inFlightRequestIds: Array.from(inFlightHttpRequestIds).sort(),
+      ...(pending.length ? { pendingTasks: pending } : {}),
       ...(attachFailures.length ? { attachFailures: [...attachFailures] } : {}),
     };
   }
@@ -615,7 +623,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
   }
 
   return {
-    trackPending(task: Promise<unknown>) {
+    trackPending(task: Promise<unknown>, meta?: PendingNetworkTask) {
       markActivity();
       const tracked = Promise.resolve(task).then(
         value => value,
@@ -625,7 +633,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
           void error;
         },
       );
-      pendingTasks.add(tracked);
+      pendingTasks.set(tracked, meta || { kind: 'unknown' });
       void tracked.finally(() => {
         pendingTasks.delete(tracked);
         markActivity();

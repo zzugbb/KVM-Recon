@@ -809,6 +809,7 @@ describe('buildReadinessChecklist', () => {
       evidence: [
         'timedOut=true',
         'pendingTaskCount=1',
+        'materialPendingCount=0',
         'inFlightRequestCount=1',
         'materialInFlightCount=1',
         'inFlight=session-1::request-9',
@@ -2020,5 +2021,118 @@ describe('buildReadinessChecklist', () => {
     });
     expect(failed.items.find(item => item.id === 'http.viewer_source')?.status).toBe('missing');
     expect(failed.readiness).toBe('PARTIAL');
+  });
+
+  it('does not ignore a second in-flight login or token just because an earlier one succeeded', () => {
+    const loginRetry = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          {
+            ...completeNetwork.httpRequests[0],
+            id: 'login-retry',
+            status: null,
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+          },
+          completeNetwork.httpRequests[1],
+        ],
+      },
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['login-retry'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+    expect(loginRetry.items.find(item => item.id === 'network.capture.complete')?.status).toBe(
+      'needs_user_action',
+    );
+
+    const tokenRetry = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          completeNetwork.httpRequests[0],
+          completeNetwork.httpRequests[1],
+          {
+            ...completeNetwork.httpRequests[1],
+            id: 'token-retry',
+            status: null,
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['token-retry'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+    expect(tokenRetry.items.find(item => item.id === 'network.capture.complete')?.status).toBe(
+      'needs_user_action',
+    );
+  });
+
+  it('does not degrade completeness for a pending body read of a non-critical request', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          {
+            id: 'heartbeat',
+            timestamp: '2026-09-15T07:14:30.000+08:00',
+            method: 'GET',
+            url: 'https://10.0.0.10/api/heartbeat',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: { bytes: 8, redactedFields: [] },
+            responseBodyCaptured: true,
+            tags: [],
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 1,
+        pendingTasks: [{ kind: 'response-body' as const, requestId: 'heartbeat' }],
+        inFlightRequestIds: [],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')?.status).toBe('pass');
+    expect(checklist.readiness).toBe('YES');
+  });
+
+  it('keeps PARTIAL when a pending body read belongs to a KVM token request', () => {
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: completeNetwork,
+      networkIdle: {
+        timedOut: false,
+        pendingTaskCount: 1,
+        pendingTasks: [{ kind: 'response-body' as const, requestId: 'token-1' }],
+        inFlightRequestIds: [],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: expect.arrayContaining(['materialPending=token-1']),
+    });
   });
 });

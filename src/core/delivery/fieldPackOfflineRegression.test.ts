@@ -11,8 +11,9 @@ import { isExplicitKvmLaunchRequest } from '../readiness/kvmLaunchCorrelation';
 import { materialInFlightRequestIds } from '../readiness/networkCaptureCompleteness';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 
-const FIELD_PACK_DIR = '/Users/gaobingbing/Desktop/code/InManage/kvm 资料/临时测试';
-const available = existsSync(FIELD_PACK_DIR);
+// 只通过 KVM_RECON_FIELD_PACKS 指向真实 zip 目录；未设置或目录不存在时跳过，避免把本机路径写进仓库。
+const FIELD_PACK_DIR = process.env.KVM_RECON_FIELD_PACKS?.trim() || '';
+const available = Boolean(FIELD_PACK_DIR) && existsSync(FIELD_PACK_DIR);
 
 function parseJsonl(text: string): unknown[] {
   return text

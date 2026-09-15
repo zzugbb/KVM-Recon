@@ -25,7 +25,7 @@ The in-app UI and the field guide are currently Chinese. This README is the Engl
 
 The capture tool writes one of five **capture buckets** (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`). `unknown-h5` and `not-h5` are not gateway adapter names. After leaving the room, treat HTTP/WebSocket in the pack as source of truth: reuse an existing adapter only when the protocol matches; otherwise add a new adapter named after the market BMC product (for example `dell-idrac-h5`). See `docs/kvm-family.md` (Chinese). Nameplate vendor/model fields are evidence only.
 
-AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, KVM launch/token, or Viewer/Worker source request is still missing—not that a BMC poll happened to be in flight at export time. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
+AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, one-shot KVM launch/token, or Viewer/Worker source request is still missing—not that a same-window KvmService poll happened to be in flight at export time. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
 
 ## Download
 
@@ -63,7 +63,7 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop
+- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop. Optional field-zip regression reads `KVM_RECON_FIELD_PACKS`; it is skipped when that env is unset or the directory is missing.
 - `npm run test:e2e`: production capture E2E covering Electron launch, native popup, production Capture Controller, main/popup Documents, HTML/JS bodies, sourceFiles, `target=_blank` POST, referrer, window lineage, redaction, and ZIP self-check (build first)
 - `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 

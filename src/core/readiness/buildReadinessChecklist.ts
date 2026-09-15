@@ -14,7 +14,7 @@ import {
   hasCorrelatedKvmLaunch,
   isExplicitKvmLaunchRequest,
 } from './kvmLaunchCorrelation';
-import { materialInFlightRequestIds } from './networkCaptureCompleteness';
+import { materialInFlightRequestIds, materialPendingTaskIds } from './networkCaptureCompleteness';
 import type {
   HttpRequestRecord,
   NetworkIdleResult,
@@ -391,7 +391,12 @@ function networkCaptureIncomplete(
 ) {
   if (!networkIdle) return false;
   if ((networkIdle.attachFailures || []).length > 0) return true;
-  if (networkIdle.pendingTaskCount > 0) return true;
+  if (materialPendingTaskIds(networkIdle.pendingTasks, requests, networkIdle.inFlightRequestIds).length > 0) {
+    return true;
+  }
+  if (networkIdle.pendingTaskCount > 0 && !(networkIdle.pendingTasks && networkIdle.pendingTasks.length)) {
+    return true;
+  }
   return materialInFlightRequestIds(networkIdle.inFlightRequestIds, requests).length > 0;
 }
 
@@ -401,18 +406,31 @@ function networkCaptureEvidence(
 ) {
   const attachFailures = networkIdle?.attachFailures || [];
   const pendingTaskCount = networkIdle?.pendingTaskCount ?? 0;
+  const pendingTasks = networkIdle?.pendingTasks || [];
   const inFlight = networkIdle?.inFlightRequestIds || [];
-  const material = materialInFlightRequestIds(inFlight, requests);
+  const materialInFlight = materialInFlightRequestIds(inFlight, requests);
+  const materialPending = materialPendingTaskIds(pendingTasks, requests, inFlight);
   if (!networkIdle) {
-    return ['timedOut=false', 'pendingTaskCount=0', 'inFlightRequestCount=0', 'materialInFlightCount=0'];
+    return [
+      'timedOut=false',
+      'pendingTaskCount=0',
+      'materialPendingCount=0',
+      'inFlightRequestCount=0',
+      'materialInFlightCount=0',
+    ];
   }
   return [
     `timedOut=${Boolean(networkIdle.timedOut)}`,
     `pendingTaskCount=${pendingTaskCount}`,
+    `materialPendingCount=${materialPending.length}`,
     `inFlightRequestCount=${inFlight.length}`,
-    `materialInFlightCount=${material.length}`,
+    `materialInFlightCount=${materialInFlight.length}`,
+    ...pendingTasks.map(
+      task => `pending=${task.kind}${task.requestId ? `:${task.requestId}` : ''}`,
+    ),
+    ...materialPending.map(id => `materialPending=${id}`),
     ...inFlight.map(id => `inFlight=${id}`),
-    ...material.map(id => `materialInFlight=${id}`),
+    ...materialInFlight.map(id => `materialInFlight=${id}`),
     ...attachFailures.map(failure => `attachFailed=${failure.sessionId}:${failure.reason}`),
   ];
 }

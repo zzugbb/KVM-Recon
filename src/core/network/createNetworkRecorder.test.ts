@@ -479,6 +479,7 @@ describe('createNetworkRecorder', () => {
     await expect(recorder.waitForIdle()).resolves.toEqual({
       timedOut: true,
       pendingTaskCount: 1,
+      pendingTasks: [{ kind: 'unknown' }],
       inFlightRequestIds: ['req-pending'],
     });
   });

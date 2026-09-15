@@ -25,7 +25,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 采集器只会打五个**采集桶**（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`）。这不是网关 Adapter 主键：`unknown-h5` / `not-h5` 不能写进 registry；已知三族也要先用包内 HTTP/WS 核对是否同构。新 Adapter 用市面 BMC 产品名（如 `dell-idrac-h5`）。详见 `docs/kvm-family.md`。现场铭牌只作为证据。
 
-AMI MegaRAC HTML5 启动接口同时支持 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，只记录现场真实操作，不主动探测。`network.capture.complete` 的 PARTIAL 只针对登录、KVM 启动/Token、Viewer/Worker 源码等真正缺失的请求；已成功采过的重复轮询不会单独降级。Worker 入口脚本必须保存正文，旧包缺正文不能靠规则改成已采到。
+AMI MegaRAC HTML5 启动接口同时支持 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，只记录现场真实操作，不主动探测。`network.capture.complete` 的 PARTIAL 只针对登录、一次性 KVM 启动/Token、Viewer/Worker 源码等真正缺失的请求；同窗口已成功采过的 KvmService 轮询不会单独降级。Worker 入口脚本必须保存正文，旧包缺正文不能靠规则改成已采到。
 
 ## 下载
 
@@ -63,7 +63,7 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环
+- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环。现场 zip 离线回归不硬编码本机路径：设置 `KVM_RECON_FIELD_PACKS` 为 zip 目录后再跑；未设置则跳过。
 - `npm run test:e2e`：生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验（需先 build）
 - `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 

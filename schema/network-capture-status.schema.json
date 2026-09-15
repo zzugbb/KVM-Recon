@@ -7,6 +7,22 @@
   "properties": {
     "timedOut": { "type": "boolean" },
     "pendingTaskCount": { "type": "integer", "minimum": 0 },
+    "pendingTasks": {
+      "type": "array",
+      "description": "In-flight CDP tasks with request id and kind. Readiness only degrades for login, KVM launch/token, Viewer/Worker source, or target-attach.",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["response-body", "request-body", "target-attach", "unknown"]
+          },
+          "requestId": { "type": "string" }
+        }
+      }
+    },
     "inFlightRequestIds": {
       "type": "array",
       "description": "All in-flight HTTP request IDs at export time, including duplicate BMC polls. Readiness only degrades for material unique gaps.",

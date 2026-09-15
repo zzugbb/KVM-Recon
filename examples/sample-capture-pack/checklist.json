@@ -101,6 +101,7 @@
       "evidence": [
         "timedOut=false",
         "pendingTaskCount=0",
+        "materialPendingCount=0",
         "inFlightRequestCount=0",
         "materialInFlightCount=0"
       ],

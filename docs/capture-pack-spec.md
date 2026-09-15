@@ -25,7 +25,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 - 登录后复验时还有 `probe/authenticated.json`：只含 cookie 名和带会话后的路径可达性，不含 Cookie 值。
 - 现场填写的厂商/型号写入 `probe/operator-observed.json` 与 `manifest.job.observed`，只作铭牌证据，不替代采集桶。
 - `http/adapter-evidence.json`：登录链路、KVM 启动链路、WebSocket 升级和 HTTP/WS 关联索引，供离场实现 Adapter 时快速复盘。
-- `http/capture-status.json`：导出前网络空闲等待结果；记录响应体任务数和**全部**仍在途的请求 ID，供诊断。就绪项 `network.capture.complete` 只根据会影响离线适配资料的未完成请求降为 `PARTIAL`（登录、KVM Token/启动接口、Viewer/Worker 源码）。已有成功且正文完整的重复轮询不会单独降级。
+- `http/capture-status.json`：导出前网络空闲等待结果；记录响应体任务数、可选 `pendingTasks`（含 requestId/kind）和**全部**仍在途的请求 ID，供诊断。就绪项 `network.capture.complete` 只根据会影响离线适配资料的未完成请求降为 `PARTIAL`（登录、一次性 KVM Token/启动接口、Viewer/Worker 源码、Worker/OOPIF attach）。同窗口内已成功采过的 KvmService 资源轮询不会单独降级；重复登录、重复 token/`h5viewercfg` 仍会降级。
 
 独立 JSON Schema 位于 `schema/`，覆盖 manifest、checklist、网络空闲状态、HTTP/WS 行、页面 timeline/storage/selectors/screenshots、TLS 与 probe 文件；与类型冲突时仍以 TypeScript 导出代码为准。采集侧代码已收口，见 `docs/development-plan.md` 当前状态。
 

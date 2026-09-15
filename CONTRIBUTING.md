@@ -15,7 +15,7 @@ npm run build
 npm run test:e2e
 ```
 
-`npm test` 含单测和离线 HTTP 探测/导出闭环。`npm run test:e2e` 是生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验，需要先 `npm run build`。
+`npm test` 含单测和离线 HTTP 探测/导出闭环。现场 zip 离线回归不硬编码本机路径：设置 `KVM_RECON_FIELD_PACKS` 为 zip 目录后再跑测试；未设置则跳过。`npm run test:e2e` 是生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验，需要先 `npm run build`。
 
 ## 可以做的改动
 
