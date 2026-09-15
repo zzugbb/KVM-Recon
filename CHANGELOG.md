@@ -12,7 +12,7 @@
 - AMI HTML5 同时识别 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg` 为明确 KVM 启动/Token 接口；后者不再当成宽泛 `kvm-entry`。`/api/session` + `h5viewercfg` 可作为 AMI 流量证据。采集器仍不主动探测这些接口。
 - Worker/OOPIF 子会话里，入口脚本可能在父会话发出 `requestWillBeSent`、在 Worker 会话收到 `responseReceived`/`loadingFinished`。仅当 Worker target URL（保留非敏感 query）与**唯一**父入口脚本匹配时，才建立 `sessionId::requestId → parentId` 别名并补读源码。
 - Worker 真正加载失败、detach 时仍无正文，或页面引用了 Worker 却采不到源码时，保持 PARTIAL，并保留明确原因。
-- `http/capture-status.json` 仍记录全部在途请求和 CDP pending 任务。`network.capture.complete` 只对登录、一次性 KVM Token/启动接口、Viewer/Worker 源码，以及 Worker/OOPIF `target-attach` 降级。同窗口内已成功采过的 **KvmService 资源轮询** 不会单独把整包打成 PARTIAL；重复登录、重复 token/h5viewercfg、不同窗口的 Worker 仍为 PARTIAL。
+- `http/capture-status.json` 仍记录全部在途请求和 CDP pending 任务。`network.capture.complete` 只对登录、一次性 KVM Token/启动接口、Viewer/Worker 源码，以及 Worker/OOPIF `target-attach` 降级。同窗口内已成功采过的 **GET KvmService 资源查询**（XHR/Fetch）不会单独把整包打成 PARTIAL；POST/PUT/PATCH/DELETE 的 KvmService、重复登录、重复 token/h5viewercfg、不同窗口的 Worker 仍为 PARTIAL。
 - 两个 Viewer 并存时仍按 `captureWindowId` / 祖先链关联启动 HTTP 与 `/kvm` WebSocket，不按请求数量串链。
 - 现场 zip 离线回归改为读取环境变量 `KVM_RECON_FIELD_PACKS`，不再硬编码本机路径；未设置或目录不存在时跳过。
 

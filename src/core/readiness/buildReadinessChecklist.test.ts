@@ -1872,7 +1872,7 @@ describe('buildReadinessChecklist', () => {
     const kvmService = {
       id: 'kvm-service-1',
       timestamp: '2026-09-15T07:14:00.000+08:00',
-      method: 'POST',
+      method: 'GET',
       url: 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService',
       resourceType: 'xhr',
       status: 200,
@@ -1918,6 +1918,53 @@ describe('buildReadinessChecklist', () => {
       ]),
     });
     expect(checklist.readiness).toBe('YES');
+  });
+
+  it('keeps PARTIAL when a later KvmService POST is still in flight after an earlier POST succeeded', () => {
+    const kvmServicePost = {
+      id: 'kvm-service-post-1',
+      timestamp: '2026-09-15T07:14:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService',
+      resourceType: 'xhr',
+      status: 200,
+      requestHeaders: {},
+      responseHeaders: { 'content-type': 'application/json' },
+      requestBodySummary: { bytes: 32, redactedFields: [] },
+      responseBodySummary: { bytes: 64, redactedFields: [] },
+      responseBodyCaptured: true,
+      tags: ['kvm-token' as const],
+    };
+    const checklist = buildReadinessChecklist({
+      probe: completeProbe,
+      page: pageWithScreenshot,
+      network: {
+        ...completeNetwork,
+        httpRequests: [
+          ...completeNetwork.httpRequests,
+          kvmServicePost,
+          {
+            ...kvmServicePost,
+            id: 'kvm-service-post-2',
+            timestamp: '2026-09-15T07:14:31.000+08:00',
+            status: null,
+            responseBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodyCaptured: false,
+          },
+        ],
+      },
+      networkIdle: {
+        timedOut: true,
+        pendingTaskCount: 0,
+        inFlightRequestIds: ['kvm-service-post-2'],
+      },
+      redaction: { status: 'pass', redactedFields: 6 },
+    });
+    expect(checklist.items.find(item => item.id === 'network.capture.complete')).toMatchObject({
+      status: 'needs_user_action',
+      evidence: expect.arrayContaining(['materialInFlight=kvm-service-post-2']),
+    });
+    expect(checklist.readiness).toBe('PARTIAL');
   });
 
   it('keeps PARTIAL when unique Viewer/Worker source is still in flight or missing its body', () => {

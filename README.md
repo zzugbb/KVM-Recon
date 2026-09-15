@@ -25,7 +25,7 @@ The in-app UI and the field guide are currently Chinese. This README is the Engl
 
 The capture tool writes one of five **capture buckets** (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`). `unknown-h5` and `not-h5` are not gateway adapter names. After leaving the room, treat HTTP/WebSocket in the pack as source of truth: reuse an existing adapter only when the protocol matches; otherwise add a new adapter named after the market BMC product (for example `dell-idrac-h5`). See `docs/kvm-family.md` (Chinese). Nameplate vendor/model fields are evidence only.
 
-AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, one-shot KVM launch/token, or Viewer/Worker source request is still missing—not that a same-window KvmService poll happened to be in flight at export time. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
+AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, one-shot KVM launch/token, or Viewer/Worker source request is still missing—not that a same-window GET KvmService poll happened to be in flight at export time. A later POST to the same URL still counts as incomplete. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
 
 ## Download
 

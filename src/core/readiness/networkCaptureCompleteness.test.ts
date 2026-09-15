@@ -38,10 +38,12 @@ describe('networkCaptureCompleteness', () => {
 
   it('ignores a duplicate in-flight KvmService poll in the same window when a complete twin exists', () => {
     const completed = request('kvm-1', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       captureWindowId: 'win-main',
       tags: ['kvm-token'],
     });
     const poll = request('kvm-poll', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       status: null,
       responseBodyCaptured: false,
       responseBodySummary: { bytes: 0, redactedFields: [] },
@@ -49,6 +51,39 @@ describe('networkCaptureCompleteness', () => {
       tags: ['kvm-token'],
     });
     expect(materialInFlightRequestIds(['kvm-poll'], [completed, poll])).toEqual([]);
+  });
+
+  it('does not ignore a later in-flight KvmService POST just because an earlier POST succeeded', () => {
+    const completed = request('kvm-post-1', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'POST',
+      captureWindowId: 'win-main',
+      tags: ['kvm-token'],
+    });
+    const retry = request('kvm-post-2', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'POST',
+      status: null,
+      responseBodyCaptured: false,
+      responseBodySummary: { bytes: 0, redactedFields: [] },
+      captureWindowId: 'win-main',
+      tags: ['kvm-token'],
+    });
+    expect(materialInFlightRequestIds(['kvm-post-2'], [completed, retry])).toEqual(['kvm-post-2']);
+    for (const method of ['PUT', 'PATCH', 'DELETE'] as const) {
+      const written = request(`kvm-${method}-1`, completed.url, {
+        method,
+        captureWindowId: 'win-main',
+        tags: ['kvm-token'],
+      });
+      const pending = request(`kvm-${method}-2`, completed.url, {
+        method,
+        status: null,
+        responseBodyCaptured: false,
+        responseBodySummary: { bytes: 0, redactedFields: [] },
+        captureWindowId: 'win-main',
+        tags: ['kvm-token'],
+      });
+      expect(materialInFlightRequestIds([pending.id], [written, pending])).toEqual([pending.id]);
+    }
   });
 
   it('keeps a unique in-flight KVM launch request material', () => {
@@ -128,12 +163,14 @@ describe('networkCaptureCompleteness', () => {
 
   it('keeps a KvmService poll material when the only complete twin is in a sibling window', () => {
     const completed = request('kvm-a', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       captureWindowId: 'popup-a',
       openerCaptureWindowId: 'win-main',
       ancestorCaptureWindowIds: ['win-main'],
       tags: ['kvm-token'],
     });
     const poll = request('kvm-b', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       status: null,
       responseBodyCaptured: false,
       responseBodySummary: { bytes: 0, redactedFields: [] },
@@ -164,10 +201,12 @@ describe('networkCaptureCompleteness', () => {
 
   it('does not treat a KvmService JSON poll as Viewer/Worker source', () => {
     const poll = request('kvm-1', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       tags: ['kvm-token'],
     });
     expect(materialInFlightRequestIds(['kvm-1'], [poll])).toEqual(['kvm-1']);
     const twin = request('kvm-2', 'https://10.128.6.235/redfish/v1/Managers/bmc/KvmService', {
+      method: 'GET',
       status: null,
       responseBodyCaptured: false,
       responseBodySummary: { bytes: 0, redactedFields: [] },

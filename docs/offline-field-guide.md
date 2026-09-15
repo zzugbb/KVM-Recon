@@ -43,7 +43,7 @@
 ## 3. 离场判断
 
 - `YES`：关键资料完整，可以离场后分析。
-- `PARTIAL`：可以分析，但存在警告项，建议按报告补采。常见原因包括：唯一的登录/一次性 KVM Token/启动接口还在途或没有正文、Viewer/Worker 源码没采到、OOPIF/Worker 附加失败。同窗口内已经成功采过的 KvmService 轮询，导出瞬间仍在途时**不会**单独把整包打成 PARTIAL；重复登录或重复领取 Token 仍会 PARTIAL。`http/capture-status.json` 里仍能看到全部 in-flight ID。
+- `PARTIAL`：可以分析，但存在警告项，建议按报告补采。常见原因包括：唯一的登录/一次性 KVM Token/启动接口还在途或没有正文、Viewer/Worker 源码没采到、OOPIF/Worker 附加失败。同窗口内已经成功采过的 GET KvmService 查询，导出瞬间仍在途时**不会**单独把整包打成 PARTIAL；POST 等写操作、重复登录或重复领取 Token 仍会 PARTIAL。`http/capture-status.json` 里仍能看到全部 in-flight ID。
 - `NO`：缺少登录、KVM 入口、WebSocket 或脱敏检查失败，建议不要离场。
 
 AMI 机型打开 HTML5 KVM 时，有的固件走 `/api/kvm/token`，有的走 `/api/settings/media/h5viewercfg`，不要手工用浏览器之外的工具去探测这些接口。每个 BMC 只开一个 Viewer 即可；同时开两个 Viewer 会留下两组 Worker/WS，增加对照成本。Worker 入口脚本（如 `decode_worker.js` / `DecodeWorker.js`）必须被采到正文；视频已经出画面但清单仍提示源码缺失时，关闭 Viewer 后用新版本重新打开一次。

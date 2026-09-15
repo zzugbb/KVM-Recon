@@ -46,8 +46,10 @@ export function isMaterialSourceRequest(request: HttpRequestRecord) {
   return isKeyAdapterSourceUrl(request.url);
 }
 
-/** OpenBMC/华为会反复查询 KvmService 资源；不含一次性 Action / Token。 */
+/** OpenBMC/华为会反复 GET 查询 KvmService 资源；不含写操作、一次性 Action / Token。 */
 export function isRepeatableKvmPollRequest(request: HttpRequestRecord) {
+  if (request.method.toUpperCase() !== 'GET') return false;
+  if (!/^(?:xhr|fetch)$/i.test(request.resourceType)) return false;
   const url = request.url.toLowerCase();
   if (/\/actions\//i.test(url) || /setkvmkey|starth5kvm/i.test(url)) return false;
   if (/\/api\/kvm\/token|h5viewercfg|\/bmc\/php\/gettoken\.php/i.test(url)) return false;
