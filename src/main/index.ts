@@ -688,7 +688,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' || isE2eSmokeLaunch() || isE2eCaptureControllerLaunch()) {
+  if (isE2eCaptureControllerLaunch()) {
+    // 采集 E2E 的退出码只能由 runProductionCaptureE2e() 的 app.exit(0/1) 决定。
+    // 关窗后若在这里 app.quit()，默认退出码为 0，外层会把尚未跑完的断言当成成功。
+    return;
+  }
+  if (process.platform !== 'darwin' || isE2eSmokeLaunch()) {
     app.quit();
   }
 });

@@ -7,16 +7,17 @@
 
 ## [Unreleased]
 
-- 同步文档、包内 README 生成器和主窗口截图：生产采集 E2E 覆盖范围、采集桶与 `productHints`、代表机试采闸门，以及 GitHub Release 必须先存在再上传附件。
-- `productHints` 不再回退成 `unknown-h5`：该名字只作采集桶。已知 AMI 等桶即使有通用 KVM 字样，产品提示也为空。
-
 ## [0.2.8] - 2026-09-15
 
 - 根 CDP 会话读取 HTML/JS/`getRequestPostData` 时不再传入空 `sessionId`，避免 Electron 44 报 `Empty session id is not allowed` 导致源码正文全空。
 - 采集窗口在 `Network.enable` 前先完成 `about:blank` 提交，避免 Electron 44 空窗口卡死在开始采集；`Network.enable` 另有超时保护。
 - 新增生产 Adapter/Controller E2E：`controller.start()` 必须在时限内返回，并覆盖主窗口首个 Document、弹窗 Document/脚本正文、`sourceFiles`、窗口血缘、`target=_blank` POST、referrer 与导出 zip 自校验。
+- `--e2e-capture-controller` 不再因全部窗口关闭而以 0 退出；外层必须看到成功标记才算通过。断言前关窗必须失败。
 - `http/sources.json` 的 `referenced.required` 在 0.2.7+ 为必填布尔；旧包缺字段时按关键引用处理，不能当成非关键放过 YES。
 - 源码预算维持 24 个文件 / 8 MiB 硬上限。触达上限时清单明确提示重新采集无效，不要反复重采。
+- 同步文档、包内 README 生成器和主窗口截图：生产采集 E2E 覆盖范围、采集桶与 `productHints`、代表机试采闸门，以及 GitHub Release 必须先存在再上传附件。
+- `productHints` 不再回退成 `unknown-h5`：该名字只作采集桶。已知 AMI 等桶即使有通用 KVM 字样，产品提示也为空。
+- 现场说明区分铭牌 `observed` 与 `productHints`：人工填写的厂商名不是产品提示，H3C 缺少 HDM2 证据时提示可能为空。
 
 ## [0.2.7] - 2026-09-14
 

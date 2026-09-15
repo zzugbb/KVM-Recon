@@ -26,7 +26,7 @@
 ## 2. 现场采集步骤
 
 1. 打开 KVM-Recon。
-2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。厂商/型号是铭牌证据，不会改写采集桶。Dell / HPE / H3C 名称只出现在包内 `productHints`，不进入 zip 文件名。
+2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。厂商/型号是铭牌证据，会写入 `manifest.job.observed` 和 `probe/operator-observed.json`，不会改写采集桶，也不进入 zip 文件名。Dell / HPE / H3C 只有命中对应协议证据时才会出现在 `productHints`；例如 H3C 缺少 HDM2 证据时，产品提示可能为空。
 3. 点击“新建采集作业”。主窗口按钮下方会提示下一步（登录或打开 KVM）。可同时保留多份作业，新建不会覆盖上一份未导出资料。
 4. 在弹出的采集窗口中访问 BMC。
 5. 现场人员按需手工登录。本工具不自动登录。
@@ -62,7 +62,7 @@ KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<采集桶>_<YES|PARTIAL|NO>.zip
 KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 ```
 
-Dell / HPE / H3C 采到有效 H5 后通常仍是 `unknown-h5`，产品名只在包内提示：
+Dell / HPE / H3C 采到有效 H5 后通常仍是 `unknown-h5`。现场填写的名称在铭牌字段；协议产品提示只在命中证据时写入 `productHints`，例如：
 
 ```text
 KVM-Recon_20260915-100000_10-10-8-101_unknown-h5_YES.zip

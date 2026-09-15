@@ -13,7 +13,7 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node e2e/launch-app.mjs && node e2e/popup-native-window.mjs && node e2e/capture-controller.mjs",
+    "test:e2e": "node e2e/launch-app.mjs && node e2e/popup-native-window.mjs && node e2e/capture-controller.mjs && node e2e/capture-controller.mjs --expect-early-close-fail",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

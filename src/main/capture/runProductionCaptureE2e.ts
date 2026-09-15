@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +9,7 @@ import { summarizeCapturePackZip } from '../../core/capture-pack/summarizeCaptur
 import { assembleCapturePackForExport } from '../../core/delivery/assembleCapturePackForExport';
 import { createCaptureBrowserController } from './createCaptureBrowserController';
 import { createElectronCaptureBrowserAdapter } from './createElectronCaptureBrowserAdapter';
+import { PRODUCTION_CAPTURE_E2E_PASSED } from './evaluateProductionCaptureE2eExit';
 
 const VIEWER_JS_MARKER = 'kvm-recon-e2e-viewer-js';
 const POPUP_HTML_MARKER = 'kvm-recon-e2e-popup-html';
@@ -16,6 +17,13 @@ const POST_TOKEN = 'e2e-secret-token';
 
 export function isE2eCaptureControllerLaunch() {
   return process.argv.includes('--e2e-capture-controller') || process.env.KVM_RECON_E2E_CAPTURE === '1';
+}
+
+export function isE2eCaptureCloseBeforeAssert() {
+  return (
+    process.argv.includes('--e2e-capture-close-before-assert') ||
+    process.env.KVM_RECON_E2E_CLOSE_BEFORE_ASSERT === '1'
+  );
 }
 
 function headerValue(headers: Record<string, string> | undefined, name: string) {
@@ -30,7 +38,7 @@ function sleep(ms: number) {
 function fail(message: string): never {
   console.error(message);
   app.exit(1);
-  throw new Error(message);
+  process.exit(1);
 }
 
 export async function runProductionCaptureE2e() {
@@ -126,6 +134,14 @@ export async function runProductionCaptureE2e() {
   const startElapsedMs = Date.now() - startClock;
   if (startElapsedMs >= startTimeoutMs) {
     fail(`controller.start() 耗时 ${startElapsedMs}ms`);
+  }
+
+  if (isE2eCaptureCloseBeforeAssert()) {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.destroy();
+    }
+    await sleep(300);
+    fail('断言前采集窗口已关闭');
   }
 
   let lastDump = '';
@@ -278,6 +294,6 @@ export async function runProductionCaptureE2e() {
   }
   server.close();
   await rm(screenshotDir, { recursive: true, force: true }).catch(() => undefined);
-  console.log(`production capture controller e2e passed in ${startElapsedMs}ms`);
+  console.log(`${PRODUCTION_CAPTURE_E2E_PASSED} in ${startElapsedMs}ms`);
   app.exit(0);
 }

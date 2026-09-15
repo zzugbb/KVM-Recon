@@ -28,6 +28,9 @@ if (!existsSync(mainEntry)) {
   process.exit(1);
 }
 
+const expectEarlyCloseFail = process.argv.includes('--expect-early-close-fail');
+const successMarker = 'production capture controller e2e passed';
+
 const childEnv = { ...process.env };
 delete childEnv.ELECTRON_RUN_AS_NODE;
 delete childEnv.ELECTRON_NO_ASAR;
@@ -36,13 +39,39 @@ childEnv.ELECTRON_DISABLE_SANDBOX = '1';
 
 const child = spawn(
   electronBinary,
-  [mainEntry, '--e2e-capture-controller', '--no-sandbox', '--disable-gpu'],
+  [
+    mainEntry,
+    '--e2e-capture-controller',
+    ...(expectEarlyCloseFail ? ['--e2e-capture-close-before-assert'] : []),
+    '--no-sandbox',
+    '--disable-gpu',
+  ],
   {
     cwd: rootDir,
     env: childEnv,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
   },
 );
+
+let output = '';
+function append(chunk) {
+  const text = String(chunk);
+  output += text;
+  return text;
+}
+
+child.stdout.on('data', chunk => {
+  process.stdout.write(append(chunk));
+});
+child.stderr.on('data', chunk => {
+  process.stderr.write(append(chunk));
+});
+
+child.on('error', error => {
+  clearTimeout(timeout);
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
 
 const timeout = setTimeout(() => {
   child.kill('SIGKILL');
@@ -52,5 +81,20 @@ const timeout = setTimeout(() => {
 
 child.on('exit', code => {
   clearTimeout(timeout);
-  process.exit(code === 0 ? 0 : code ?? 1);
+  const passed = output.includes(successMarker);
+  if (expectEarlyCloseFail) {
+    if (passed || code === 0) {
+      console.error('预期断言前关窗应失败，但 E2E 以成功退出');
+      process.exit(1);
+    }
+    process.exit(0);
+    return;
+  }
+  if (code !== 0 || !passed) {
+    console.error(
+      passed ? `生产采集 E2E 退出码 ${code}` : '生产采集 E2E 退出但未出现成功标记',
+    );
+    process.exit(code === 0 ? 1 : code ?? 1);
+  }
+  process.exit(0);
 });
