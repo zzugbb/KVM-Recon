@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { APP_VERSION } from '../../version';
 import { createEmptyCapturePack } from './createEmptyCapturePack';
 
 describe('createEmptyCapturePack', () => {
@@ -17,7 +18,7 @@ describe('createEmptyCapturePack', () => {
     });
 
     expect(pack.manifest.schemaVersion).toBe('1.0.0');
-    expect(pack.manifest.tool.version).toBe('0.2.7');
+    expect(pack.manifest.tool.version).toBe(APP_VERSION);
     expect(pack.manifest.tool.buildId).toBeTruthy();
     expect(pack.manifest.job.id).toBe('job-001');
     expect(pack.manifest.target.host).toBe('10.0.0.10');

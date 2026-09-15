@@ -156,11 +156,16 @@ export function createElectronCaptureBrowserAdapter(
             : 'popup';
         const started = Promise.resolve().then(async () => {
           try {
+            const matchedWindow = [...windows].find(
+              candidate => windowAlive(candidate) && candidate.webContents.id === contents.id,
+            );
+            const resolvedRole =
+              (matchedWindow && windowRoles.get(matchedWindow)) || windowRole;
             // Electron 44：空窗口尚未完成首次文档提交时 Network.enable 会一直挂起。
             // 主窗口先提交 about:blank；弹窗可能已有 POST 导航，禁止改写成 blank。
             if (
               shouldCommitAboutBlankBeforeCdp({
-                windowRole,
+                windowRole: resolvedRole,
                 url: contents.getURL(),
               })
             ) {
@@ -173,12 +178,12 @@ export function createElectronCaptureBrowserAdapter(
               }
             }
             await options.onNetworkDebugger(contents.debugger as unknown as CdpDebuggerLike, {
-              windowRole,
+              windowRole: resolvedRole,
               captureWindowId: String(contents.id),
-              openerCaptureWindowId: matched ? windowOpeners.get(matched) : undefined,
-              ancestorCaptureWindowIds: matched ? windowAncestors.get(matched) : undefined,
+              openerCaptureWindowId: matchedWindow ? windowOpeners.get(matchedWindow) : undefined,
+              ancestorCaptureWindowIds: matchedWindow ? windowAncestors.get(matchedWindow) : undefined,
             });
-            recordCaptureWindowLog(`capture-cdp-attached role=${windowRole}`);
+            recordCaptureWindowLog(`capture-cdp-attached role=${resolvedRole}`);
           } catch (error) {
             // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
             // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝

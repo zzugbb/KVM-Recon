@@ -81,7 +81,7 @@ capture-pack/
   "schemaVersion": "1.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "buildId": "3d7a6e2c4f10"
   },
   "job": {

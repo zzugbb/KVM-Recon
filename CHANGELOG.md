@@ -7,8 +7,11 @@
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-09-15
+
+- 根 CDP 会话读取 HTML/JS/`getRequestPostData` 时不再传入空 `sessionId`，避免 Electron 44 报 `Empty session id is not allowed` 导致源码正文全空。
 - 采集窗口在 `Network.enable` 前先完成 `about:blank` 提交，避免 Electron 44 空窗口卡死在开始采集；`Network.enable` 另有超时保护。
-- 新增生产 Adapter/Controller E2E：`controller.start()` 必须在时限内返回，并覆盖主窗口首个 Document、弹窗 Document/脚本、窗口血缘、`target=_blank` POST 与 referrer。
+- 新增生产 Adapter/Controller E2E：`controller.start()` 必须在时限内返回，并覆盖主窗口首个 Document、弹窗 Document/脚本正文、`sourceFiles`、窗口血缘、`target=_blank` POST、referrer 与导出 zip 自校验。
 - `http/sources.json` 的 `referenced.required` 在 0.2.7+ 为必填布尔；旧包缺字段时按关键引用处理，不能当成非关键放过 YES。
 - 源码预算维持 24 个文件 / 8 MiB 硬上限。触达上限时清单明确提示重新采集无效，不要反复重采。
 

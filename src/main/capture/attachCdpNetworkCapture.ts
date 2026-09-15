@@ -37,6 +37,20 @@ interface AttachCdpNetworkCaptureInput {
 
 const DEFAULT_NETWORK_ENABLE_TIMEOUT_MS = 5000;
 
+function sendDebuggerCommand(
+  cdp: CdpDebuggerLike,
+  command: string,
+  params?: Record<string, unknown>,
+  sessionId?: string,
+) {
+  // Electron 44：第三个参数即使是 undefined 也会当成空 session id 拒绝。
+  // 根会话只传 method/params；OOPIF 仅在有非空 sessionId 时传第三参。
+  if (typeof sessionId === 'string' && sessionId) {
+    return cdp.sendCommand(command, params, sessionId);
+  }
+  return cdp.sendCommand(command, params);
+}
+
 async function awaitWithTimeout<T>(value: Promise<T> | T, timeoutMs: number, message: string): Promise<T> {
   if (value == null || typeof (value as Promise<T>).then !== 'function') {
     return value as T;
@@ -256,7 +270,12 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
   async function recordResponseBody(requestId: string, id: string, sessionId?: string) {
     try {
-      const result = await input.cdp.sendCommand('Network.getResponseBody', { requestId }, sessionId);
+      const result = await sendDebuggerCommand(
+        input.cdp,
+        'Network.getResponseBody',
+        { requestId },
+        sessionId,
+      );
       const responseBody = decodeResponseBody(result);
       const responseBytes = Buffer.byteLength(responseBody, 'utf8');
       const metadata = responseMetadata.get(id);
@@ -286,7 +305,8 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
   async function recordRequestPostData(requestId: string, id: string, sessionId?: string) {
     try {
-      const result = await input.cdp.sendCommand(
+      const result = await sendDebuggerCommand(
+        input.cdp,
         'Network.getRequestPostData',
         { requestId },
         sessionId,
@@ -306,7 +326,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
 
   async function enableAttachedTarget(attachedSessionId: string) {
     try {
-      await input.cdp.sendCommand('Network.enable', {}, attachedSessionId);
+      await sendDebuggerCommand(input.cdp, 'Network.enable', {}, attachedSessionId);
     } catch (error) {
       // 捕获 OOPIF Network.enable 失败：目标可能不支持 Network 域或会话已失效
       // 策略：记入 attachFailures 让清单 PARTIAL，finally 仍解除 waitForDebugger，避免 Viewer 永久冻结
@@ -314,7 +334,7 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       void error;
     } finally {
       try {
-        await input.cdp.sendCommand('Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
+        await sendDebuggerCommand(input.cdp, 'Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
       } catch (error) {
         // 捕获 iframe 未处于 waitForDebugger：旧目标或已自行恢复
         // 策略：不阻断主窗口采集

@@ -3,13 +3,35 @@ import { describe, expect, it } from 'vitest';
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
+function electronLikeSendCommand(
+  impl: (
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ) => unknown,
+): CdpDebuggerLike['sendCommand'] {
+  return function sendCommand(
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ) {
+    if (arguments.length >= 3 && !(typeof sessionId === 'string' && sessionId)) {
+      throw new Error('Empty session id is not allowed');
+    }
+    if (typeof sessionId === 'string' && sessionId) {
+      return impl(command, params, sessionId);
+    }
+    return impl(command, params);
+  };
+}
+
 describe('attachCdpNetworkCapture', () => {
   it('maps CDP HTTP and WebSocket events into the network recorder', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
     const sentCommands: string[] = [];
     const cdp: CdpDebuggerLike = {
       async attach() {},
-      async sendCommand(command) {
+      sendCommand: electronLikeSendCommand(async command => {
         sentCommands.push(command);
         if (command === 'Network.getResponseBody') {
           return {
@@ -18,7 +40,7 @@ describe('attachCdpNetworkCapture', () => {
           };
         }
         return {};
-      },
+      }),
       on(event, listener) {
         if (event === 'message') listeners.push(listener);
       },
@@ -174,12 +196,107 @@ describe('attachCdpNetworkCapture', () => {
     ]);
   });
 
+  it('reads root HTML/JS bodies without passing an empty CDP session id', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const bodyCalls: Array<{ command: string; argc: number; sessionId?: string }> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      sendCommand(command, params, sessionId) {
+        if (arguments.length >= 3 && !(typeof sessionId === 'string' && sessionId)) {
+          throw new Error('Empty session id is not allowed');
+        }
+        bodyCalls.push({ command, argc: arguments.length, sessionId });
+        if (command === 'Network.getResponseBody') {
+          return {
+            body: '<!doctype html><html><body>kvm-recon-e2e-popup-html</body></html>',
+            base64Encoded: false,
+          };
+        }
+        if (command === 'Network.getRequestPostData') {
+          return { postData: 'viewer=html5&token=e2e-secret-token' };
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder, now: () => '2026-08-24T12:00:00.000+08:00' });
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params);
+    };
+
+    emit('Network.requestWillBeSent', {
+      requestId: 'popup-html',
+      type: 'Document',
+      request: {
+        method: 'GET',
+        url: 'https://bmc.example/popup.html',
+        headers: {},
+      },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'popup-html',
+      response: {
+        status: 200,
+        mimeType: 'text/html',
+        headers: { 'content-type': 'text/html' },
+      },
+    });
+    emit('Network.loadingFinished', { requestId: 'popup-html' });
+    emit('Network.requestWillBeSent', {
+      requestId: 'login-post',
+      type: 'Document',
+      request: {
+        method: 'POST',
+        url: 'https://bmc.example/form-target',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        hasPostData: true,
+      },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'login-post',
+      response: {
+        status: 200,
+        mimeType: 'text/html',
+        headers: { 'content-type': 'text/html' },
+      },
+    });
+    emit('Network.loadingFinished', { requestId: 'login-post' });
+    await recorder.waitForIdle();
+
+    expect(
+      bodyCalls.filter(item =>
+        item.command === 'Network.getResponseBody' || item.command === 'Network.getRequestPostData',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        { command: 'Network.getResponseBody', argc: 2, sessionId: undefined },
+        { command: 'Network.getRequestPostData', argc: 2, sessionId: undefined },
+      ]),
+    );
+    const popup = recorder.toJSON().httpRequests.find(item => item.id === 'popup-html');
+    const post = recorder.toJSON().httpRequests.find(item => item.id === 'login-post');
+    expect(popup).toMatchObject({
+      responseBodyCaptured: true,
+    });
+    expect(popup?.responseBodySkippedReason).toBeFalsy();
+    expect(popup?.responseBodySummary.sample).toContain('kvm-recon-e2e-popup-html');
+    expect(post).toMatchObject({
+      requestBodyCaptured: true,
+    });
+    expect(recorder.sourceFiles().some(file => file.text.includes('kvm-recon-e2e-popup-html'))).toBe(
+      true,
+    );
+  });
+
   it('scopes OOPIF request ids and reads response bodies through the attached session', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
     const bodyCalls: Array<{ requestId: string; sessionId?: string }> = [];
     const cdp: CdpDebuggerLike = {
       async attach() {},
-      async sendCommand(command, params, sessionId) {
+      sendCommand: electronLikeSendCommand(async (command, params, sessionId) => {
         if (command === 'Network.getResponseBody') {
           bodyCalls.push({ requestId: String(params?.requestId || ''), sessionId });
           return {
@@ -188,7 +305,7 @@ describe('attachCdpNetworkCapture', () => {
           };
         }
         return {};
-      },
+      }),
       on(event, listener) {
         if (event === 'message') listeners.push(listener);
       },
@@ -382,13 +499,13 @@ describe('attachCdpNetworkCapture', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
     const cdp: CdpDebuggerLike = {
       async attach() {},
-      async sendCommand(command, params) {
+      sendCommand: electronLikeSendCommand(async (command, params) => {
         if (command === 'Network.getRequestPostData') {
           expect(params).toEqual({ requestId: 'login-1' });
           return { postData: '{"UserName":"root","Password":"secret"}' };
         }
         return {};
-      },
+      }),
       on(event, listener) {
         if (event === 'message') listeners.push(listener);
       },
