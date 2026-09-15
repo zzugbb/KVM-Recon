@@ -26,7 +26,7 @@
 ## 2. 现场采集步骤
 
 1. 打开 KVM-Recon。
-2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。厂商/型号是铭牌证据，不会改写 kvmFamily。
+2. 输入目标 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。厂商/型号是铭牌证据，不会改写采集桶。Dell / HPE / H3C 名称只出现在包内 `productHints`，不进入 zip 文件名。
 3. 点击“新建采集作业”。主窗口按钮下方会提示下一步（登录或打开 KVM）。可同时保留多份作业，新建不会覆盖上一份未导出资料。
 4. 在弹出的采集窗口中访问 BMC。
 5. 现场人员按需手工登录。本工具不自动登录。
@@ -48,19 +48,28 @@
 
 ## 4. 导出包命名规则
 
+当前只有五个顶层采集桶：`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`。zip 中间段取自 `manifest.family.primary`，不是铭牌，也不是 `productHints`。
+
 默认导出文件名：
 
 ```text
-KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<kvmFamily>_<YES|PARTIAL|NO>.zip
+KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<采集桶>_<YES|PARTIAL|NO>.zip
 ```
 
-示例：
+已知族示例：
 
 ```text
 KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 ```
 
-命名只保留时间、目标主机、采集器打的族标签和离场结论，不包含账号、密码、Token、Cookie 等敏感信息。中间那截可能是 `ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`，**不是**戴尔、惠普这类铭牌。zip 名写错不改变包内 HTTP/WS。出机房后的网关主键怎么起名，见 `docs/kvm-family.md`。
+Dell / HPE / H3C 采到有效 H5 后通常仍是 `unknown-h5`，产品名只在包内提示：
+
+```text
+KVM-Recon_20260915-100000_10-10-8-101_unknown-h5_YES.zip
+包内 productHint=dell-idrac-h5
+```
+
+命名只保留时间、目标主机、采集桶和离场结论，不包含账号、密码、Token、Cookie 等敏感信息。产品提示不参与当前 ZIP 文件名。zip 名写错不改变包内 HTTP/WS。已知 AMI / Huawei / OpenBMC 协议的贴牌设备仍归已有采集桶。出机房后的网关主键怎么起名，见 `docs/kvm-family.md`。
 
 ## 5. 常见错误提示
 
@@ -78,7 +87,7 @@ KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_PARTIAL.zip
 
 ## 7. 范围与限制
 
-采集侧功能已收口，见 `docs/development-plan.md` 当前状态。现场按本文采集即可，不必等待后续采集功能。
+采集侧自动化门禁已通过，见 `docs/development-plan.md` 当前状态。先完成代表机试采，通过后再批量重采；不要在代表机验证前铺开现场采集。
 
 - macOS 安装包使用 ad-hoc 签名（不是 Apple 付费公证）；Windows 安装包无 Authenticode 签名。下载后的系统提示与处理步骤见第 1 节。两套安装包均由 GitHub Actions 构建。
 - 真实 BMC 验收见 `docs/development-plan.md` 真机验收闸门，按安排进行。

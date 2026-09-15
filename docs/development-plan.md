@@ -14,9 +14,9 @@
 - 厂商/型号只作铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-09-14）
+## 3. 当前状态（2026-09-15）
 
-**0.2.8 采集侧仍在按完整链路收口（根会话源码正文、生产 Controller E2E）。生产采集 E2E 与代表机试采通过前不开始批量补采，也不打正式采集安装包。**
+**0.2.8 自动化门禁已经通过（typecheck / 单测 / 构建 / 生产采集 E2E）。当前剩余闸门是代表机试采：通过后再批量重采，不要先铺开现场采集。**
 
 已具备：无副作用探测与 TLS、手工登录采集、HTTP 重定向 hop/ExtraInfo/受控正文、WS 握手与有界帧采样（含 popup/OOPIF）、自动 KVM 画面截图、脱敏导出、YES / PARTIAL / NO 清单、暂停/多作业、登录后复验、现场铭牌、本地打开/对比 zip。每个导出包根目录有中文 `README.md`（阅读地图 + 适配前裁定），manifest 同时记录版本和 build ID。
 
@@ -71,6 +71,6 @@ KVM-Recon 交出 Capture Pack，不写 Adapter。出机房联网后，工程师�
 
 ## 8. 开源治理与发布
 
-已有 MIT 许可、CONTRIBUTING、CI（typecheck / 单测 / 构建 / Electron 烟测）、Build installers、Release 挂包。步骤见 `docs/releasing.md`。
+已有 MIT 许可、CONTRIBUTING、CI（typecheck / 单测 / 构建 / 生产采集 E2E）、Build installers、Release 挂包。步骤见 `docs/releasing.md`。
 
 不做：把证书写入仓库；对真实 BMC 做在线 e2e（没有公开 BMC，也不自动登录）。

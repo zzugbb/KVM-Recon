@@ -15,7 +15,7 @@ npm run build
 npm run test:e2e
 ```
 
-`npm test` 含单测和离线 HTTP 探测/导出闭环。`npm run test:e2e` 会启动 Electron 主窗口并在加载成功后退出，需要先 `npm run build`。
+`npm test` 含单测和离线 HTTP 探测/导出闭环。`npm run test:e2e` 是生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验，需要先 `npm run build`。
 
 ## 可以做的改动
 

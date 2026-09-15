@@ -7,6 +7,7 @@ describe('buildPackReadmeArtifact', () => {
     const artifact = buildPackReadmeArtifact({
       kvmFamily: 'ami-megarac',
       familyConfidence: 0.9,
+      productHints: [{ productFamily: 'unknown-h5', confidence: 0.35 }],
       readiness: 'PARTIAL',
       blockingTitles: [],
       warningTitles: ['KVM 画面截图'],
@@ -28,20 +29,25 @@ describe('buildPackReadmeArtifact', () => {
     });
 
     expect(artifact.path).toBe('README.md');
-    expect(artifact.content).toContain('kvmFamily：ami-megarac');
+    expect(artifact.content).toContain('采集桶（`manifest.family.primary`）：ami-megarac');
+    expect(artifact.content).toContain('产品提示：unknown-h5（置信度 0.35）');
     expect(artifact.content).toContain('离场结论：PARTIAL');
     expect(artifact.content).toContain('机房 A 柜');
     expect(artifact.content).toContain('现场厂商：AMI');
     expect(artifact.content).toContain('现场型号：MegaRAC SPX');
     expect(artifact.content).toContain('不能替代工具判定的采集桶');
     expect(artifact.content).toContain('oem-profile.yaml');
-      expect(artifact.content).toContain('http/sources.json');
-      expect(artifact.content).toContain('referenced.required');
+    expect(artifact.content).toContain('http/sources.json');
+    expect(artifact.content).toContain('referenced.required');
+    expect(artifact.content).toContain('probe/path-details.json');
+    expect(artifact.content).toContain('probe/product-hints.json');
+    expect(artifact.content).toContain('http/adapter-evidence.json');
     expect(artifact.content).toContain('必须问人或看网关仓库');
     expect(artifact.content).toContain('KVM 画面截图：2');
     expect(artifact.content).toContain('有没有 viewer 截图：有 2 张');
     expect(artifact.content).toContain('核对真实族再动手');
     expect(artifact.content).toContain('同构');
+    expect(artifact.content).not.toContain('kvmFamily：ami-megarac');
     expect(artifact.content).not.toContain('自动写 Adapter');
     expect(artifact.content).not.toContain('artifacts/handover.md');
   });
@@ -50,6 +56,7 @@ describe('buildPackReadmeArtifact', () => {
     const artifact = buildPackReadmeArtifact({
       kvmFamily: 'unknown-h5',
       familyConfidence: 0,
+      productHints: [{ productFamily: 'dell-idrac-h5', confidence: 0.55 }],
       readiness: 'NO',
       blockingTitles: ['BMC 基础连接'],
       warningTitles: [],
@@ -62,12 +69,35 @@ describe('buildPackReadmeArtifact', () => {
       cookieNames: [],
     });
 
+    expect(artifact.content).toContain('采集桶（`manifest.family.primary`）：unknown-h5');
+    expect(artifact.content).toContain('产品提示：dell-idrac-h5（置信度 0.55）');
     expect(artifact.content).toContain('不要指望采集工具写出 Adapter');
     expect(artifact.content).toContain('本包工具判定为 `unknown-h5`');
+    expect(artifact.content).toContain('产品提示不是已经确认的 Adapter，也不改变包名');
     expect(artifact.content).toContain('不要把 `unknown-h5` / `not-h5` 写进网关 registry');
     expect(artifact.content).toContain('dell-idrac-h5');
     expect(artifact.content).toContain('作业备注：（无）');
     expect(artifact.content).toContain('现场厂商：（无）');
     expect(artifact.content).toContain('不要用残缺包硬写网关');
+  });
+
+  it('shows an empty product-hint line when none were detected', () => {
+    const artifact = buildPackReadmeArtifact({
+      kvmFamily: 'not-h5',
+      familyConfidence: 0,
+      readiness: 'NO',
+      blockingTitles: [],
+      warningTitles: [],
+      httpRequestCount: 0,
+      webSocketCount: 0,
+      webSocketUrls: [],
+      screenshotCount: 0,
+      hasOemProfile: false,
+      hasAuthenticated: false,
+      cookieNames: [],
+    });
+
+    expect(artifact.content).toContain('产品提示：（无）');
+    expect(artifact.content).toContain('产品提示不是已经确认的 Adapter，也不改变包名');
   });
 });

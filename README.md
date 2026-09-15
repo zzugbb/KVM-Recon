@@ -62,7 +62,7 @@ npm run dev
 ```
 
 - `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop
-- `npm run test:e2e`: launches the Electron main window, then exits after a successful load (build first)
+- `npm run test:e2e`: production capture E2E covering Electron launch, native popup, production Capture Controller, main/popup Documents, HTML/JS bodies, sourceFiles, `target=_blank` POST, referrer, window lineage, redaction, and ZIP self-check (build first)
 - `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 
 ## Docs

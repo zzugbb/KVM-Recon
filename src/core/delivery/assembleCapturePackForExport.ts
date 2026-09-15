@@ -183,6 +183,7 @@ export function assembleCapturePackForExport(
     buildPackReadmeArtifact({
       kvmFamily: pack.manifest.family.primary,
       familyConfidence: pack.manifest.family.confidence,
+      productHints: pack.manifest.family.productHints,
       readiness: pack.manifest.readiness.status,
       blockingTitles: pack.checklist.items
         .filter(

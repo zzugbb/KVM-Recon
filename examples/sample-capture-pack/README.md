@@ -5,7 +5,8 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 
 ## 本包摘要
 
-- kvmFamily：ami-megarac（置信度 0.9）
+- 采集桶（`manifest.family.primary`）：ami-megarac（置信度 0.9）
+- 产品提示：unknown-h5（置信度 0.35）
 - 离场结论：PARTIAL。能分析，但可能缺项。先看未齐项，再决定写草稿还是回现场补采。
 - HTTP 请求：2；WebSocket：1；KVM 画面截图：0
 - WebSocket URL：wss://10.0.0.10/kvm
@@ -24,7 +25,7 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 ## 阅读顺序
 
 1. 本文件。
-2. `manifest.json`：作业、目标、kvmFamily、就绪结论。
+2. `manifest.json`：作业、目标、采集桶（`manifest.family.primary`）、就绪结论。
 3. `checklist.json` 或 `report.html`：缺什么、要不要补采。
 4. 按「文件做什么」打开对应目录，不要通读全部 jsonl。
 
@@ -32,16 +33,19 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 
 | 路径 | 用来回答 |
 | --- | --- |
-| `manifest.json` | 这是哪次作业、目标地址、工具判定的 kvmFamily |
+| `manifest.json` | 这是哪次作业、目标地址、工具判定的采集桶（`manifest.family.primary`） |
 | `checklist.json` / `report.html` | 离场能否适配、缺哪一项 |
 | `probe/bmc-basic.json` | 匿名探测到的厂商/型号/固件（可能为空） |
-| `probe/family-signatures.json` | 为何判成这一族、证据路径 |
+| `probe/family-signatures.json` | 为何判成这一采集桶、证据路径 |
 | `probe/path-evidence.json` | 指纹路径是否命中（HTML 200 不算） |
+| `probe/path-details.json` | 每个探测路径的状态码、内容类型、重定向和响应结构 |
+| `probe/product-hints.json` | 产品提示（如 Dell/HPE/H3C），不是已确认 Adapter，也不改变包名 |
 | `probe/redfish.json` | Redfish 根是否通、根上的原始字段 |
 | `probe/operator-observed.json` | 现场看铭牌填的厂商/型号（可选） |
 | `probe/authenticated.json` | 登录后复验：Cookie 名和带会话后的路径（可选，无 Cookie 值） |
 | `http/requests.jsonl` | 登录、KVM token、入口相关 HTTP；看 tags 与 URL |
 | `http/har.json` | 同上，HAR 格式，便于用现成工具打开 |
+| `http/adapter-evidence.json` | 登录链、KVM 启动链、WS 升级和 HTTP/WS 关联索引 |
 | `http/sources.json` 与 `http/sources/` | Viewer HTML/JS：清单含 URL、SHA-256、窗口、是否截断；新包每条引用必须有布尔 `referenced.required`。`required=true` 才是关键源码；旧包缺该字段时按关键引用处理，不能当成非关键 |
 | `http/capture-status.json` | 导出时是否还有 in-flight 请求或 attach 失败 |
 | `page/scripts.json` | 页面实际引用的脚本/文档 URL（有 page-scripts 时才出现） |
@@ -59,7 +63,7 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 
 ### 核对真实族再动手（必做）
 
-zip 名和 `manifest.family.primary` 只是采集器对三套已知指纹的打分，**不是**网关 Adapter 主键。HTTP / WebSocket 才是事实。
+zip 名和 `manifest.family.primary` 只是采集器对三套已知指纹的打分，**不是**网关 Adapter 主键。`productHints` 也不进入当前 ZIP 文件名。HTTP / WebSocket 才是事实。
 
 1. 对照 `http/requests.jsonl` 与 `ws/sockets.json`：登录 URL、Cookie 名、KVM WS 路径和子协议，是否与某一已知族同构。
 2. **同构**：才可复用现网 `ami-megarac` / `openbmc-h5` / `huawei-ibmc`，差异放 Profile 或该 Adapter 内的小分支。
@@ -68,7 +72,7 @@ zip 名和 `manifest.family.primary` 只是采集器对三套已知指纹的打�
 
 ### 本包已经能回答
 
-- 工具判定的族是 ami-megarac，离场结论是 PARTIAL。
+- 采集桶是 ami-megarac，离场结论是 PARTIAL。
 - 登录相关 HTTP 在 `http/requests.jsonl`（tags 含 login / kvm-token / kvm-entry）。
 - KVM 画面通道看 `ws/sockets.json` 与 `ws/frames.jsonl`。URL：wss://10.0.0.10/kvm。
 - 有没有 viewer 截图：没有。

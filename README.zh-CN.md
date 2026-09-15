@@ -62,7 +62,7 @@ npm run dev
 ```
 
 - `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环
-- `npm run test:e2e`：启动 Electron 主窗口，加载成功后退出（需先 build）
+- `npm run test:e2e`：生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验（需先 build）
 - `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 
 ## 文档

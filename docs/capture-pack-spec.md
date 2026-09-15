@@ -133,6 +133,14 @@ capture-pack/
 
 `family.primary` 是采集桶（含 `unknown-h5` / `not-h5`），不是网关 Adapter 主键。出机房后按 HTTP/WS 核对是否同构，裁定见 `docs/kvm-family.md`。每个包根目录 `README.md` 也有同样的「核对真实族再动手」一节。
 
+导出 zip 文件名只使用采集桶：
+
+```text
+KVM-Recon_<YYYYMMDD-HHmmss>_<BMC_HOST>_<采集桶>_<YES|PARTIAL|NO>.zip
+```
+
+采集桶取自 `manifest.family.primary`，当前只有五个顶层桶。`productHints`（如 `dell-idrac-h5` / `hpe-ilo-h5` / `h3c-hdm2`）写在 `manifest.family.productHints` 和 `probe/product-hints.json`，**不参与当前 ZIP 文件名**。
+
 ## 4. HTTP 资料
 
 `http/requests.jsonl` 用于保存结构化请求列表。每行一个请求摘要。
@@ -401,7 +409,7 @@ KVM WebSocket 识别不只看单一路径。已覆盖 AMI `/kvm`/`/kvm/video`、
 
 ```text
 缺失：未捕获 KVM WebSocket。
-影响：离开机房后无法判断播放面协议。
+影响：离开机房后无法判断画面协议。
 建议操作：
 1. 点击“新建采集作业”，在采集窗口登录 BMC。
 2. 点击“远程控制台 / HTML5 KVM”。若打开了新窗口，把新窗口留在前台至少 10 秒。

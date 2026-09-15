@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- 同步文档、包内 README 生成器和主窗口截图：生产采集 E2E 覆盖范围、采集桶与 `productHints`、代表机试采闸门，以及 GitHub Release 必须先存在再上传附件。
+
 ## [0.2.8] - 2026-09-15
 
 - 根 CDP 会话读取 HTML/JS/`getRequestPostData` 时不再传入空 `sessionId`，避免 Electron 44 报 `Empty session id is not allowed` 导致源码正文全空。
@@ -85,7 +87,7 @@
 - 包内 `report.md` / `report.html` 只保留检查项，阅读说明指向根目录 `README.md`
 - 补拍画面默认改为登录页；本地打开 zip 会检查截图是否带 role
 - 包内 README 摘要改为「KVM 画面截图」（只计 viewer）；架构文档改名为 `docs/architecture.md`
-- 导出失败 / 脱敏失败的提示改为「重新导出 Capture Pack」，不再点名「停止采集并导出」（YES 时主按钮文案不同）
+- 普通导出失败：修复目录/磁盘问题后重新导出；脱敏检查失败：重新采集，不能直接重复导出同一份内存数据。提示改为「重新导出 Capture Pack」，不再点名「停止采集并导出」（YES 时主按钮文案不同）
 - 现场说明导出步骤同时写出「导出 Capture Pack」与未齐时的「停止采集并导出」
 
 ## [0.2.2] - 2026-08-25

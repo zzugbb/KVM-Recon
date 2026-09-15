@@ -435,4 +435,89 @@ describe('assembleCapturePackForExport', () => {
       'function startKvm() {}',
     );
   });
+
+  it('keeps Dell HTML5 traffic in unknown-h5 and records product hints without changing the zip name', () => {
+    const result = assembleCapturePackForExport({
+      jobId: 'job-export-dell',
+      startedAt: '2026-09-15T10:00:00.000+08:00',
+      endedAt: '2026-09-15T10:10:00.000+08:00',
+      target: {
+        host: '10.10.8.101',
+        port: 443,
+        scheme: 'https',
+      },
+      probe: {
+        ...completeProbe,
+        basic: {
+          ...completeProbe.basic,
+          host: '10.10.8.101',
+          vendor: 'Dell',
+          product: 'iDRAC',
+        },
+        paths: {
+          apiRandomtag: false,
+          apiSession: false,
+          apiKvmToken: false,
+        },
+        familySignatures: {
+          primary: 'unknown-h5' as const,
+          confidence: 0,
+          candidates: [],
+        },
+      },
+      page: pageWithScreenshot,
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-09-15T10:01:00.000+08:00',
+            method: 'POST',
+            url: 'https://10.10.8.101/sysmgmt/2015/bmc/session',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: {},
+            requestBodySummary: { bytes: 32, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 64, redactedFields: [] },
+            tags: ['login' as const],
+          },
+        ],
+        webSockets: [
+          {
+            id: 'ws-dell',
+            createdAt: '2026-09-15T10:02:00.000+08:00',
+            url: 'wss://10.10.8.101/vmc/vconsole',
+            subProtocols: [],
+            requestHeaders: {},
+            binaryFrameCount: 4,
+            textFrameCount: 0,
+            tags: ['kvm-video' as const],
+          },
+        ],
+        webSocketFrames: [
+          {
+            socketId: 'ws-dell',
+            timestamp: '2026-09-15T10:02:00.100+08:00',
+            direction: 'down' as const,
+            opcode: 'binary' as const,
+            bytes: 64,
+            headHex: '524642203030332e303038',
+            sampled: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.pack.manifest.family.primary).toBe('unknown-h5');
+    expect(result.pack.manifest.family.productHints?.[0]?.productFamily).toBe('dell-idrac-h5');
+    expect(result.fileName).toMatch(/^KVM-Recon_20260915-100000_10-10-8-101_unknown-h5_(YES|PARTIAL|NO)\.zip$/);
+    expect(result.fileName).not.toContain('dell-idrac');
+    const packReadme = String(result.pack.artifacts?.find(item => item.path === 'README.md')?.content);
+    expect(packReadme).toContain('采集桶（`manifest.family.primary`）：unknown-h5');
+    expect(packReadme).toContain('产品提示：dell-idrac-h5');
+    expect(packReadme).toContain('产品提示不是已经确认的 Adapter，也不改变包名');
+    expect(packReadme).toContain('probe/path-details.json');
+    expect(packReadme).toContain('probe/product-hints.json');
+    expect(packReadme).toContain('http/adapter-evidence.json');
+  });
 });
