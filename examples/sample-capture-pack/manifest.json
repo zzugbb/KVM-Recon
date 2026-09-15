@@ -36,15 +36,7 @@
         ]
       }
     ],
-    "productHints": [
-      {
-        "productFamily": "unknown-h5",
-        "confidence": 0.35,
-        "evidence": [
-          "generic:h5-kvm"
-        ]
-      }
-    ]
+    "productHints": []
   },
   "readiness": {
     "status": "PARTIAL",

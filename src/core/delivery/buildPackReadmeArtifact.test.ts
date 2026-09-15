@@ -7,7 +7,7 @@ describe('buildPackReadmeArtifact', () => {
     const artifact = buildPackReadmeArtifact({
       kvmFamily: 'ami-megarac',
       familyConfidence: 0.9,
-      productHints: [{ productFamily: 'unknown-h5', confidence: 0.35 }],
+      productHints: [],
       readiness: 'PARTIAL',
       blockingTitles: [],
       warningTitles: ['KVM 画面截图'],
@@ -30,7 +30,7 @@ describe('buildPackReadmeArtifact', () => {
 
     expect(artifact.path).toBe('README.md');
     expect(artifact.content).toContain('采集桶（`manifest.family.primary`）：ami-megarac');
-    expect(artifact.content).toContain('产品提示：unknown-h5（置信度 0.35）');
+    expect(artifact.content).toContain('产品提示：（无）');
     expect(artifact.content).toContain('离场结论：PARTIAL');
     expect(artifact.content).toContain('机房 A 柜');
     expect(artifact.content).toContain('现场厂商：AMI');

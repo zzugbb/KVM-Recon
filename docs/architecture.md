@@ -76,7 +76,7 @@ Recon 不主动请求 `/api/session`、`/api/kvm/token`、`KvmService`、`SetKvm
 
 路径命中：HTML 不算（含 UTF-8 BOM）；2xx 需为结构化 JSON 或明确的短非 HTML 指纹文本；`text/plain` 但正文为 JSON 的响应按 JSON 解析；Redfish 根同时兼容 `/redfish/v1` 与 `/redfish/v1/`。401/403/405 只记录为路径事实，不再直接算接口命中。`/kvm/video` 是 WebSocket 升级口，匿名 GET 的 401 不算路径命中。登录后复验为 false 的路径覆盖匿名结果，不用 OR 合并。探测结果同时导出 `probe/path-details.json`，保留每个路径的状态码、内容类型、重定向和响应结构特征。
 
-已知族判定与 InManage NodeServer 的 adapter-registry 语义对齐：优先级为 AMI、OpenBMC、Huawei；TLS 身份只读取证书 subject，其中 AMI 使用 subject O/CN、OpenBMC 使用 subject O、Huawei 使用 subject CN，不以 issuer 或 Huawei subject O 判定；AMI/OpenBMC 的 randomtag 需要看到对应 JSON 字段，单独命中已验证 `/randomtag` 即是 OpenBMC 强指纹，通用鉴权墙不算；Huawei 需要 Redfish/OEM/TLS/legacy UI/WS/帧头等强身份信号，不能只因通用 `KvmService` 字段命中就归入华为。H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 与未知 HTML5 KVM 会作为产品迹象写入 `probe/product-hints.json` 和 manifest；H3C/Huawei 品牌仅作辅助，HDM2/legacy 提示必须有对应协议路径、资源或帧证据。
+已知族判定与 InManage NodeServer 的 adapter-registry 语义对齐：优先级为 AMI、OpenBMC、Huawei；TLS 身份只读取证书 subject，其中 AMI 使用 subject O/CN、OpenBMC 使用 subject O、Huawei 使用 subject CN，不以 issuer 或 Huawei subject O 判定；AMI/OpenBMC 的 randomtag 需要看到对应 JSON 字段，单独命中已验证 `/randomtag` 即是 OpenBMC 强指纹，通用鉴权墙不算；Huawei 需要 Redfish/OEM/TLS/legacy UI/WS/帧头等强身份信号，不能只因通用 `KvmService` 字段命中就归入华为。H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 会作为产品迹象写入 `probe/product-hints.json` 和 manifest；`unknown-h5` 只是采集桶，不是产品提示。H3C/Huawei 品牌仅作辅助，HDM2/legacy 提示必须有对应协议路径、资源或帧证据。
 
 探测实现以当前仓库的 Node probe 与登录后会话复验为准。不要把一次性手工调试脚本直接做进产品主流程。无头批量复验、从调试脚本抽公共库，都不是本项目目标。
 

@@ -12,12 +12,7 @@ export interface ProductHintInput {
 }
 
 export interface ProductHint {
-  productFamily:
-    | 'h3c-hdm2'
-    | 'dell-idrac-h5'
-    | 'hpe-ilo-h5'
-    | 'huawei-ibmc-legacy'
-    | 'unknown-h5';
+  productFamily: 'h3c-hdm2' | 'dell-idrac-h5' | 'hpe-ilo-h5' | 'huawei-ibmc-legacy';
   confidence: number;
   evidence: string[];
 }
@@ -141,14 +136,6 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
     const score = right.evidence.length - left.evidence.length;
     return score !== 0 ? score : right.confidence - left.confidence;
   });
-
-  if (hints.length === 0 && /h5|html5|kvm|console|viewer|vnc|irc/i.test(text)) {
-    hints.push({
-      productFamily: 'unknown-h5',
-      confidence: 0.35,
-      evidence: ['generic:h5-kvm'],
-    });
-  }
 
   return hints;
 }

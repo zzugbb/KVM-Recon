@@ -133,6 +133,10 @@ describe('assembleCapturePackForExport', () => {
 
     expect(result.fileName).toBe('KVM-Recon_20260824-135500_10-0-0-10_ami-megarac_YES.zip');
     expect(result.pack.manifest.family.primary).toBe('ami-megarac');
+    expect(result.pack.manifest.family.productHints).toEqual([]);
+    expect(String(result.pack.artifacts?.find(item => item.path === 'README.md')?.content)).toContain(
+      '产品提示：（无）',
+    );
     expect(result.pack.manifest.readiness.status).toBe('YES');
     expect(result.pack.reportHtml).toContain('离场适配就绪：YES');
     expect(result.pack.artifacts?.map(item => item.path)).toEqual(

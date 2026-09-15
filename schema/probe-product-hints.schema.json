@@ -12,8 +12,7 @@
           "h3c-hdm2",
           "dell-idrac-h5",
           "hpe-ilo-h5",
-          "huawei-ibmc-legacy",
-          "unknown-h5"
+          "huawei-ibmc-legacy"
         ]
       },
       "confidence": { "type": "number" },

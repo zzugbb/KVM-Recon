@@ -17,7 +17,7 @@ Capture Pack 必须可离线打开、可脱敏审查、可长期归档。出机�
 
 - `probe/path-evidence.json`：各指纹路径是否命中（HTML 200 不算）。
 - `probe/path-details.json`：每个探测路径的状态码、内容类型、重定向和响应结构特征；401/403/405 只记录事实，不直接算命中。
-- `probe/product-hints.json`：H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy、未知 HTML5 KVM 等产品迹象。
+- `probe/product-hints.json`：H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 等产品迹象。`unknown-h5` 只是采集桶，不会写成产品提示。
 - `page/screenshots.json`：包内截图相对路径索引。
 - `page/screenshots/`：PNG 文件。
 - 已知族还有 `artifacts/oem-profile.yaml`；未知族为 `artifacts/notes.md`。
@@ -104,13 +104,7 @@ capture-pack/
   "family": {
     "primary": "ami-megarac",
     "confidence": 0.86,
-    "productHints": [
-      {
-        "productFamily": "unknown-h5",
-        "confidence": 0.8,
-        "evidence": ["HTML5 KVM viewer traffic"]
-      }
-    ],
+    "productHints": [],
     "candidates": [
       {
         "kvmFamily": "ami-megarac",

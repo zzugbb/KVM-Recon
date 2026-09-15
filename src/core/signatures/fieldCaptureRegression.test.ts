@@ -285,5 +285,13 @@ describe('field capture regressions from existing on-site packs', () => {
     };
 
     expect(scoreCapturedKvmFamily(baseProbe, network).primary).toBe('unknown-h5');
+    expect(
+      detectProductHints({
+        traffic: {
+          httpUrls: network.httpRequests.map(item => item.url),
+          webSocketUrls: network.webSockets.map(item => item.url),
+        },
+      }),
+    ).toEqual([]);
   });
 });

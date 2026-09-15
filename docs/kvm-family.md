@@ -35,6 +35,8 @@ zip 名就算写错，`http/`、`ws/`、`page/` 仍是浏览器真实流量，�
 | `h3c-hdm2` | H3C HDM2 HTML5 迹象（只称产品提示，不是已确定的网关 Adapter 主键） |
 | `huawei-ibmc-legacy` | 华为 iBMC 旧版 HTML5 迹象 |
 
+`unknown-h5` 不是产品提示。采集桶是 `unknown-h5` 且没有上表证据时，`productHints` 为空。
+
 新版代表机验证通过后，才考虑把 Dell / HPE / H3C 提升为正式采集桶。在此之前，有效 H5 流量的 zip 仍应是 `unknown-h5`。`h3c-hdm2` 不要提前写成已确定的网关 Adapter 主键。
 
 ## 3. 动手前怎么裁定

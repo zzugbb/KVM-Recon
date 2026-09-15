@@ -6,7 +6,7 @@ KVM-Recon 只负责机房离线采集，**不写 Adapter**。解压后先读本�
 ## 本包摘要
 
 - 采集桶（`manifest.family.primary`）：ami-megarac（置信度 0.9）
-- 产品提示：unknown-h5（置信度 0.35）
+- 产品提示：（无）
 - 离场结论：PARTIAL。能分析，但可能缺项。先看未齐项，再决定写草稿还是回现场补采。
 - HTTP 请求：2；WebSocket：1；KVM 画面截图：0
 - WebSocket URL：wss://10.0.0.10/kvm

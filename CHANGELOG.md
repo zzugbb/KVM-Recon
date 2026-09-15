@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - 同步文档、包内 README 生成器和主窗口截图：生产采集 E2E 覆盖范围、采集桶与 `productHints`、代表机试采闸门，以及 GitHub Release 必须先存在再上传附件。
+- `productHints` 不再回退成 `unknown-h5`：该名字只作采集桶。已知 AMI 等桶即使有通用 KVM 字样，产品提示也为空。
 
 ## [0.2.8] - 2026-09-15
 
