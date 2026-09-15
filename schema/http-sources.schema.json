@@ -17,7 +17,9 @@
           "sha256": { "type": "string" },
           "bytes": { "type": "integer" },
           "truncated": { "type": "boolean" },
-          "path": { "type": "string" }
+          "path": { "type": "string" },
+          "captureWindowId": { "type": "string" },
+          "windowRole": { "enum": ["main", "popup"] }
         }
       }
     },
@@ -30,9 +32,12 @@
           "url": { "type": "string" },
           "kind": { "enum": ["javascript", "html"] },
           "initiator": { "type": "string" },
+          "required": { "type": "boolean" },
           "captured": { "type": "boolean" },
           "missing": { "type": "boolean" },
-          "requestId": { "type": "string" }
+          "requestId": { "type": "string" },
+          "captureWindowId": { "type": "string" },
+          "windowRole": { "enum": ["main", "popup"] }
         }
       }
     },

@@ -164,7 +164,7 @@ describe('capture pack schema and local review', () => {
             },
           ],
           referenced: [
-            { url: 'https://bmc.example/main.js', kind: 'javascript', captured: false, missing: true },
+            { url: 'https://bmc.example/main.js', kind: 'javascript', captured: false, missing: true, required: true },
           ],
         },
         packPaths: ['http/sources/worker.js'],
@@ -175,7 +175,7 @@ describe('capture pack schema and local review', () => {
     ).toEqual(
       expect.arrayContaining([
         'http/sources.json.files[0] SHA-256 不匹配',
-        'http/sources.json.referenced[0] 页面引用缺失源码文件',
+        'http/sources.json.referenced[0] 关键页面引用缺失源码文件',
       ]),
     );
     expect(
@@ -187,5 +187,42 @@ describe('capture pack schema and local review', () => {
         readiness: 'YES',
       }),
     ).toEqual(['未知族 YES 缺少 http/sources.json 完整源码']);
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory: {
+          files: [
+            {
+              id: 'worker',
+              url: 'https://bmc.example/file.worker.js',
+              kind: 'javascript',
+              sha256: 'abcd',
+              bytes: 4,
+              truncated: false,
+              path: 'http/sources/worker.js',
+            },
+          ],
+          referenced: [
+            ...Array.from({ length: 30 }, (_, index) => ({
+              url: `https://bmc.example/static/js/${index}.chunk.js`,
+              kind: 'javascript',
+              captured: false,
+              missing: true,
+              required: false,
+            })),
+            {
+              url: 'https://bmc.example/file.worker.js',
+              kind: 'javascript',
+              captured: true,
+              missing: false,
+              required: true,
+            },
+          ],
+        },
+        packPaths: ['http/sources/worker.js'],
+        fileBytes: new Map([['http/sources/worker.js', { bytes: 4, sha256: 'abcd' }]]),
+        family: 'unknown-h5',
+        readiness: 'YES',
+      }),
+    ).toEqual([]);
   });
 });

@@ -114,6 +114,44 @@ describe('attachCdpNetworkCapture', () => {
     });
   });
 
+  it('registers Network listeners before Network.enable so the first popup document is kept', async () => {
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpDebuggerLike = {
+      async attach() {},
+      async sendCommand(command) {
+        if (command === 'Network.enable') {
+          expect(listeners).toHaveLength(1);
+          for (const listener of listeners) {
+            listener(
+              {},
+              'Network.requestWillBeSent',
+              {
+                requestId: 'popup-doc',
+                type: 'Document',
+                request: {
+                  method: 'GET',
+                  url: 'https://10.10.8.101/vmc/vconsole',
+                  headers: {},
+                },
+              },
+            );
+          }
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
+    await attachCdpNetworkCapture({ cdp, recorder });
+    expect(recorder.toJSON().httpRequests[0]).toMatchObject({
+      id: 'popup-doc',
+      url: 'https://10.10.8.101/vmc/vconsole',
+      resourceType: 'Document',
+    });
+  });
+
   it('scopes OOPIF request ids and reads response bodies through the attached session', async () => {
     const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
     const bodyCalls: Array<{ requestId: string; sessionId?: string }> = [];

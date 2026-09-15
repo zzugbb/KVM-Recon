@@ -23,6 +23,9 @@ interface BuildNetworkArtifactsInput {
   webSocketFrames: WebSocketFrameRecord[];
   sourceFiles?: SourceFileRecord[];
   referencedScripts?: PageReferencedScript[];
+  host?: string;
+  unclassified?: boolean;
+  viewerWindowIds?: Iterable<string>;
 }
 
 function toJsonl(records: unknown[]): string {
@@ -217,6 +220,9 @@ export function buildNetworkArtifacts(input: BuildNetworkArtifactsInput): Networ
     sourceFiles,
     referenced: referencedScripts,
     requests: input.httpRequests,
+    host: input.host,
+    unclassified: input.unclassified,
+    viewerWindowIds: input.viewerWindowIds,
   });
   const hasSourceInventory = inventory.files.length > 0 || inventory.referenced.length > 0;
   return [

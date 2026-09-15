@@ -7,6 +7,7 @@ type NetworkRecorder = ReturnType<typeof createNetworkRecorder>;
 
 export interface CdpDebuggerLike {
   attach(protocolVersion: string): Promise<void> | void;
+  isAttached?: () => boolean;
   sendCommand(
     command: string,
     params?: Record<string, unknown>,
@@ -302,28 +303,6 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
     }
   }
 
-  try {
-    await input.cdp.attach('1.3');
-    await input.cdp.sendCommand('Network.enable');
-  } catch (error) {
-    // 捕获根窗口 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用或目标已销毁
-    // 策略：记入 attachFailures 让清单 PARTIAL，避免未处理拒绝；窗口仍可用于截图
-    input.recorder.markAttachFailure(input.captureWindowId || 'root', 'cdp-attach-failed');
-    void error;
-    return;
-  }
-  try {
-    await input.cdp.sendCommand('Target.setAutoAttach', {
-      autoAttach: true,
-      waitForDebuggerOnStart: true,
-      flatten: true,
-    });
-  } catch (error) {
-    // 捕获旧 Chromium/Electron 不支持 Target auto-attach：保留当前 webContents 的 Network 采集
-    // 策略：不阻断现场采集，弹窗仍由 Electron did-create-window 单独附加
-    void error;
-  }
-
   input.cdp.on('message', (_event, method, params, sessionId) => {
     if (method === 'Target.attachedToTarget') {
       const attachedSessionId = stringValue(params.sessionId);
@@ -532,4 +511,28 @@ export async function attachCdpNetworkCapture(input: AttachCdpNetworkCaptureInpu
       });
     }
   });
+
+  try {
+    if (!(typeof input.cdp.isAttached === 'function' && input.cdp.isAttached())) {
+      await input.cdp.attach('1.3');
+    }
+    await input.cdp.sendCommand('Network.enable');
+  } catch (error) {
+    // 捕获根窗口 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用或目标已销毁
+    // 策略：记入 attachFailures 让清单 PARTIAL，避免未处理拒绝；窗口仍可用于截图
+    input.recorder.markAttachFailure(input.captureWindowId || 'root', 'cdp-attach-failed');
+    void error;
+    return;
+  }
+  try {
+    await input.cdp.sendCommand('Target.setAutoAttach', {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+    });
+  } catch (error) {
+    // 捕获旧 Chromium/Electron 不支持 Target auto-attach：保留当前 webContents 的 Network 采集
+    // 策略：不阻断现场采集，弹窗仍由 Electron did-create-window 单独附加
+    void error;
+  }
 }

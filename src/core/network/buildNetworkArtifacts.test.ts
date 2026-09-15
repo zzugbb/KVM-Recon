@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { validateSourceInventoryIntegrity } from '../capture-pack/validateCapturePackShape';
 import { buildNetworkArtifacts } from './buildNetworkArtifacts';
 import type { HttpRequestRecord, WebSocketFrameRecord, WebSocketRecord } from './createNetworkRecorder';
 
@@ -351,13 +352,74 @@ describe('buildNetworkArtifacts', () => {
           url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
           missing: true,
           captured: false,
+          required: true,
         }),
         expect.objectContaining({
           url: 'https://10.10.8.101/vmc/vconsole/file.worker.js',
           missing: false,
           captured: true,
+          required: true,
         }),
       ]),
     );
+  });
+
+  it('keeps homepage references informational so a YES pack can omit them', () => {
+    const artifacts = buildNetworkArtifacts({
+      httpRequests: [],
+      webSockets: [],
+      webSocketFrames: [],
+      host: '10.10.8.94',
+      unclassified: true,
+      viewerWindowIds: ['popup-ilo'],
+      referencedScripts: [
+        ...Array.from({ length: 30 }, (_, index) => ({
+          url: `https://10.10.8.94/static/js/${index}.chunk.js`,
+          kind: 'javascript' as const,
+          initiator: 'script-tag',
+          captureWindowId: 'win-main',
+          windowRole: 'main' as const,
+        })),
+        {
+          url: 'https://10.10.8.94/js/application.js',
+          kind: 'javascript' as const,
+          initiator: 'script-tag',
+          captureWindowId: 'popup-ilo',
+          windowRole: 'popup' as const,
+        },
+      ],
+      sourceFiles: [
+        {
+          id: 'application',
+          url: 'https://10.10.8.94/js/application.js',
+          kind: 'javascript',
+          sha256: 'abc',
+          bytes: 12,
+          truncated: false,
+          text: 'function ilo(){}',
+          captureWindowId: 'popup-ilo',
+          windowRole: 'popup',
+        },
+      ],
+    });
+    const inventory = JSON.parse(artifacts.find(item => item.path === 'http/sources.json')?.content || '{}');
+    expect(inventory.referenced.filter((item: { required: boolean }) => item.required)).toEqual([
+      expect.objectContaining({
+        url: 'https://10.10.8.94/js/application.js',
+        required: true,
+        captured: true,
+        missing: false,
+      }),
+    ]);
+    expect(inventory.referenced.filter((item: { missing: boolean }) => item.missing)).toHaveLength(30);
+    expect(
+      validateSourceInventoryIntegrity({
+        inventory,
+        packPaths: ['http/sources/application.js'],
+        fileBytes: new Map([['http/sources/application.js', { bytes: 12, sha256: 'abc' }]]),
+        family: 'unknown-h5',
+        readiness: 'YES',
+      }),
+    ).toEqual([]);
   });
 });

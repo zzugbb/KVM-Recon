@@ -16,6 +16,8 @@ export interface SourceFileRecord {
   bytes: number;
   truncated: boolean;
   text: string;
+  captureWindowId?: string;
+  windowRole?: string;
 }
 
 export interface PageReferencedScript {
@@ -25,6 +27,9 @@ export interface PageReferencedScript {
   captureWindowId?: string;
   windowRole?: string;
 }
+
+const SENSITIVE_QUERY_KEY_RE =
+  /password|passwd|pwd|token|csrf|cookie|sessionid|session_id|qsessionid|uniqueid|authparam|garc|x-auth-token/i;
 
 const ADAPTER_SOURCE_HINT =
   /kvm|viewer|console|vnc|irc|vconsole|h5|encrypt|login|session|auth|websocket|vkvm|html5/i;
@@ -95,6 +100,9 @@ export function sourceUrlIdentity(url: string) {
   try {
     const parsed = new URL(url);
     parsed.hash = '';
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (SENSITIVE_QUERY_KEY_RE.test(key)) parsed.searchParams.delete(key);
+    }
     return parsed.toString();
   } catch {
     return String(url || '').split('#')[0];
@@ -109,7 +117,6 @@ export function isViewerSourceContext(
   item: { windowRole?: string; captureWindowId?: string },
   viewerWindowIds: Iterable<string> = [],
 ) {
-  if (item.windowRole === 'popup') return true;
   const windowId = item.captureWindowId;
   if (!windowId) return false;
   for (const id of viewerWindowIds) {
@@ -144,6 +151,16 @@ export function isFirstPartySource(request: HttpRequestRecord, host?: string) {
   return isFirstPartyUrl(request.url, host);
 }
 
+export function isViewerFirstPartySource(
+  item: { url: string; windowRole?: string; captureWindowId?: string },
+  input: { host?: string; viewerWindowIds?: Iterable<string> },
+) {
+  if (!isLikelySourceUrl(item.url) && !isKeyAdapterSourceUrl(item.url)) return false;
+  if (VENDOR_LIBRARY_HINT.test(item.url)) return false;
+  if (!isFirstPartyUrl(item.url, input.host)) return false;
+  return isViewerSourceContext(item, input.viewerWindowIds || []);
+}
+
 export function isRequiredReferencedSource(
   item: PageReferencedScript | string,
   input: { host?: string; unclassified: boolean; viewerWindowIds?: Iterable<string> },
@@ -154,7 +171,7 @@ export function isRequiredReferencedSource(
   if (VENDOR_LIBRARY_HINT.test(url)) return false;
   if (!isFirstPartyUrl(url, input.host)) return false;
   if (!input.unclassified) return ADAPTER_SOURCE_HINT.test(url);
-  return isKeyAdapterSourceUrl(url);
+  return isKeyAdapterSourceUrl(url) || isViewerFirstPartySource(record, input);
 }
 
 export function adapterSourceCandidates(
@@ -169,10 +186,8 @@ export function adapterSourceCandidates(
     if (VENDOR_LIBRARY_HINT.test(request.url)) continue;
     if (!isFirstPartySource(request, input.host)) continue;
     const keyDep = isKeyAdapterSourceUrl(request.url);
-    const viewerHtml =
-      /^document$/i.test(request.resourceType) &&
-      isViewerSourceContext(request, input.viewerWindowIds || []);
-    if (!keyDep && !viewerHtml) continue;
+    const viewerFirstParty = isViewerFirstPartySource(request, input);
+    if (!keyDep && !viewerFirstParty) continue;
     byId.set(request.id, request);
   }
   return [...byId.values()];
@@ -354,10 +369,25 @@ export function adapterSourceCoverage(input: {
   };
 }
 
+function matchSourceFile(files: SourceFileRecord[], item: PageReferencedScript) {
+  const matches = files.filter(file => sourceUrlIdentity(file.url) === sourceUrlIdentity(item.url));
+  if (item.captureWindowId) {
+    return (
+      matches.find(file => file.captureWindowId === item.captureWindowId) ||
+      matches.find(file => !file.captureWindowId)
+    );
+  }
+  if (matches.length === 1) return matches[0];
+  return matches.find(file => !file.captureWindowId);
+}
+
 export function buildSourceInventory(input: {
   sourceFiles: SourceFileRecord[];
   referenced: PageReferencedScript[];
   requests?: HttpRequestRecord[];
+  host?: string;
+  unclassified?: boolean;
+  viewerWindowIds?: Iterable<string>;
 }) {
   const files = input.sourceFiles.map(file => ({
     id: file.id,
@@ -367,20 +397,29 @@ export function buildSourceInventory(input: {
     bytes: file.bytes,
     truncated: file.truncated,
     path: sourceFilePath(file.id, file.kind),
+    ...(file.captureWindowId ? { captureWindowId: file.captureWindowId } : {}),
+    ...(file.windowRole ? { windowRole: file.windowRole } : {}),
   }));
-  const fileByIdentity = new Map(
-    input.sourceFiles.map(file => [sourceUrlIdentity(file.url), file] as const),
-  );
+  const coverageInput = {
+    host: input.host,
+    unclassified: Boolean(input.unclassified),
+    viewerWindowIds: input.viewerWindowIds,
+  };
   const referenced = input.referenced.map(item => {
-    const file = fileByIdentity.get(sourceUrlIdentity(item.url));
+    const matchedFile = matchSourceFile(input.sourceFiles, item);
     const request = matchSourceRequest(input.requests || [], item.url, item);
+    const required = isRequiredReferencedSource(item, coverageInput);
+    const captured = Boolean(matchedFile);
     return {
       url: item.url,
       kind: item.kind,
       ...(item.initiator ? { initiator: item.initiator } : {}),
-      captured: Boolean(file),
-      missing: !file,
-      ...(request?.id ? { requestId: request.id } : file ? { requestId: file.id } : {}),
+      ...(item.captureWindowId ? { captureWindowId: item.captureWindowId } : {}),
+      ...(item.windowRole ? { windowRole: item.windowRole } : {}),
+      required,
+      captured,
+      missing: !captured,
+      ...(request?.id ? { requestId: request.id } : matchedFile ? { requestId: matchedFile.id } : {}),
     };
   });
   const skipped = (input.requests || [])

@@ -16,7 +16,7 @@ import { overlayPathEvidence, scoreCapturedKvmFamily } from '../signatures/detec
 import { detectProductHints } from '../signatures/detectProductHints';
 import { buildProbeArtifacts } from '../probe/buildProbeArtifacts';
 import { applyReadinessToCapturePack } from '../readiness/applyReadinessToCapturePack';
-import { buildReadinessChecklist } from '../readiness/buildReadinessChecklist';
+import { buildReadinessChecklist, reliableKvmWindows } from '../readiness/buildReadinessChecklist';
 import { validateRedactionForExport } from '../redaction/validateRedactionForExport';
 import { buildCapturePackFileName } from './buildCapturePackFileName';
 import { buildPackReadmeArtifact } from './buildPackReadmeArtifact';
@@ -134,6 +134,11 @@ export function assembleCapturePackForExport(
       ...input.network,
       sourceFiles: input.sourceFiles,
       referencedScripts: pageReferencedScriptsFromEvents(input.page.events),
+      host: probe.basic.host,
+      unclassified: familySignatures.primary === 'unknown-h5' || familySignatures.primary === 'not-h5',
+      viewerWindowIds: reliableKvmWindows(input.network)
+        .map(window => window.captureWindowId)
+        .filter((id): id is string => Boolean(id)),
     }),
     {
       path: 'http/capture-status.json',

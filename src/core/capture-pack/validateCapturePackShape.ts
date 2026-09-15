@@ -202,8 +202,13 @@ export function validateSourceInventoryIntegrity(input: {
   }
   if (Array.isArray(inventory.referenced)) {
     for (const [index, item] of inventory.referenced.entries()) {
-      if (isRecord(item) && item.missing === true && input.readiness === 'YES') {
-        errors.push(`http/sources.json.referenced[${index}] 页面引用缺失源码文件`);
+      if (
+        isRecord(item) &&
+        item.missing === true &&
+        item.required === true &&
+        input.readiness === 'YES'
+      ) {
+        errors.push(`http/sources.json.referenced[${index}] 关键页面引用缺失源码文件`);
       }
     }
   }

@@ -12,6 +12,7 @@ import {
 import { createNetworkRecorder } from '../../core/network/createNetworkRecorder';
 import { kvmWebSocketEvidence, reliableKvmWindows } from '../../core/readiness/buildReadinessChecklist';
 import { sourceUrlIdentity } from '../../core/network/sourceCapture';
+import { redactUrl } from '../../core/redaction/redactSensitiveData';
 import { attachCdpNetworkCapture, type CdpDebuggerLike } from './attachCdpNetworkCapture';
 
 export interface ChromiumAccessInfo {
@@ -137,9 +138,14 @@ async function recordReferencedScripts(
     const key = group.captureWindowId || group.windowRole;
     if (previousScriptsFingerprint.get(key) === fingerprint) continue;
     previousScriptsFingerprint.set(key, fingerprint);
-    timeline.recordPageScripts(scripts, group.windowRole, group.captureWindowId, {
-      ...(group.truncated ? { truncated: true, total: group.total } : {}),
-    });
+    timeline.recordPageScripts(
+      scripts.map(item => ({ ...item, url: redactUrl(item.url) })),
+      group.windowRole,
+      group.captureWindowId,
+      {
+        ...(group.truncated ? { truncated: true, total: group.total } : {}),
+      },
+    );
   }
 }
 

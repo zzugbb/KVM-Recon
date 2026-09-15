@@ -25,7 +25,9 @@
 | `operator-observed.schema.json` | `probe/operator-observed.json`（现场铭牌，可选） |
 | `probe-authenticated.schema.json` | `probe/authenticated.json`（登录后复验，可选） |
 | `http-adapter-evidence.schema.json` | `http/adapter-evidence.json` |
+| `http-sources.schema.json` | `http/sources.json` |
+| `network-capture-status.schema.json` | `http/capture-status.json` |
 
-`http/har.json` 遵循 HAR 1.2，不另写一份项目内 Schema。`page/screenshots/` 下的 PNG 与 `artifacts/*` 不是 JSON。
+`http/har.json` 遵循 HAR 1.2，不另写一份项目内 Schema。`page/screenshots/` 下的 PNG 与 `artifacts/*` 不是 JSON。`page/scripts.json` 仅在采集到 `page-scripts` 时出现，字段与 timeline 中的引用清单一致，不另写 Schema。`page/timeline.jsonl` 的 `page-scripts` 行由 `page-timeline-event.schema.json` 覆盖。
 
 不在本工具内做在线分析；这些文件只用于离线校验资料包形状。

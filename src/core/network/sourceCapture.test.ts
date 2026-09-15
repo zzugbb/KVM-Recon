@@ -4,6 +4,7 @@ import type { HttpRequestRecord } from './createNetworkRecorder';
 import {
   adapterSourceCandidates,
   adapterSourceCoverage,
+  buildSourceInventory,
   classifySourceKind,
   isCompleteAdapterSource,
   isJavascriptSourceText,
@@ -243,5 +244,147 @@ describe('sourceCapture', () => {
       'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
       'https://10.10.8.101/kvmclient.js?resource_id=12',
     ]);
+  });
+
+  it('requires HPE iLO ordinary Viewer filenames in the reliable Viewer window', () => {
+    const viewerWindowIds = ['popup-ilo'];
+    const homepage = request({
+      id: 'home-chunk',
+      url: 'https://10.10.8.94/static/js/8f3a21.chunk.js',
+      resourceType: 'script',
+      windowRole: 'main',
+      captureWindowId: 'win-main',
+      responseBodyCaptured: false,
+    });
+    const jquery = request({
+      id: 'jquery',
+      url: 'https://10.10.8.94/js/jquery.js',
+      resourceType: 'script',
+      windowRole: 'popup',
+      captureWindowId: 'popup-ilo',
+    });
+    const worker = request({
+      id: 'worker',
+      url: 'https://10.10.8.94/js/worker_decoder.js',
+      resourceType: 'script',
+      windowRole: 'popup',
+      captureWindowId: 'popup-ilo',
+      responseBodyCaptured: true,
+      sourceSha256: 'd'.repeat(64),
+      sourceBytes: 800,
+      sourceTruncated: false,
+      responseBodySummary: {
+        bytes: 800,
+        redactedFields: [],
+        sample: `self.onmessage=function(){${'A'.repeat(64)}}`,
+      },
+    });
+    const hpeNames = ['application.js', 'socket.js', 'state.js', 'iLO.js', 'constants.js'];
+    const referenced = [
+      ...hpeNames.map(name => ({
+        url: `https://10.10.8.94/js/${name}`,
+        kind: 'javascript' as const,
+        captureWindowId: 'popup-ilo',
+        windowRole: 'popup' as const,
+      })),
+      {
+        url: 'https://10.10.8.94/js/worker_decoder.js',
+        kind: 'javascript' as const,
+        captureWindowId: 'popup-ilo',
+        windowRole: 'popup' as const,
+      },
+      {
+        url: 'https://10.10.8.94/js/jquery.js',
+        kind: 'javascript' as const,
+        captureWindowId: 'popup-ilo',
+        windowRole: 'popup' as const,
+      },
+    ];
+    expect(
+      adapterSourceCandidates([homepage, jquery, worker], {
+        host: '10.10.8.94',
+        unclassified: true,
+        viewerWindowIds,
+      }).map(item => item.id),
+    ).toEqual(['worker']);
+    const coverage = adapterSourceCoverage({
+      requests: [homepage, jquery, worker],
+      referenced,
+      host: '10.10.8.94',
+      unclassified: true,
+      viewerWindowIds,
+    });
+    expect(coverage.missingReferenced.map(item => item.url)).toEqual(
+      hpeNames.map(name => `https://10.10.8.94/js/${name}`),
+    );
+    expect(coverage.candidates.map(item => item.id)).toEqual(['worker']);
+  });
+
+  it('matches redacted query tokens without treating them as a different source', () => {
+    const captured = request({
+      id: 'viewer',
+      url: 'https://10.10.8.101/vmc/vconsole?token=<redacted:sha256:abcd1234efgh5678:len:12>&vck=1',
+      resourceType: 'document',
+      captureWindowId: 'popup-kvm',
+      windowRole: 'popup',
+      responseBodyCaptured: true,
+      sourceSha256: 'a'.repeat(64),
+      sourceBytes: 256,
+      sourceTruncated: false,
+      responseBodySummary: {
+        bytes: 256,
+        redactedFields: [],
+        sample: `<!doctype html><html><body>${'A'.repeat(64)}</body></html>`,
+      },
+    });
+    const coverage = adapterSourceCoverage({
+      requests: [captured],
+      referenced: [
+        {
+          url: 'https://10.10.8.101/vmc/vconsole?token=secret-token&vck=1',
+          kind: 'html',
+          captureWindowId: 'popup-kvm',
+          windowRole: 'popup',
+        },
+      ],
+      host: '10.10.8.101',
+      unclassified: true,
+      viewerWindowIds: ['popup-kvm'],
+    });
+    expect(coverage.missingReferenced).toEqual([]);
+    expect(coverage.incomplete).toEqual([]);
+  });
+
+  it('does not mark another window\'s source file as captured for the current Viewer', () => {
+    const inventory = buildSourceInventory({
+      sourceFiles: [
+        {
+          id: 'old',
+          url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+          kind: 'javascript',
+          sha256: 'a'.repeat(64),
+          bytes: 12,
+          truncated: false,
+          text: 'function a(){}',
+          captureWindowId: 'win-main',
+          windowRole: 'main',
+        },
+      ],
+      referenced: [
+        {
+          url: 'https://10.10.8.101/vmc/vconsole/main.36508cda.js',
+          kind: 'javascript',
+          captureWindowId: 'popup-kvm',
+          windowRole: 'popup',
+        },
+      ],
+      unclassified: true,
+      viewerWindowIds: ['popup-kvm'],
+    });
+    expect(inventory.referenced[0]).toMatchObject({
+      required: true,
+      captured: false,
+      missing: true,
+    });
   });
 });

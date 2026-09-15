@@ -609,6 +609,8 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       bytes: sourceBytes,
       truncated: truncatedFile,
       text,
+      ...(existing.captureWindowId ? { captureWindowId: existing.captureWindowId } : {}),
+      ...(existing.windowRole ? { windowRole: existing.windowRole } : {}),
     });
   }
 

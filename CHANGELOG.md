@@ -9,10 +9,11 @@
 
 ## [0.2.7] - 2026-09-14
 
-- Viewer/登录源码按清单与完整性判定：未知族只要求 Viewer 关键依赖（main/polyfills/runtime/worker 与 kvm/viewer 等），首页/登录页其余脚本完整与否不再挡住 YES。
-- 从 `document.scripts` / `performance` / iframe 建立页面引用源码清单，并与 Network/`http/sources.json` 按窗口和完整 URL（含 query）核对；只采到 worker、漏掉 `main`/`polyfills` 时未知族为 PARTIAL。
-- HTTP(S) 弹窗保留原生 `window.open`（`allow`），以保留 Window 句柄、`window.opener`、frameName、referrer 和 `target=_blank` POST；CDP 在 `did-create-window` 后尽快 attach。
-- 源码读取按 `Network.dataReceived.dataLength`（解压大小）与 `encodedDataLength` 的较大值提前拒绝超过 2 MiB 的响应；最多保存 24 个文件、合计约 8 MiB，超预算记 `source-budget-exceeded`。
+- Viewer/登录源码按清单与完整性判定：未知族要求可靠 Viewer 窗口内的第一方脚本（含惠普 `application.js` / `iLO.js` 等普通文件名）以及 main/polyfills/runtime/worker 与 kvm/viewer 等关键词；首页其余脚本完整与否不再挡住 YES。
+- 从 `document.scripts` / `performance` / iframe 建立页面引用源码清单，并与 Network/`http/sources.json` 按窗口和规范化 URL（敏感 query 去值后比对）核对；只采到 worker、漏掉 Viewer 主脚本时未知族为 PARTIAL。
+- HTTP(S) 弹窗保留原生 `window.open`（`allow`），以保留 Window 句柄、`window.opener`、frameName、referrer 和 `target=_blank` POST；弹窗首个 HTTP 触发时立即 attach CDP，且先注册监听再 `Network.enable`，避免漏采 Document/主脚本。
+- `http/sources.json` 的 `referenced.required` 区分关键源码与信息性引用；YES 包重新打开时只阻断缺失的关键项。
+- 打包链路 `js-yaml` 通过 overrides 固定到 `4.3.2`，修复 empty merge 的 High 级 DoS。
 - JavaScript 识别同时看 CDP `resourceType=Script` 与 IIFE/`!function` 正文，错误 MIME 不再只留 512 字符。
 - 导出独立源码文件 `http/sources/*.js|html` 与 `http/sources.json`（最长约 2 MiB），JSONL 仍只保留 64 KiB 摘要。
 - 打开/对比 zip 时校验源码清单路径、字节数与 SHA-256；未知族 YES 必须含完整源码。

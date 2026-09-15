@@ -1,4 +1,4 @@
-import { BrowserWindow, session } from 'electron';
+import { BrowserWindow, session, webContents, type WebContents } from 'electron';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -141,6 +141,46 @@ export function createElectronCaptureBrowserAdapter(
     async createWindow(options: CaptureBrowserAdapterOptions): Promise<CaptureBrowserWindowHandle> {
       const captureSession = session.fromPartition(options.partition);
       registerCaptureSession(captureSession);
+      const cdpByContentsId = new Map<number, Promise<void>>();
+      function ensureCdp(contents: WebContents) {
+        const existing = cdpByContentsId.get(contents.id);
+        if (existing) return existing;
+        const matched = [...windows].find(
+          candidate => windowAlive(candidate) && candidate.webContents.id === contents.id,
+        );
+        const windowRole = matched
+          ? windowRoles.get(matched) || 'popup'
+          : debuggerCount === 0
+            ? 'main'
+            : 'popup';
+        const started = (async () => {
+          try {
+            await options.onNetworkDebugger(contents.debugger as unknown as CdpDebuggerLike, {
+              windowRole,
+              captureWindowId: String(contents.id),
+              openerCaptureWindowId: matched ? windowOpeners.get(matched) : undefined,
+              ancestorCaptureWindowIds: matched ? windowAncestors.get(matched) : undefined,
+            });
+            recordCaptureWindowLog(`capture-cdp-attached role=${windowRole}`);
+          } catch (error) {
+            // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
+            // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝
+            options.onAttachFailure?.(String(contents.id), 'cdp-attach-failed');
+            recordCaptureWindowLog(`capture-cdp-attach-failed window=${contents.id}`);
+            void error;
+          }
+        })();
+        cdpByContentsId.set(contents.id, started);
+        return started;
+      }
+      captureSession.webRequest.onBeforeRequest((details, callback) => {
+        const contents =
+          typeof details.webContentsId === 'number' ? webContents.fromId(details.webContentsId) : undefined;
+        if (contents && contents.session === captureSession && contents.getType() === 'window') {
+          void ensureCdp(contents);
+        }
+        callback({});
+      });
       captureSession.setCertificateVerifyProc((_request, callback) => {
         // 采集分区只打开目标 BMC。现场自签证书在 Chrome 要点「高级」；这里直接放行，避免白屏。
         callback(0);
@@ -260,18 +300,7 @@ export function createElectronCaptureBrowserAdapter(
         }
         if (attachDebugger) {
           try {
-            await options.onNetworkDebugger(
-              targetWindow.webContents.debugger as unknown as CdpDebuggerLike,
-              {
-                windowRole: windowRoles.get(targetWindow) || 'main',
-                captureWindowId: String(targetWindow.webContents.id),
-                openerCaptureWindowId: windowOpeners.get(targetWindow),
-                ancestorCaptureWindowIds: windowAncestors.get(targetWindow),
-              },
-            );
-            recordCaptureWindowLog(
-              `capture-cdp-attached role=${windowRoles.get(targetWindow) || 'unknown'}`,
-            );
+            await ensureCdp(targetWindow.webContents);
           } catch (error) {
             // 捕获 debugger.attach 或 Network.enable 失败：弹窗 CDP 可能被占用
             // 策略：记入 attachFailures，窗口继续用于截图，避免未处理拒绝

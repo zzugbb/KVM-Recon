@@ -1502,6 +1502,99 @@ describe('buildReadinessChecklist', () => {
     expect(checklist.readiness).toBe('PARTIAL');
   });
 
+  it('downgrades HPE iLO when Viewer window only captured worker_decoder.js', () => {
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...completeProbe,
+        basic: { ...completeProbe.basic, host: '10.10.8.94', vendor: '', product: '' },
+        paths: {},
+        familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
+      },
+      page: {
+        ...pageWithScreenshot,
+        events: [
+          ...pageWithScreenshot.events,
+          {
+            type: 'page-scripts',
+            windowRole: 'popup',
+            captureWindowId: 'popup-ilo',
+            timestamp: '2026-09-14T12:00:03.000+08:00',
+            scripts: [
+              'application.js',
+              'socket.js',
+              'state.js',
+              'iLO.js',
+              'constants.js',
+              'worker_decoder.js',
+            ].map(name => ({
+              url: `https://10.10.8.94/js/${name}`,
+              kind: 'javascript',
+              initiator: name === 'worker_decoder.js' ? 'worker' : 'script-tag',
+            })),
+          },
+        ],
+      },
+      network: {
+        httpRequests: [
+          {
+            id: 'login-1',
+            timestamp: '2026-09-14T12:00:00.000+08:00',
+            method: 'POST',
+            url: 'https://10.10.8.94/login',
+            resourceType: 'xhr',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'set-cookie': 'SID=<redacted:sha256:sample>' } as Record<string, string>,
+            requestBodySummary: { bytes: 16, redactedFields: ['Password'] },
+            responseBodySummary: { bytes: 8, redactedFields: [] },
+            tags: ['login' as const],
+          },
+          {
+            id: 'worker-1',
+            timestamp: '2026-09-14T12:00:02.000+08:00',
+            method: 'GET',
+            url: 'https://10.10.8.94/js/worker_decoder.js',
+            resourceType: 'script',
+            status: 200,
+            requestHeaders: {},
+            responseHeaders: { 'content-type': 'application/javascript' },
+            requestBodySummary: { bytes: 0, redactedFields: [] },
+            responseBodySummary: {
+              bytes: 800,
+              redactedFields: [],
+              sample: `self.onmessage=function(){${'A'.repeat(64)}}`,
+            },
+            responseBodyCaptured: true,
+            sourceKind: 'javascript' as const,
+            sourceSha256: 'd'.repeat(64),
+            sourceBytes: 800,
+            sourceTruncated: false,
+            tags: [],
+            windowRole: 'popup' as const,
+            captureWindowId: 'popup-ilo',
+          },
+        ],
+        webSockets: completeNetwork.webSockets.map(socket => ({
+          ...socket,
+          url: 'wss://10.10.8.94/kvm',
+          captureWindowId: 'popup-ilo',
+          windowRole: 'popup' as const,
+        })),
+        webSocketFrames: completeNetwork.webSocketFrames,
+      },
+      redaction: { status: 'pass', redactedFields: 1 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'http.viewer_source')).toMatchObject({
+      status: 'missing',
+      evidence: expect.arrayContaining([
+        'missing:https://10.10.8.94/js/application.js',
+        'missing:https://10.10.8.94/js/iLO.js',
+      ]),
+    });
+    expect(checklist.readiness).toBe('PARTIAL');
+  });
+
   it('downgrades unknown families when one required source is truncated even if another is complete', () => {
     const checklist = buildReadinessChecklist({
       probe: {
