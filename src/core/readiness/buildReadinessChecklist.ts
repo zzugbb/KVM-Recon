@@ -8,6 +8,7 @@ import type {
 } from '../capture-pack/types';
 import type { ProbeBmcTargetResult } from '../probe/probeBmcTarget';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
+import { detectProductHints } from '../signatures/detectProductHints';
 import { isHuaweiVmediaWebSocketUrl, isKnownKvmWebSocketUrl } from '../signatures/kvmUrlPatterns';
 import {
   criticalPayloadGaps,
@@ -95,6 +96,7 @@ function isReliableLoginRequest(request: HttpRequestRecord) {
     /\/api\/(?:secure_session|session|session_encrypted)/i,
     /sessionservice\/sessions/i,
     /sessionservice\.createsession/i,
+    /\/redfish\/v1\/sessions(?:[/?#]|$)/i,
     /\/sysmgmt\/2015\/bmc\/session/i,
     /\/json\/login_session/i,
     /\/bmc\/php\/(?:dologin|login)\.php/i,
@@ -474,6 +476,21 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
   const wsIds = kvmWebSocketEvidence(input.network);
   const screenshots = screenshotEvidence(input.page);
   const tls = tlsEvidence(input.probe);
+  const productHints = detectProductHints({
+    redfish: {
+      vendor: input.probe?.basic.vendor,
+      product: input.probe?.basic.product,
+    },
+    traffic: {
+      httpUrls: (input.network?.httpRequests || []).map(request => request.url),
+      webSocketUrls: (input.network?.webSockets || []).map(socket => socket.url),
+      frameHeads: (input.network?.webSocketFrames || []).map(frame => frame.magic || frame.headHex),
+      frameHeadHexes: (input.network?.webSocketFrames || []).map(frame => frame.headHex),
+    },
+  });
+  const hpeDirectWs =
+    productHints.some(hint => hint.productFamily === 'hpe-ilo-h5') &&
+    (input.network?.webSockets || []).some(socket => /\/wss\/ircport(?:[/?#]|$)/i.test(socket.url));
 
   const items: ChecklistItem[] = [
     item({
@@ -510,10 +527,10 @@ export function buildReadinessChecklist(input: BuildReadinessChecklistInput): Ca
     item({
       id: 'http.key_api',
       title: 'KVM 关键 HTTP API',
-      status: statusForEvidence(httpIds, 'missing'),
+      status: hpeDirectWs ? 'not_applicable' : statusForEvidence(httpIds, 'missing'),
       severity: 'warning',
-      evidence: httpIds,
-      userAction: httpIds.length
+      evidence: hpeDirectWs ? ['hpe-ilo-h5:direct-ws:/wss/ircport'] : httpIds,
+      userAction: httpIds.length || hpeDirectWs
         ? ''
         : '请打开 KVM viewer 后等待 token、h5viewercfg、KvmService、SetKvmKey 或明确 KVM 启动接口完成。不要手工探测这些接口。',
     }),

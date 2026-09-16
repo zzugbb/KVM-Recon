@@ -138,4 +138,44 @@ describe('detectProductHints', () => {
       }),
     ).toEqual([]);
   });
+
+  it('does not infer HPE iLO from Dell FailoverFQDD URLs', () => {
+    const hints = detectProductHints({
+      observed: { vendor: 'Dell', product: 'PowerEdge R740' },
+      traffic: {
+        httpUrls: [
+          'https://10.10.8.88/redfish/v1/Managers/iDRAC.Embedded.1/Attributes?FailoverFQDD=NIC.Integrated.1-1-1',
+          'https://10.10.8.88/sysmgmt/2015/bmc/session',
+        ],
+        webSocketUrls: ['wss://10.10.8.88:5900/vkvm/'],
+      },
+    });
+
+    expect(hints.map(item => item.productFamily)).toContain('dell-idrac-h5');
+    expect(hints.map(item => item.productFamily)).not.toContain('hpe-ilo-h5');
+  });
+
+  it('recognizes HPE iLO5 Redfish login together with the IRC WebSocket', () => {
+    const hints = detectProductHints({
+      redfish: { vendor: 'HPE', product: 'ProLiant DL385 Gen10 Plus' },
+      traffic: {
+        httpUrls: ['https://10.10.8.166/redfish/v1/Sessions/'],
+        webSocketUrls: ['wss://10.10.8.166/wss/ircport'],
+      },
+    });
+
+    expect(hints[0]).toMatchObject({ productFamily: 'hpe-ilo-h5' });
+    expect(hints[0]?.evidence).toEqual(
+      expect.arrayContaining(['http:/redfish/v1/Sessions', 'ws:/wss/ircport']),
+    );
+  });
+
+  it('does not treat a generic Redfish Sessions endpoint as HPE by itself', () => {
+    expect(
+      detectProductHints({
+        redfish: { vendor: 'Acme', product: 'Generic BMC' },
+        traffic: { httpUrls: ['https://bmc.example/redfish/v1/Sessions/'] },
+      }).map(item => item.productFamily),
+    ).not.toContain('hpe-ilo-h5');
+  });
 });

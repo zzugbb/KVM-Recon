@@ -27,6 +27,8 @@ The capture tool writes one of five **capture buckets** (`ami-megarac` / `openbm
 
 AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, one-shot KVM launch/token, or Viewer/Worker source request is still missing—not that a same-window GET KvmService poll happened to be in flight at export time. A later POST to the same URL still counts as incomplete. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
 
+Product-specific readiness also understands H3C HDM2, Dell iDRAC, and HPE iLO evidence while keeping them in the `unknown-h5` capture bucket. Dell header-based login does not require a synthetic POST body; HPE iLO5 Redfish Sessions is a login endpoint, and `/wss/ircport` is the direct KVM transport rather than a missing token API. Dell ES2015/ES5 differential bundles are alternatives, not two mandatory copies.
+
 ## Download
 
 Get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) and check `SHA256SUMS.txt`. Maintainer release steps are in `docs/releasing.md`.
@@ -63,7 +65,7 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop. Optional field-zip regression reads `KVM_RECON_FIELD_PACKS`; it is skipped when that env is unset or the directory is missing.
+- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop. Optional field regressions read `KVM_RECON_FIELD_PACKS` (0.2.9 representative packs) and `KVM_RECON_FIELD_COLLECTION_2` (27 ZIP + 16 HAR corpus); each suite is skipped when its env is unset or the directory is missing.
 - `npm run test:e2e`: production capture E2E covering Electron launch, native popup, production Capture Controller, main/popup Documents, HTML/JS bodies, sourceFiles, `target=_blank` POST, referrer, window lineage, redaction, and ZIP self-check (build first)
 - `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 

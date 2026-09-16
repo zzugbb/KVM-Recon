@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-09-16
+
+- Dell iDRAC `/sysmgmt/2015/bmc/session` 使用 `user` / `password` 请求头认证时不再误报登录 POST 正文缺失；仍要求两个脱敏后的头名同时存在。
+- HPE iLO5 `/redfish/v1/Sessions/` 纳入登录链；iLO `/wss/ircport` 作为直接 KVM 通道时，关键 HTTP API 项为不适用，不再强求不存在的 Token 接口。
+- HPE 产品提示只从 Redfish/铭牌身份或 iLO 专属路径产生，不再因 Dell URL 中的 `FailoverFQDD` 子串误报 HPE。
+- AMI IVTP 弱首字节只在 `/kvm` 且声明 `binary` / `base64` 子协议的 WebSocket 上标记，HPE IRC 等二进制流不再被提示为 AMI。
+- Dell Angular 差分加载的 ES2015 / ES5 主包按逻辑 bundle 互为替代；现代 Chromium 已完整采到 ES2015 时，不再因未加载 `nomodule` ES5 包而 PARTIAL。
+- 提升 HPE iLO、Dell DVC/APCP 与 Viewer Worker 关键源码的预算优先级；不提高 24 文件 / 8 MiB 安全上限。
+- 新增 `KVM_RECON_FIELD_COLLECTION_2` 可选离线门禁，覆盖 27 个现场 ZIP、16 份 HAR、H3C HDM2、Dell 两种 Viewer、HPE iLO4/iLO5 及现有 AMI/Huawei 回归。
+
 ## [0.2.9] - 2026-09-15
 
 - AMI HTML5 同时识别 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg` 为明确 KVM 启动/Token 接口；后者不再当成宽泛 `kvm-entry`。`/api/session` + `h5viewercfg` 可作为 AMI 流量证据。采集器仍不主动探测这些接口。

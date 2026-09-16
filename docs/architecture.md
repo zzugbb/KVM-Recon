@@ -132,6 +132,8 @@ Recon 不主动请求 `/api/session`、`/api/kvm/token`、`/api/settings/media/h
 
 Readiness 综合登录链路、KVM 启动链路、WebSocket 升级、子协议和真实帧证据判断，不依赖单一 `kvm-video` 标签。登录链路必须是成功的 POST，并有 Session Cookie、Token 或成功响应结构；GET 登录页、DELETE、失败状态、未完成请求和 `/bmc/php/gettoken.php` 均不能充当登录成功。Huawei legacy 的 `/bmc/php/gettoken.php` 等 PHP 表单接口只纳入 KVM 启动链。AMI 启动链接受 `/api/kvm/token` 或 `/api/settings/media/h5viewercfg`。通用 `/websocket` 文本心跳不触发 viewer 截图；viewer 截图只有在正确窗口或子 target 收到可靠 KVM 证据后才自动生成。导出前会等待普通在途 HTTP 请求、响应体读取任务和短静默窗口；`http/capture-status.json` 保留全部 in-flight ID 与 CDP pending 任务。`network.capture.complete` 只对登录、一次性 KVM Token/启动接口、Viewer/Worker 源码和 Worker/OOPIF attach 降级。同窗口内已成功采过的 GET KvmService 资源查询（XHR/Fetch），导出瞬间仍在途时不单独把整包打成 `PARTIAL`；POST 等写操作、重复登录、重复 token/`h5viewercfg`、不同窗口的 Worker 仍为 `PARTIAL`。流式请求不阻塞空闲等待。
 
+Dell iDRAC 的 `/sysmgmt/2015/bmc/session` 允许在脱敏后仍同时存在 `user` / `password` 头时使用空 POST body；缺任一头仍判正文缺失。HPE iLO5 的 `/redfish/v1/Sessions/` 是登录接口，iLO `/wss/ircport` 是直接 KVM 通道，因此不要求额外 Token HTTP API。产品提示不改变五个采集桶。AMI IVTP 弱二进制魔数只在 `/kvm` 且声明 `binary` / `base64` 子协议时标记。
+
 ### 3.8 Exporter
 
 将采集结果打包为 Capture Pack。

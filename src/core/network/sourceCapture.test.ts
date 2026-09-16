@@ -9,6 +9,7 @@ import {
   isCompleteAdapterSource,
   isJavascriptSourceText,
   pageReferencedScriptsFromEvents,
+  sourceCapturePriority,
 } from './sourceCapture';
 
 function request(extra: Partial<HttpRequestRecord> & Pick<HttpRequestRecord, 'id' | 'url'>): HttpRequestRecord {
@@ -177,6 +178,69 @@ describe('sourceCapture', () => {
     expect(coverage.candidates.map(item => item.id)).toEqual(['worker']);
   });
 
+  it('accepts one complete Dell differential-loading bundle variant', () => {
+    const complete = (id: string, url: string) =>
+      request({
+        id,
+        url,
+        resourceType: 'script',
+        captureWindowId: 'popup-kvm',
+        windowRole: 'popup',
+        responseBodyCaptured: true,
+        sourceSha256: id.repeat(64).slice(0, 64),
+        sourceBytes: 1200,
+        sourceTruncated: false,
+        responseBodySummary: {
+          bytes: 1200,
+          redactedFields: [],
+          sample: `function startKvm(){${'A'.repeat(64)}}`,
+        },
+      });
+    const requests = [
+      complete(
+        'r',
+        'https://10.10.8.109/restgui/vconsole/runtime-es2015.c5fa8325f89fc516600b.js',
+      ),
+      complete(
+        'p',
+        'https://10.10.8.109/restgui/vconsole/polyfills-es2015.d0997d0f6cbb13bb23c8.js',
+      ),
+      complete(
+        'm',
+        'https://10.10.8.109/restgui/vconsole/main-es2015.e80153e5e3620607a000.js',
+      ),
+    ];
+    const referenced = [
+      ...requests.map(item => ({
+        url: item.url,
+        kind: 'javascript' as const,
+        captureWindowId: 'popup-kvm',
+        windowRole: 'popup' as const,
+      })),
+      ...[
+        'runtime-es5.c5fa8325f89fc516600b.js',
+        'polyfills-es5.d0997d0f6cbb13bb23c8.js',
+        'main-es5.e80153e5e3620607a000.js',
+      ].map(name => ({
+        url: `https://10.10.8.109/restgui/vconsole/${name}`,
+        kind: 'javascript' as const,
+        captureWindowId: 'popup-kvm',
+        windowRole: 'popup' as const,
+      })),
+    ];
+
+    const coverage = adapterSourceCoverage({
+      requests,
+      referenced,
+      host: '10.10.8.109',
+      unclassified: true,
+      viewerWindowIds: ['popup-kvm'],
+    });
+
+    expect(coverage.missingReferenced).toEqual([]);
+    expect(coverage.incomplete).toEqual([]);
+  });
+
   it('inherits page-scripts window context and keeps query parameters', () => {
     const scripts = pageReferencedScriptsFromEvents([
       {
@@ -318,6 +382,19 @@ describe('sourceCapture', () => {
       hpeNames.map(name => `https://10.10.8.94/js/${name}`),
     );
     expect(coverage.candidates.map(item => item.id)).toEqual(['worker']);
+  });
+
+  it('prioritizes protocol decoders over generic workers within the fixed source budget', () => {
+    const decoderPriority = sourceCapturePriority({
+      url: 'https://10.10.8.94/js/worker_decoder.js',
+      resourceType: 'script',
+    });
+    const genericPriority = sourceCapturePriority({
+      url: 'https://10.10.8.94/js/background.worker.js',
+      resourceType: 'script',
+    });
+
+    expect(decoderPriority).toBeGreaterThan(genericPriority);
   });
 
   it('matches redacted query tokens without treating them as a different source', () => {

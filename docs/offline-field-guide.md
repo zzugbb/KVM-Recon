@@ -52,6 +52,8 @@ AMI 机型打开 HTML5 KVM 时，有的固件走 `/api/kvm/token`，有的走 `/
 
 当前只有五个顶层采集桶：`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`。zip 中间段取自 `manifest.family.primary`，不是铭牌，也不是 `productHints`。
 
+新版会理解 Dell 请求头登录、HPE iLO5 Redfish 登录与 `/wss/ircport` 直接 KVM，以及 Dell ES2015/ES5 差分 bundle；这些规则只修正离场清单，不会把 Dell/HPE/H3C 提升成新的 ZIP 采集桶。
+
 默认导出文件名：
 
 ```text

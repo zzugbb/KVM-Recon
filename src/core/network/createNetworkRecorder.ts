@@ -221,7 +221,7 @@ function tagHttp(input: Pick<HttpRequestInput, 'method' | 'url' | 'requestHeader
   const lower = input.url.toLowerCase();
   const isStaticAsset = /\.(?:png|jpe?g|gif|svg|ico|css|js|map|woff2?|ttf|eot)(?:[?#]|$)/i.test(lower);
   const explicitLogin =
-    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|\/bmc\/php\/(?:dologin|login)\.php/.test(
+    /\/api\/(?:secure_session|session|session_encrypted)|sessionservice\/sessions|sessionservice\.createsession|\/redfish\/v1\/sessions(?:[/?#]|$)|\/sysmgmt\/2015\/bmc\/session|\/json\/login_session|\/bmc\/php\/(?:dologin|login)\.php/.test(
       lower,
     );
   const genericLogin = /(?:^|\/)(?:login|signin)(?:[/?#.]|$)/.test(lower);
@@ -477,7 +477,10 @@ function payloadToBytes(payload: string | Uint8Array): Uint8Array {
   return payload;
 }
 
-function detectFrameMagic(payload: string | Uint8Array): string | undefined {
+function detectFrameMagic(
+  payload: string | Uint8Array,
+  socket?: Pick<WebSocketRecord, 'url' | 'subProtocols'>,
+): string | undefined {
   const bytes = payloadToBytes(payload);
   const text =
     typeof payload === 'string' ? payload : new TextDecoder('utf8', { fatal: false }).decode(payload);
@@ -485,7 +488,12 @@ function detectFrameMagic(payload: string | Uint8Array): string | undefined {
   if (text.startsWith('RFB 003.')) return text.trim();
   if (text.startsWith('APCP')) return 'DELL_APCP';
   if (bytes[0] === 0xfe && bytes[1] === 0xf6) return 'HUAWEI_KVM_FEF6';
-  if ([0x13, 0x14, 0x17, 0x22, 0x35, 0x3a, 0x50, 0x53].includes(bytes[0] || 0)) {
+  const amiIvtpSocket = socket
+    ? /\/kvm(?:\?|$)/i.test(socket.url) &&
+      !/\/kvm\/video(?:[/?#]|$)/i.test(socket.url) &&
+      socket.subProtocols.some(protocol => /^(?:binary|base64)$/i.test(protocol))
+    : false;
+  if (amiIvtpSocket && [0x13, 0x14, 0x17, 0x22, 0x35, 0x3a, 0x50, 0x53].includes(bytes[0] || 0)) {
     return 'AMI_IVTP_BINARY';
   }
   return undefined;
@@ -858,7 +866,7 @@ export function createNetworkRecorder(options: CreateNetworkRecorderOptions) {
       }
 
       const bytes = payloadToBytes(input.payload);
-      const magic = detectFrameMagic(input.payload);
+      const magic = detectFrameMagic(input.payload, socket);
       const magicSampleKey =
         magic === 'AMI_IVTP_BINARY' ? `${magic}:${toHex(bytes, 1)}` : magic;
       const maxFrames = options.maxFramesPerSocket ?? 64;

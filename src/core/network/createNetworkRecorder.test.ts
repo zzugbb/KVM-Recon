@@ -101,6 +101,21 @@ describe('createNetworkRecorder', () => {
     expect(records[1]?.tags).toEqual(['kvm-token']);
   });
 
+  it('tags the HPE iLO5 Redfish Sessions endpoint as login', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordHttpRequest({
+      id: 'ilo5-login',
+      timestamp: '2026-09-16T12:00:00.000+08:00',
+      method: 'POST',
+      url: 'https://10.10.8.166/redfish/v1/Sessions/',
+      resourceType: 'xhr',
+      requestHeaders: { 'content-type': 'application/json' },
+      requestBody: '{"UserName":"admin","Password":"secret"}',
+    });
+
+    expect(recorder.toJSON().httpRequests[0]?.tags).toEqual(['login']);
+  });
+
   it('records WebSocket sockets and samples frame metadata without full payloads', () => {
     const recorder = createNetworkRecorder({ frameHeadBytes: 4 });
 
@@ -518,6 +533,42 @@ describe('createNetworkRecorder', () => {
       magic: 'AMI_IVTP_CONNECTION_ALLOWED',
       opcode: 'text',
     });
+  });
+
+  it('only labels opcode-like binary frames as AMI IVTP on an IVTP-shaped socket', () => {
+    const recorder = createNetworkRecorder({ frameHeadBytes: 8 });
+    recorder.recordWebSocketCreated({
+      id: 'ws-hpe',
+      timestamp: '2026-09-16T12:00:00.000+08:00',
+      url: 'wss://10.10.8.166/wss/ircport',
+      subProtocols: [],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-hpe',
+      timestamp: '2026-09-16T12:00:00.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array([0x50, 0x01, 0x02, 0x03]),
+    });
+    recorder.recordWebSocketCreated({
+      id: 'ws-ami',
+      timestamp: '2026-09-16T12:00:01.000+08:00',
+      url: 'wss://10.10.8.37/kvm',
+      subProtocols: ['binary', 'base64'],
+      requestHeaders: {},
+    });
+    recorder.recordWebSocketFrame({
+      socketId: 'ws-ami',
+      timestamp: '2026-09-16T12:00:01.100+08:00',
+      direction: 'down',
+      opcode: 'binary',
+      payload: new Uint8Array([0x50, 0x01, 0x02, 0x03]),
+    });
+
+    const frames = recorder.toJSON().webSocketFrames;
+    expect(frames.find(frame => frame.socketId === 'ws-hpe')?.magic).toBeUndefined();
+    expect(frames.find(frame => frame.socketId === 'ws-ami')?.magic).toBe('AMI_IVTP_BINARY');
   });
 
   it.each([

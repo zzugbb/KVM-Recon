@@ -32,6 +32,22 @@ function haystack(input: ProductHintInput): string {
     .join('\n');
 }
 
+function identityHaystack(input: ProductHintInput): string {
+  return [
+    input.redfish?.vendor,
+    input.redfish?.product,
+    input.observed?.vendor,
+    input.observed?.product,
+    input.observed?.firmware,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function hasHpeIdentity(text: string) {
+  return /\b(?:hp|hpe)\b|hewlett[ -]packard|\bproliant\b|\bilo(?:\s*\d+)?\b/i.test(text);
+}
+
 function hasUrl(input: ProductHintInput, pattern: RegExp) {
   return [...(input.traffic?.httpUrls || []), ...(input.traffic?.webSocketUrls || [])].some(url =>
     pattern.test(url),
@@ -70,6 +86,13 @@ function candidate(
 
 export function detectProductHints(input: ProductHintInput): ProductHint[] {
   const text = haystack(input);
+  const identity = identityHaystack(input);
+  const hpeIdentity = hasHpeIdentity(identity);
+  const hpeIloTraffic = hasUrl(
+    input,
+    /\/json\/login_session|\/js\/irc(?:KeyboardMouse)?\.js|\/html\/irc_common\.html|\/wss\/ircport/i,
+  );
+  const hpeRedfishSession = hasUrl(input, /\/redfish\/v1\/Sessions(?:[/?#]|$)/i);
   const h3cIdentity = /h3c|hdm/i.test(text);
   const h3cCreateSession = hasUrl(
     input,
@@ -105,8 +128,9 @@ export function detectProductHints(input: ProductHintInput): ProductHint[] {
       hasFrame(input, /^APCP/) ? 'frame:APCP' : '',
     ]),
     candidate('hpe-ilo-h5', 0.54, [
-      /\bhpe?\b|proliant|ilo/i.test(text) ? 'vendor/product:HPE iLO' : '',
+      hpeIdentity ? 'vendor/product:HPE iLO' : '',
       hasUrl(input, /\/json\/login_session/i) ? 'http:/json/login_session' : '',
+      hpeRedfishSession && (hpeIdentity || hpeIloTraffic) ? 'http:/redfish/v1/Sessions' : '',
       hasUrl(input, /\/js\/irc(?:KeyboardMouse)?\.js/i) ? 'http:/js/irc.js' : '',
       hasUrl(input, /\/html\/irc_common\.html/i) ? 'http:/html/irc_common.html' : '',
       hasUrl(input, HPE_IRCPORT_WS_PATTERN) ? 'ws:/wss/ircport' : '',

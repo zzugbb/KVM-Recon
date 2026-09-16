@@ -15,6 +15,11 @@ function requestHeader(request: HttpRequestRecord, name: string) {
   return Object.entries(request.requestHeaders).find(([key]) => key.toLowerCase() === name)?.[1] || '';
 }
 
+function hasDellHeaderCredentials(request: HttpRequestRecord) {
+  if (!/\/sysmgmt\/2015\/bmc\/session(?:[/?#]|$)/i.test(request.url)) return false;
+  return Boolean(requestHeader(request, 'user') && requestHeader(request, 'password'));
+}
+
 function hasLegacyKvmReferer(request: HttpRequestRecord) {
   const referer = `${requestHeader(request, 'referer')} ${requestHeader(request, 'referrer')}`.toLowerCase();
   return /\/bmc\/(?:pages\/remote\/kvm_by_html5\.html|resources\/js\/module\/remote\/html5\/)/.test(
@@ -127,6 +132,9 @@ export function correlatedLoginHttpIds(requests: HttpRequestRecord[], socket: We
 
 export function isCriticalRequestBodyMissing(request: HttpRequestRecord) {
   if (request.method.toUpperCase() !== 'POST') return false;
+  // iDRAC deliberately sends credentials in the `user` / `password` headers and has no POST body.
+  // Both header names must survive redaction before this request can count as complete.
+  if (hasDellHeaderCredentials(request)) return false;
   if (request.requestBodySkippedReason === 'get-request-post-data-failed') return true;
   return request.requestBodySummary.bytes <= 0;
 }

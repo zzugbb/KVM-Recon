@@ -241,6 +241,49 @@ describe('field capture regressions from existing on-site packs', () => {
     expect(hints[0]?.productFamily).toBe('hpe-ilo-h5');
   });
 
+  it('accepts HPE iLO5 Redfish login and direct IRC WebSocket without a token HTTP API', () => {
+    const login = {
+      ...http('login-ilo5', 'https://10.10.8.166/redfish/v1/Sessions/', ['login']),
+      method: 'POST',
+      status: 201,
+      requestBodySummary: { bytes: 50, redactedFields: ['Password', 'UserName'] },
+      responseHeaders: { 'x-auth-token': '<redacted:sha256:token>' },
+    };
+    const network = {
+      httpRequests: [login, http('irc-1', 'https://10.10.8.166/js/irc.js', ['kvm-entry'])],
+      webSockets: [
+        ws('ws-ilo5', 'wss://10.10.8.166/wss/ircport', {
+          tags: ['kvm-video'],
+          binaryFrameCount: 8,
+        }),
+      ],
+      webSocketFrames: [frame('ws-ilo5', '5001020304050607')],
+    };
+    const checklist = buildReadinessChecklist({
+      probe: {
+        ...baseProbe,
+        basic: {
+          ...baseProbe.basic,
+          vendor: 'HPE',
+          product: 'ProLiant DL385 Gen10 Plus',
+        },
+      },
+      page: {
+        jobId: 'field-hpe-ilo5',
+        events: [{ type: 'screenshot', path: 'page/screenshots/viewer.png', role: 'viewer' }],
+      },
+      network,
+      redaction: { status: 'pass', redactedFields: 2 },
+    });
+
+    expect(checklist.items.find(item => item.id === 'login.chain')?.status).toBe('pass');
+    expect(checklist.items.find(item => item.id === 'http.key_api')).toMatchObject({
+      status: 'not_applicable',
+      evidence: ['hpe-ilo-h5:direct-ws:/wss/ircport'],
+    });
+    expect(checklist.items.find(item => item.id === 'ws.kvm.established')?.status).toBe('pass');
+  });
+
   it('reclassifies Huawei legacy :2198/ traffic as Huawei and readiness can pass', () => {
     const network = {
       httpRequests: [

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  criticalPayloadGaps,
   correlatedKvmLaunchHttpIds,
   correlatedLoginHttpIds,
+  isCriticalRequestBodyMissing,
   isCriticalResponseBodyMissing,
   isExplicitKvmLaunchRequest,
   sameCaptureContext,
@@ -149,6 +151,28 @@ describe('kvmLaunchCorrelation', () => {
     expect(isExplicitKvmLaunchRequest(cfg)).toBe(true);
     expect(isExplicitKvmLaunchRequest({ ...cfg, tags: ['kvm-entry'] })).toBe(true);
     expect(correlatedKvmLaunchHttpIds([cfg], viewer)).toEqual(['cfg-1']);
+  });
+
+  it('accepts Dell iDRAC header credentials without inventing a POST body', () => {
+    const login = http('login-dell', 'https://10.10.8.109/sysmgmt/2015/bmc/session', {
+      method: 'POST',
+      status: 201,
+      tags: ['login'],
+      requestHeaders: {
+        user: '<redacted:sha256:user>',
+        password: '<redacted:sha256:password>',
+      },
+      requestBodySummary: { bytes: 0, redactedFields: [] },
+    });
+
+    expect(isCriticalRequestBodyMissing(login)).toBe(false);
+    expect(criticalPayloadGaps([login])).toEqual([]);
+    expect(
+      isCriticalRequestBodyMissing({
+        ...login,
+        requestHeaders: { user: '<redacted:sha256:user>' },
+      }),
+    ).toBe(true);
   });
 
   it('associates two concurrent Viewers by capture window lineage instead of request count', () => {

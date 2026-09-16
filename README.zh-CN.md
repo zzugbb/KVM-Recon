@@ -27,6 +27,8 @@ KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC �
 
 AMI MegaRAC HTML5 启动接口同时支持 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，只记录现场真实操作，不主动探测。`network.capture.complete` 的 PARTIAL 只针对登录、一次性 KVM 启动/Token、Viewer/Worker 源码等真正缺失的请求；同窗口已成功采过的 GET KvmService 查询不会单独降级；POST 等写操作仍会降级。Worker 入口脚本必须保存正文，旧包缺正文不能靠规则改成已采到。
 
+H3C HDM2、Dell iDRAC、HPE iLO 仍写入 `unknown-h5` 采集桶和独立 `productHints`，但 readiness 会按各自真实链路判断：Dell 请求头登录不强求虚构的 POST 正文；HPE iLO5 Redfish Sessions 计作登录，`/wss/ircport` 是直接 KVM 通道；Dell ES2015 / ES5 差分 bundle 任一实际加载版本完整即可。产品提示仍不改变 ZIP 包名，也不是自动生成 Adapter。
+
 ## 下载
 
 从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。
@@ -63,7 +65,7 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环。现场 zip 离线回归不硬编码本机路径：设置 `KVM_RECON_FIELD_PACKS` 为 zip 目录后再跑；未设置则跳过。
+- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环。现场语料不硬编码本机路径：`KVM_RECON_FIELD_PACKS` 用于 0.2.9 代表包，`KVM_RECON_FIELD_COLLECTION_2` 用于 27 个 ZIP + 16 份 HAR；未设置对应变量则跳过该组。
 - `npm run test:e2e`：生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验（需先 build）
 - `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 

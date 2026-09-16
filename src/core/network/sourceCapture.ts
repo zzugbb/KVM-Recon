@@ -44,6 +44,11 @@ const VENDOR_LIBRARY_HINT =
 
 const PRIMARY_BUNDLE_HINT = /\/(?:main|polyfills?|runtime)[^/]*\.m?js(?:[?#]|$)/i;
 const WORKER_HINT = /worker/i;
+const CRITICAL_KVM_WORKER_HINT =
+  /(?:decode[_-]?worker|worker[_-]?decoder|file\.worker|mouseworker|offscreenworker|mediaworkerhandler)/i;
+
+const VENDOR_KVM_SOURCE_HINT =
+  /(?:^|\/)(?:application|socket|state|ilo|constants|renderer|irc(?:KeyboardMouse)?|VMconnection|rpviewer|rphandlers|websockethandler|mediaworkerhandler|mouseworker|offscreenworker)\.js(?:[?#]|$)/i;
 
 export function isHtmlSourceText(text: string) {
   const head = text.replace(/^\uFEFF/, '').trimStart().slice(0, 512).toLowerCase();
@@ -112,7 +117,12 @@ export function sourceUrlIdentity(url: string) {
 }
 
 export function isKeyAdapterSourceUrl(url: string) {
-  return VIEWER_SOURCE_HINT.test(url) || PRIMARY_BUNDLE_HINT.test(url) || WORKER_HINT.test(url);
+  return (
+    VIEWER_SOURCE_HINT.test(url) ||
+    PRIMARY_BUNDLE_HINT.test(url) ||
+    WORKER_HINT.test(url) ||
+    VENDOR_KVM_SOURCE_HINT.test(url)
+  );
 }
 
 export function isViewerSourceContext(
@@ -197,6 +207,27 @@ export function adapterSourceCandidates(
 
 function pickBestSourceRequest(requests: HttpRequestRecord[]) {
   return requests.find(request => isCompleteAdapterSource(request)) || requests.at(-1);
+}
+
+function differentialBundleKey(url: string) {
+  const key = sourceUrlKey(url);
+  const match = key.match(/^(.*\/)(runtime|polyfills|main)-es(?:5|2015)(?:\.[^/]+)?\.m?js$/i);
+  if (!match) return '';
+  return `${match[1]}${match[2].toLowerCase()}-es-variant.js`;
+}
+
+function hasCompleteDifferentialBundleTwin(
+  requests: HttpRequestRecord[],
+  referenced: PageReferencedScript[],
+  item: PageReferencedScript | HttpRequestRecord,
+) {
+  const key = differentialBundleKey(item.url);
+  if (!key) return false;
+  return referenced.some(other => {
+    if (other.url === item.url || differentialBundleKey(other.url) !== key) return false;
+    const request = matchSourceRequest(requests, other.url, other);
+    return Boolean(request && isCompleteAdapterSource(request));
+  });
 }
 
 export function matchSourceRequest(
@@ -306,8 +337,10 @@ export function sourceCapturePriority(input: {
   if (ADAPTER_SOURCE_HINT.test(url)) score += 60;
   if (PRIMARY_BUNDLE_HINT.test(url)) score += 50;
   if (/html5viewer|vconsole|kvmclient|irc\.js/i.test(url)) score += 40;
+  if (VENDOR_KVM_SOURCE_HINT.test(url)) score += 35;
   if (/^document$/i.test(input.resourceType || '')) score += 20;
-  if (WORKER_HINT.test(url)) score -= 25;
+  if (CRITICAL_KVM_WORKER_HINT.test(url)) score += 45;
+  else if (WORKER_HINT.test(url)) score -= 25;
   return score;
 }
 
@@ -354,13 +387,17 @@ export function adapterSourceCoverage(input: {
     isRequiredReferencedSource(item, input),
   );
   const missingReferenced = requiredReferenced.filter(
-    item => !matchSourceRequest(input.requests, item.url, item),
+    item =>
+      !matchSourceRequest(input.requests, item.url, item) &&
+      !hasCompleteDifferentialBundleTwin(input.requests, requiredReferenced, item),
   );
   const capturedRequired = requiredReferenced
     .map(item => matchSourceRequest(input.requests, item.url, item))
     .filter((request): request is HttpRequestRecord => Boolean(request));
   const incomplete = [...new Set([...candidates, ...capturedRequired])].filter(
-    request => !isCompleteAdapterSource(request),
+    request =>
+      !isCompleteAdapterSource(request) &&
+      !hasCompleteDifferentialBundleTwin(input.requests, requiredReferenced, request),
   );
   return {
     candidates,
