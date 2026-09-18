@@ -2,6 +2,8 @@
 
 本文说明产品边界和当前状态。已完成阶段不再逐条展开；现场看 `docs/offline-field-guide.md`，出机房后看**包内** `README.md`。
 
+> **0.3.0 目标设计提示：** 本文主体记录 0.2.x 当前实现。下一阶段将重构为协议无关、证据优先的 Capture Pack 2.0 采集器；产品流程、无脱敏策略、单作业界面、手动导出、包格式和完整度门禁以 [`docs/v0.3-development-spec.md`](v0.3-development-spec.md) 为唯一权威规范。开发时不要把本文的 8 作业、包对比、大小限制、脱敏或 YES/PARTIAL/NO 继续带入新架构。
+
 ## 1. 目标
 
 机房离线运行的 macOS / Windows 桌面客户端：采集 BMC HTML5 KVM 适配所需资料，导出脱敏 Capture Pack，并用离场清单判断资料是否够离开机房后做网关适配。

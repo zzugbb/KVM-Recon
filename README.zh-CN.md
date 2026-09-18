@@ -73,6 +73,7 @@ npm run dev
 
 索引见 `docs/README.md`。
 
+- `docs/v0.3-development-spec.md`：0.3.0 证据优先采集重构的权威开发规范（目标设计，尚未实现）
 - `docs/offline-field-guide.md`：现场安装与采集
 - `docs/kvm-family.md`：采集桶与网关 `kvmFamily` 主键、未知族如何起名
 - `docs/capture-pack-spec.md`：Capture Pack 契约

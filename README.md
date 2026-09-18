@@ -73,6 +73,7 @@ npm run dev
 
 Index: `docs/README.md`.
 
+- `docs/v0.3-development-spec.md`: authoritative 0.3.0 evidence-first redesign specification (target design, not implemented yet)
 - `docs/offline-field-guide.md`: install and capture on site (Chinese)
 - `docs/kvm-family.md`: capture buckets vs gateway `kvmFamily` keys (Chinese)
 - `docs/capture-pack-spec.md`: Capture Pack contract

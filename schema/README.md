@@ -1,5 +1,7 @@
 # Capture Pack JSON Schema
 
+> **版本范围：Capture Pack 1.x / KVM-Recon 0.2.x。** 当前 Schema 必须保留，用于校验已发布格式和旧现场包。0.3.0 阶段 0 将新增版本化的 2.0 Schema；在迁移代码和测试之前不要删除或原地改写这些 1.x 文件。
+
 本目录是 Capture Pack 的独立 JSON Schema，方便出机房后用任意校验器核对 zip 内文件。
 
 权威实现仍是 TypeScript 类型与导出代码（`src/core/capture-pack/`）。Schema 与类型冲突时，以导出代码和本仓库单测为准，再回改 Schema。运行时仍使用轻量必填字段检查；单元测会用 Ajv 验证样例包与全部 Schema 持续一致。

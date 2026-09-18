@@ -1,5 +1,7 @@
 # KVM-Recon 技术架构
 
+> **版本范围：0.2.x 当前实现。** 本文用于维护已发布代码与 Capture Pack 1.x，不是 0.3.0 的目标架构。0.3.0 开发以 [`v0.3-development-spec.md`](v0.3-development-spec.md) 为准；发布 0.3.0 时再将本文重写为新架构，并把本版本归档。
+
 ## 1. 背景
 
 不同厂商和固件版本的 BMC HTML5 KVM 在登录方式、Cookie/Token、KVM 入口、WebSocket 子协议和加密细节上差异很大。KVM-Recon 的目标不是复刻生产网关，而是在机房现场离线采集新增 BMC/KVM 适配所需的事实资料，导出后供离场分析和网关兼容开发使用。

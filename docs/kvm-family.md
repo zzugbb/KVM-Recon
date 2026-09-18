@@ -1,5 +1,7 @@
 # kvmFamily：采集桶与网关主键
 
+> **版本范围：主要描述 0.2.x 的采集桶与现有网关命名。** “协议族与产品铭牌不能混用”“未知协议不要误改现有 Adapter”等原则继续有效；0.3.0 会把分类迁移为离线 Analyzer，采集完整度不再依赖本文件中的已知族规则，见 [`v0.3-development-spec.md`](v0.3-development-spec.md)。
+
 本文给**出机房后写 KVM 网关的人**看。现场采集步骤仍看 `docs/offline-field-guide.md`。
 
 KVM-Recon 会在 zip 名和 `manifest.family.primary` 里写一个标签。那只是采集器对**当前已实现的三套指纹**打分的结果，**不是**下游 Adapter 的主键。适配时以包内 HTTP / WebSocket 为准。

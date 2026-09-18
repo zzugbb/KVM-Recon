@@ -1,5 +1,7 @@
 # Capture Pack 与离场验收清单
 
+> **版本范围：Capture Pack 1.x / KVM-Recon 0.2.x。** 本文仍是当前安装包、旧现场包、现有 Schema 与回归测试的有效契约。Capture Pack 2.0 的目标格式见 [`v0.3-development-spec.md`](v0.3-development-spec.md)；在 0.3.0 实现完成前不要用目标格式改写本文。
+
 ## 1. 目标
 
 Capture Pack 是 KVM-Recon 的核心导出物。它需要让工程师在离开机房后仍能回答：
