@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Console Gateway</title></head>
+<body>
+<h1 id="login-title">BMC 管理控制台</h1>
+<p id="credential-hint">演示凭证：operator / operator-passphrase</p>
+<form id="login-form" method="post" action="/4baa81443f20/0f2b14d699">
+<input name="f7a6e1a53u" autocomplete="off">
+<input name="ff6f37e6dp" type="password">
+<input type="hidden" name="f0984682an" value="2184179f1bd3f4de2b878a46">
+<button type="submit" id="login-submit">登录</button>
+</form>
+<script id="login-digest">
+(function () {
+  var form = document.getElementById("login-form");
+  var userField = form.querySelector("input:not([type=hidden]):not([type=password])");
+  var passField = form.querySelector("input[type=password]");
+  var nonceField = form.querySelector("input[type=hidden]");
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var material = new TextEncoder().encode(passField.value + ":" + nonceField.value);
+    crypto.subtle.digest("SHA-256", material).then(function (digest) {
+      var hex = Array.from(new Uint8Array(digest)).map(function (byte) {
+        return byte.toString(16).padStart(2, "0");
+      }).join("");
+      var payload = {};
+      payload["f7a6e1a53u"] = userField.value;
+      payload["ff6f37e6dp"] = hex;
+      fetch(form.action, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.ok) {
+            sessionStorage.setItem("s8d3cc42f5ac", data.csrfToken);
+            location.href = "/4baa81443f20/935f1859fd.html";
+          }
+        });
+    });
+  });
+}());
+</script>
+</body>
+</html>

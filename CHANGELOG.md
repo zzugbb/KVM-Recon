@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+- 0.3.0 阶段 0（契约先行，经六轮审查修订）落地：新增 `src/core/capture-pack-v2/` 的 Capture Pack 2.0 类型契约——三正交状态（`captureIntegrity` COMPLETE/INCOMPLETE/LEGACY_UNVERIFIED、`workflowStatus` KVM_REACHED/LOGIN_REACHED/TARGET_OPENED、`classificationStatus` KNOWN/UNKNOWN，`COMPLETE + KVM_REACHED + UNKNOWN` 为合法组合）、11 个 `INCOMPLETE` 稳定原因代码（十项完整度门禁失败全部映射显式原因；`COMPLETE` = 无原因且十项门禁全过，门禁集合必须恰好覆盖十个唯一 ID）、`derivePackIntegrity` 完整度派生、`manifest.security` 固定 `UNREDACTED` / `containsSensitiveData=true`、`job.deviceLabel` 自由文本设备说明、§11 目录契约与 `00_START_HERE.md` 内容契约、§10 ZIP 命名（不含协议族，非法时间拒绝），以及 Capture Pack 1.x 导入固定 `LEGACY_UNVERIFIED` 且不可升级 `COMPLETE`。
+- 新增 `schema/2.0/`：30 个 JSON Schema 与 TypeScript 类型同步，含字段关系约束（`COMPLETE` 必须 `KVM_REACHED`；`COMPLETE` 的 reasons 为空且十项门禁全过；`INCOMPLETE` 至少一个原因；gates 恰好覆盖十个唯一门禁），Ajv 正负向测试校验；`ajv` 移入运行时依赖，导出时按包内 Schema 副本执行自校验。
+- 新增 `src/core/mock-kvm/createMockKvmServer.ts`：完全未知、随机 URL 的本地 Mock KVM（登录页 → 登录 API → 控制台 → KVM 启动 → Viewer 页 + Worker → 双向 WebSocket）；固定 seed 可复现；对现有全部厂商 URL/路径/帧签名零命中；样例驱动走 SHA-256 摘要凭据登录链。
+- 新增 11 个完整度失败 Fixture（每个 `INCOMPLETE` 原因一个）与正向 / legacy Fixture；新增独立样例包一致性验证器 `packV2Consistency.ts`：checksums 覆盖与重复条目、包内 Schema 自校验（30 个预期 Schema 必须全部在场，缺任一副本即 `PACK_SCHEMA_MISSING`；每个副本的 `$id` 必须与文件名对应，验证函数按文件名保存与调用，缺失即报错——不因缺 Schema、篡改 `$id` 或缺验证函数静默跳过）、状态一致与门禁 ID 合法性、正文/脚本/实时消息/下载/crypto/通道引用闭环（按 `channel.kind` 分派，WebSocket 必须有 payloadPath，catalog 通道与实时事件按 ID/URL 关联）、帧偏移、Viewer 双截图、空 journal 检测、00_START_HERE 契约、非法顶层条目、重复路径、relations/value-flow 节点与边的 evidencePath、value-flow 节点 evidenceId、replay 动态值节点与 `replay/http.jsonl` 引用，负向测试 36 项（另含 replay manifest ↔ replay/http ↔ catalog、replay channels ↔ catalog 逐项对齐、通道动态值集合相等、replay 各文件 ID 唯一、正文路径与 catalog BodyRef 逐项一致校验）。
+- Mock KVM 登录链改为真实摘要验证：登录页内联脚本通过 WebCrypto 计算 `SHA-256(passphrase:nonce)` 并提交，登录接口校验摘要（错误凭据返回 401）；阶段 2 的 Collector 必须从真实浏览器捕获该运行时加密链才能复现登录。
+- Mock KVM 登录验证用户名与摘要，会话严格校验：登录接口同时验证用户名（operator）与摘要凭据；console / launch / viewer / WS 握手统一 `hasValidSession()`，Cookie 值必须等于签发的 sessionToken（伪造同名 Cookie 一律 401/拒绝）。
+- Mock KVM 浏览器链路真实可走通：登录成功后脚本存 csrfToken 并跳转控制台；控制台按钮点击真实发起带 CSRF 头的启动请求（服务端校验，缺失/错误 403）后跳转 Viewer；Viewer 页脚本创建 Worker 并以查询参数携带 viewerToken 建立 WebSocket（服务端在升级握手校验会话 Cookie 与 token）。新增 Electron 真实浏览器流程 E2E（`e2e/mock-kvm-browser-flow.mjs`，真实键盘输入与鼠标点击走通登录 → 控制台 → Viewer → Worker → WebSocket，断言全部来自服务端观察到的请求与帧），已并入 `npm run test:e2e`。
+- Replay 通道契约闭环：`PackV2ReplayChannel` 与两个 replay Schema 增加 `requiresDynamicValueIds`（必填）；样例 WS 通道声明 value-0002（Session Cookie）与 value-0005（viewerToken）；一致性验证器新增 `REPLAY_MISMATCH`——manifest 请求必须逐项存在于 replay/http.jsonl 且 URL/method 与 replay/http.jsonl、catalog resources 一致（双向，不允许单侧删行）、manifest 通道与 replay/channels.json、catalog channels 三方对齐。
+- 样例包证据与 Mock 实际协议逐项一致：KVM 启动请求携带 CSRF 头；WS 握手 URL 含 viewerToken 查询参数且 Cookie 头为实际发送值；value-flow 记录 viewerToken → WS 查询参数的真实传播；删除无法从采集事实证明的 Worker↔WS `attached` 关系；storage 记录页面脚本实际写入 sessionStorage 的 csrfToken / viewerToken。
+- 实时消息字段进入 Schema 条件约束：WebRTC `datachannel-message` 必须携带方向/通道标识/消息序号/FIN/正文引用；WebTransport `stream-message`/`datagram` 必须携带正文引用；`completed=true` 的下载必须有 `fileRef`；成功的 crypto 调用必须有输入、输出或异常之一；SSE 行增加生命周期 `kind`（connected/event/error/closed）。
+- 数据契约补齐原始资料要求：NetLog 未识别字段与常量原样透传；WebRTC / WebTransport 消息行带方向、消息序号、通道/stream 标识、FIN 边界与正文引用；新增 `raw/realtime/sse.jsonl`（EventSource 事件与 dataRef）与 `raw/realtime/downloads.jsonl`（下载触发链与文件引用）；新增 `raw/runtime/crypto.jsonl` 运行时算法调用契约（算法、参数、输入输出 BodyRef、调用脚本位置、异常）；浏览器 Storage 增加 IndexedDB / CacheStorage；WebSocket metadata 增加协商扩展、关闭码与关闭原因，帧索引增加 continuation/FIN 边界；HTTP 事务增加发起栈（initiator/stackTrace）、Referer、frameId/windowId、内容编码、时序与连接信息。
+- 新增 `examples/capture-pack-v2/` 版本化样例包：COMPLETE + KVM_REACHED + UNKNOWN，由固定 seed Mock 驱动生成；完整度从观察事实与预验证派生（非预先声明），含 Viewer 初始与稳定双占位截图（真实画面由阶段 2 采集器生成）与摘要凭据登录链的 crypto 事实。
+- 当前版本仍为 0.2.10：阶段 1-6（磁盘工作区 / 采集器 / 完整度引擎 / AI 索引 / 新界面 / 全量验收）未实现，0.2.x 行为不变。
+
 ## [0.2.10] - 2026-09-16
 
 - Dell iDRAC `/sysmgmt/2015/bmc/session` 使用 `user` / `password` 请求头认证时不再误报登录 POST 正文缺失；仍要求两个脱敏后的头名同时存在。

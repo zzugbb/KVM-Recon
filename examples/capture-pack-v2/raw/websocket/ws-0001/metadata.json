@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "2.0.0",
+  "channelId": "ws-0001",
+  "url": "ws://127.0.0.1:48080/4baa81443f20/eed11298e3?t=76a0f653f5e653e37ab1c852ae71a9f8",
+  "targetId": "target-page-0001",
+  "createdAt": "2026-09-18T14:35:31+08:00",
+  "closedAt": "2026-09-18T14:35:38+08:00",
+  "requestedSubProtocols": [],
+  "acceptedSubProtocol": null,
+  "extensions": [],
+  "closeCode": 1000,
+  "closeReason": "sample-done",
+  "handshakeStatus": 101,
+  "requestHeaders": {
+    "cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252"
+  },
+  "responseHeaders": {
+    "upgrade": "websocket",
+    "connection": "Upgrade"
+  },
+  "frameCounts": {
+    "up": 2,
+    "down": 5
+  },
+  "framesBinPath": "raw/websocket/ws-0001/frames.bin"
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/browser-timeline-event.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/browser/timeline.jsonl 行",
+  "type": "object",
+  "required": ["occurredAt", "kind", "targetId"],
+  "additionalProperties": false,
+  "properties": {
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "navigation",
+        "popup-opened",
+        "hash-change",
+        "worker-created",
+        "channel-opened",
+        "screenshot-saved",
+        "dom-snapshot-saved"
+      ]
+    },
+    "targetId": { "type": "string", "minLength": 1 },
+    "url": { "type": "string" },
+    "detail": { "type": "string" }
+  }
+}

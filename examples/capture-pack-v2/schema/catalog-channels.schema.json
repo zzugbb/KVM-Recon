@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/catalog-channels.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 catalog/channels.json",
+  "type": "object",
+  "required": ["schemaVersion", "channels"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "channels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "url", "targetId", "createdAt", "closedAt", "payloadPath"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": ["websocket", "webrtc", "webtransport", "sse", "download", "other"]
+          },
+          "url": { "type": ["string", "null"] },
+          "targetId": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "minLength": 1 },
+          "closedAt": { "type": ["string", "null"] },
+          "frameCounts": {
+            "type": ["object", "null"],
+            "required": ["up", "down"],
+            "additionalProperties": false,
+            "properties": {
+              "up": { "type": "integer", "minimum": 0 },
+              "down": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "payloadPath": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

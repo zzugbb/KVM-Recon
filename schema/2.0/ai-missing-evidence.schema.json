@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/ai-missing-evidence.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 ai/missing-evidence.json",
+  "type": "object",
+  "required": ["schemaVersion", "captureIntegrity", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reason", "title", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "enum": [
+              "INCOMPLETE_BODY_MISSING",
+              "INCOMPLETE_TARGET_ATTACH",
+              "INCOMPLETE_WORKER_SOURCE",
+              "INCOMPLETE_CHANNEL_GAP",
+              "INCOMPLETE_UNSUPPORTED_CHANNEL",
+              "INCOMPLETE_STORAGE_LIMIT",
+              "INCOMPLETE_EXPORT_VALIDATION",
+              "INCOMPLETE_WORKFLOW_NOT_REACHED",
+              "INCOMPLETE_RAW_JOURNAL",
+              "INCOMPLETE_BROWSER_STATE",
+              "INCOMPLETE_EVIDENCE_REFERENCE"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "detail": { "type": "string", "minLength": 1 },
+          "evidencePath": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "2.0.0",
+  "targets": [
+    {
+      "id": "target-page-0001",
+      "type": "page",
+      "attached": true,
+      "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+      "attachedAt": "2026-09-18T14:35:22+08:00"
+    },
+    {
+      "id": "target-worker-0001",
+      "type": "worker",
+      "attached": true,
+      "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+      "parentTargetId": "target-page-0001",
+      "attachedAt": "2026-09-18T14:35:29+08:00"
+    }
+  ]
+}

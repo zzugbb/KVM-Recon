@@ -1,0 +1,2 @@
+{"id":"action-0001","occurredAt":"2026-09-18T14:35:24+08:00","kind":"form-submit","targetId":"target-page-0001","elementSummary":"#login-submit 登录","url":"http://127.0.0.1:48080/4baa81443f20/58c19b1607.html"}
+{"id":"action-0002","occurredAt":"2026-09-18T14:35:26+08:00","kind":"click","targetId":"target-page-0001","elementSummary":"#console-open 打开远程控制台","url":"http://127.0.0.1:48080/4baa81443f20/935f1859fd.html"}

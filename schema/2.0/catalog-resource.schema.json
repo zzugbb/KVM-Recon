@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/catalog-resource.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 catalog/resources.jsonl 行",
+  "type": "object",
+  "required": ["id", "kind", "url", "method", "status", "contentType", "targetId", "occurredAt"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "document",
+        "xhr",
+        "fetch",
+        "script",
+        "worker",
+        "wasm",
+        "stylesheet",
+        "image",
+        "font",
+        "media",
+        "source-map",
+        "other"
+      ]
+    },
+    "url": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "status": { "type": ["integer", "null"] },
+    "contentType": { "type": ["string", "null"] },
+    "targetId": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "requestBody": { "$ref": "#/definitions/bodyRef" },
+    "responseBody": { "$ref": "#/definitions/bodyRef" }
+  },
+  "definitions": {
+    "bodyRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

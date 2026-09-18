@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "2.0.0",
+  "targetId": "target-page-0001",
+  "capturedAt": "2026-09-18T14:35:32+08:00",
+  "cookies": [
+    {
+      "name": "m7d61c4a3",
+      "value": "d4c7df4e79a8c8ab21394a44b4626252",
+      "domain": "127.0.0.1",
+      "path": "/"
+    }
+  ],
+  "localStorage": {},
+  "sessionStorage": {
+    "s8d3cc42f5ac": "8fd65901138f8f3f772be90788121d2c",
+    "s1eafb40370v": "76a0f653f5e653e37ab1c852ae71a9f8"
+  },
+  "indexedDb": [],
+  "cacheStorage": []
+}

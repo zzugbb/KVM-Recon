@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/ws-metadata.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/websocket/<socket-id>/metadata.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "channelId",
+    "url",
+    "targetId",
+    "createdAt",
+    "closedAt",
+    "requestedSubProtocols",
+    "acceptedSubProtocol",
+    "extensions",
+    "closeCode",
+    "closeReason",
+    "handshakeStatus",
+    "requestHeaders",
+    "responseHeaders",
+    "frameCounts",
+    "framesBinPath"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "channelId": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "minLength": 1 },
+    "closedAt": { "type": ["string", "null"] },
+    "requestedSubProtocols": { "type": "array", "items": { "type": "string" } },
+    "acceptedSubProtocol": { "type": ["string", "null"] },
+    "extensions": { "type": "array", "items": { "type": "string" } },
+    "closeCode": { "type": ["integer", "null"], "minimum": 1000, "maximum": 65535 },
+    "closeReason": { "type": ["string", "null"] },
+    "handshakeStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "requestHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "responseHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "frameCounts": {
+      "type": "object",
+      "required": ["up", "down"],
+      "additionalProperties": false,
+      "properties": {
+        "up": { "type": "integer", "minimum": 0 },
+        "down": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "framesBinPath": { "type": "string", "minLength": 1 }
+  }
+}

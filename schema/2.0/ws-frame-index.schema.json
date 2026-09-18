@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/ws-frame-index.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/websocket/<socket-id>/frames.index.jsonl 行",
+  "type": "object",
+  "required": [
+    "frameIndex",
+    "direction",
+    "opcode",
+    "fin",
+    "timestamp",
+    "payloadOffset",
+    "payloadLength"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "frameIndex": { "type": "integer", "minimum": 0 },
+    "direction": { "enum": ["up", "down"] },
+    "opcode": { "enum": ["continuation", "text", "binary", "close", "ping", "pong"] },
+    "fin": { "type": "boolean" },
+    "timestamp": { "type": "string", "minLength": 1 },
+    "payloadOffset": { "type": "integer", "minimum": 0 },
+    "payloadLength": { "type": "integer", "minimum": 0 }
+  }
+}

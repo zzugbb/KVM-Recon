@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "2.0.0",
+  "captureIntegrity": "COMPLETE",
+  "reasons": [],
+  "gates": [
+    {
+      "id": "collector-ready-before-first-navigation",
+      "passed": true
+    },
+    {
+      "id": "targets-attached",
+      "passed": true
+    },
+    {
+      "id": "http-bodies-complete",
+      "passed": true
+    },
+    {
+      "id": "scripts-workers-wasm-complete",
+      "passed": true
+    },
+    {
+      "id": "realtime-channels-complete",
+      "passed": true
+    },
+    {
+      "id": "no-uncollected-channel",
+      "passed": true
+    },
+    {
+      "id": "raw-journals-closed",
+      "passed": true
+    },
+    {
+      "id": "browser-state-written",
+      "passed": true
+    },
+    {
+      "id": "evidence-references-closed",
+      "passed": true
+    },
+    {
+      "id": "zip-self-validated",
+      "passed": true
+    }
+  ],
+  "generatedAt": "2026-09-18T14:35:37+08:00"
+}

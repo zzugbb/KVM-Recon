@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/runtime-crypto.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/runtime/crypto.jsonl 行",
+  "type": "object",
+  "required": ["id", "occurredAt", "targetId", "kind", "algorithm"],
+  "additionalProperties": false,
+  "anyOf": [
+    { "required": ["inputRef"] },
+    { "required": ["outputRef"] },
+    { "required": ["error"] }
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "encrypt",
+        "decrypt",
+        "digest",
+        "sign",
+        "verify",
+        "derive-key",
+        "derive-bits",
+        "generate-key",
+        "import-key",
+        "export-key",
+        "custom"
+      ]
+    },
+    "algorithm": { "type": "string", "minLength": 1 },
+    "algorithmParams": { "type": "object", "additionalProperties": true },
+    "scriptId": { "type": "string" },
+    "scriptUrl": { "type": "string" },
+    "lineNumber": { "type": "integer", "minimum": 0 },
+    "inputRef": { "$ref": "#/definitions/bodyRef" },
+    "outputRef": { "$ref": "#/definitions/bodyRef" },
+    "error": { "type": "string" }
+  },
+  "definitions": {
+    "bodyRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

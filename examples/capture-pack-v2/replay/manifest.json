@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "2.0.0",
+  "replayable": true,
+  "clockPolicy": "deterministic-accelerated",
+  "requests": [
+    {
+      "requestId": "http-000002",
+      "url": "http://127.0.0.1:48080/4baa81443f20/0f2b14d699",
+      "method": "POST",
+      "requiresDynamicValueIds": [
+        "value-0007",
+        "value-0008"
+      ]
+    },
+    {
+      "requestId": "http-000004",
+      "url": "http://127.0.0.1:48080/4baa81443f20/6bd45ecb6b",
+      "method": "POST",
+      "requiresDynamicValueIds": [
+        "value-0002",
+        "value-0010"
+      ]
+    }
+  ],
+  "channels": [
+    {
+      "channelId": "ws-0001",
+      "kind": "websocket",
+      "framesIndexPath": "raw/websocket/ws-0001/frames.index.jsonl",
+      "requiresDynamicValueIds": [
+        "value-0002",
+        "value-0005"
+      ]
+    }
+  ]
+}

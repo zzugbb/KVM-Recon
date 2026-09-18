@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/integrity.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 integrity",
+  "type": "object",
+  "required": ["schemaVersion", "captureIntegrity", "reasons", "gates", "generatedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "INCOMPLETE_BODY_MISSING",
+          "INCOMPLETE_TARGET_ATTACH",
+          "INCOMPLETE_WORKER_SOURCE",
+          "INCOMPLETE_CHANNEL_GAP",
+          "INCOMPLETE_UNSUPPORTED_CHANNEL",
+          "INCOMPLETE_STORAGE_LIMIT",
+          "INCOMPLETE_EXPORT_VALIDATION",
+          "INCOMPLETE_WORKFLOW_NOT_REACHED",
+          "INCOMPLETE_RAW_JOURNAL",
+          "INCOMPLETE_BROWSER_STATE",
+          "INCOMPLETE_EVIDENCE_REFERENCE"
+        ]
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["id", "passed"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "collector-ready-before-first-navigation",
+              "targets-attached",
+              "http-bodies-complete",
+              "scripts-workers-wasm-complete",
+              "realtime-channels-complete",
+              "no-uncollected-channel",
+              "raw-journals-closed",
+              "browser-state-written",
+              "evidence-references-closed",
+              "zip-self-validated"
+            ]
+          },
+          "passed": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      },
+      "allOf": [
+        { "contains": { "properties": { "id": { "const": "collector-ready-before-first-navigation" } } } },
+        { "contains": { "properties": { "id": { "const": "targets-attached" } } } },
+        { "contains": { "properties": { "id": { "const": "http-bodies-complete" } } } },
+        { "contains": { "properties": { "id": { "const": "scripts-workers-wasm-complete" } } } },
+        { "contains": { "properties": { "id": { "const": "realtime-channels-complete" } } } },
+        { "contains": { "properties": { "id": { "const": "no-uncollected-channel" } } } },
+        { "contains": { "properties": { "id": { "const": "raw-journals-closed" } } } },
+        { "contains": { "properties": { "id": { "const": "browser-state-written" } } } },
+        { "contains": { "properties": { "id": { "const": "evidence-references-closed" } } } },
+        { "contains": { "properties": { "id": { "const": "zip-self-validated" } } } }
+      ]
+    },
+    "generatedAt": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "captureIntegrity": { "const": "COMPLETE" } },
+        "required": ["captureIntegrity"]
+      },
+      "then": {
+        "properties": {
+          "reasons": { "maxItems": 0 },
+          "gates": { "items": { "properties": { "passed": { "const": true } } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "captureIntegrity": { "const": "INCOMPLETE" } },
+        "required": ["captureIntegrity"]
+      },
+      "then": {
+        "properties": { "reasons": { "minItems": 1 } }
+      }
+    }
+  ]
+}

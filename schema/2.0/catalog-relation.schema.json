@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/catalog-relation.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 catalog/relations.jsonl 行",
+  "type": "object",
+  "required": ["from", "to", "relation", "occurredAt"],
+  "additionalProperties": false,
+  "properties": {
+    "from": { "type": "string", "minLength": 1 },
+    "to": { "type": "string", "minLength": 1 },
+    "relation": {
+      "enum": ["initiated", "opened", "attached", "loaded", "created", "value-flow"]
+    },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "evidencePath": { "type": "string" }
+  }
+}

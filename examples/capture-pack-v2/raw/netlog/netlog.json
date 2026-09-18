@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "2.0.0",
+  "captureMode": "IncludeSensitive",
+  "events": [
+    {
+      "type": "SOCKET_CONNECT",
+      "time": "t+0",
+      "params": {
+        "address": "127.0.0.1:48080"
+      }
+    },
+    {
+      "type": "HTTP_STREAM_JOB",
+      "time": "t+1",
+      "params": {
+        "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html"
+      }
+    },
+    {
+      "type": "SOCKET_ALIVE",
+      "time": "t+9",
+      "params": {
+        "ws": true
+      }
+    }
+  ],
+  "constants": {
+    "logEventTypes": {
+      "SOCKET_CONNECT": 22,
+      "HTTP_STREAM_JOB": 65,
+      "SOCKET_ALIVE": 21
+    },
+    "logEventPhase": {
+      "PHASE_BEGIN": 1,
+      "PHASE_END": 2,
+      "PHASE_NONE": 0
+    },
+    "logSourceType": {
+      "URL_REQUEST": 1,
+      "SOCKET": 3
+    }
+  },
+  "unknownFutureField": {
+    "keepVerbatim": true
+  }
+}

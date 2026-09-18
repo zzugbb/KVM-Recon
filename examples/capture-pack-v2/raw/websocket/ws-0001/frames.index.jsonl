@@ -1,0 +1,7 @@
+{"frameIndex":0,"direction":"down","opcode":"binary","fin":true,"timestamp":"2026-09-18T14:35:31+08:00","payloadOffset":0,"payloadLength":32}
+{"frameIndex":1,"direction":"down","opcode":"binary","fin":true,"timestamp":"2026-09-18T14:35:32+08:00","payloadOffset":32,"payloadLength":32}
+{"frameIndex":2,"direction":"down","opcode":"binary","fin":true,"timestamp":"2026-09-18T14:35:33+08:00","payloadOffset":64,"payloadLength":32}
+{"frameIndex":3,"direction":"up","opcode":"text","fin":true,"timestamp":"2026-09-18T14:35:34+08:00","payloadOffset":96,"payloadLength":13}
+{"frameIndex":4,"direction":"down","opcode":"text","fin":true,"timestamp":"2026-09-18T14:35:35+08:00","payloadOffset":109,"payloadLength":13}
+{"frameIndex":5,"direction":"up","opcode":"binary","fin":true,"timestamp":"2026-09-18T14:35:36+08:00","payloadOffset":122,"payloadLength":8}
+{"frameIndex":6,"direction":"down","opcode":"binary","fin":true,"timestamp":"2026-09-18T14:35:37+08:00","payloadOffset":130,"payloadLength":8}

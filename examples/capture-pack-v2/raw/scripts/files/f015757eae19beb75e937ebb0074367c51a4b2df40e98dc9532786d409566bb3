@@ -1,0 +1,31 @@
+
+(function () {
+  var form = document.getElementById("login-form");
+  var userField = form.querySelector("input:not([type=hidden]):not([type=password])");
+  var passField = form.querySelector("input[type=password]");
+  var nonceField = form.querySelector("input[type=hidden]");
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var material = new TextEncoder().encode(passField.value + ":" + nonceField.value);
+    crypto.subtle.digest("SHA-256", material).then(function (digest) {
+      var hex = Array.from(new Uint8Array(digest)).map(function (byte) {
+        return byte.toString(16).padStart(2, "0");
+      }).join("");
+      var payload = {};
+      payload["f7a6e1a53u"] = userField.value;
+      payload["ff6f37e6dp"] = hex;
+      fetch(form.action, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data && data.ok) {
+            sessionStorage.setItem("s8d3cc42f5ac", data.csrfToken);
+            location.href = "/4baa81443f20/935f1859fd.html";
+          }
+        });
+    });
+  });
+}());

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "2.0.0",
+  "scripts": [
+    {
+      "id": "script-net-0001",
+      "kind": "network-script",
+      "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+      "targetId": "target-page-0001",
+      "bodyRef": {
+        "sha256": "0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1",
+        "bytes": 205,
+        "path": "raw/http/bodies/0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1"
+      }
+    },
+    {
+      "id": "script-worker-0001",
+      "kind": "worker",
+      "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+      "targetId": "target-worker-0001",
+      "createdBy": "target-page-0001",
+      "bodyRef": {
+        "sha256": "0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1",
+        "bytes": 205,
+        "path": "raw/http/bodies/0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1"
+      }
+    },
+    {
+      "id": "script-inline-0000",
+      "kind": "inline",
+      "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+      "targetId": "target-page-0001",
+      "createdBy": "target-page-0001",
+      "bodyRef": {
+        "sha256": "f015757eae19beb75e937ebb0074367c51a4b2df40e98dc9532786d409566bb3",
+        "bytes": 1223,
+        "path": "raw/scripts/files/f015757eae19beb75e937ebb0074367c51a4b2df40e98dc9532786d409566bb3"
+      }
+    },
+    {
+      "id": "script-inline-0001",
+      "kind": "inline",
+      "url": "http://127.0.0.1:48080/4baa81443f20/8109a05e47.html",
+      "targetId": "target-page-0001",
+      "createdBy": "target-page-0001",
+      "bodyRef": {
+        "sha256": "32b0d0500f07ed6b7ada481c74ed9f236532050b7a15e4d17ece02cbcba7d15b",
+        "bytes": 469,
+        "path": "raw/scripts/files/32b0d0500f07ed6b7ada481c74ed9f236532050b7a15e4d17ece02cbcba7d15b"
+      }
+    }
+  ]
+}

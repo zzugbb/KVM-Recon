@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/browser-console-entry.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/browser/console.jsonl 行",
+  "type": "object",
+  "required": ["occurredAt", "targetId", "level", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "level": { "enum": ["log", "info", "warning", "error"] },
+    "text": { "type": "string" }
+  }
+}

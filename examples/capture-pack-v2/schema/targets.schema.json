@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/targets.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 targets.json（catalog/targets.json 与 raw/browser/targets.json）",
+  "type": "object",
+  "required": ["schemaVersion", "targets"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "attached", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": {
+            "enum": [
+              "page",
+              "popup",
+              "iframe",
+              "oopif",
+              "worker",
+              "shared-worker",
+              "service-worker"
+            ]
+          },
+          "attached": { "type": "boolean" },
+          "url": { "type": ["string", "null"] },
+          "openerTargetId": { "type": "string" },
+          "parentTargetId": { "type": "string" },
+          "attachedAt": { "type": "string" },
+          "detachReason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

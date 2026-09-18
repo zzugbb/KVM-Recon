@@ -1,0 +1,10 @@
+{"occurredAt":"2026-09-18T14:35:23+08:00","kind":"navigation","targetId":"target-page-0001","url":"http://127.0.0.1:48080/4baa81443f20/58c19b1607.html"}
+{"occurredAt":"2026-09-18T14:35:25+08:00","kind":"navigation","targetId":"target-page-0001","url":"http://127.0.0.1:48080/4baa81443f20/935f1859fd.html"}
+{"occurredAt":"2026-09-18T14:35:27+08:00","kind":"navigation","targetId":"target-page-0001","url":"http://127.0.0.1:48080/4baa81443f20/8109a05e47.html"}
+{"occurredAt":"2026-09-18T14:35:29+08:00","kind":"worker-created","targetId":"target-worker-0001","url":"http://127.0.0.1:48080/4baa81443f20/c17edef64c.js"}
+{"occurredAt":"2026-09-18T14:35:31+08:00","kind":"channel-opened","targetId":"target-page-0001","url":"ws://127.0.0.1:48080/4baa81443f20/eed11298e3?t=76a0f653f5e653e37ab1c852ae71a9f8"}
+{"occurredAt":"2026-09-18T14:35:33+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0001-login.html"}
+{"occurredAt":"2026-09-18T14:35:34+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0002-console-entry.html"}
+{"occurredAt":"2026-09-18T14:35:35+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0003-viewer.html"}
+{"occurredAt":"2026-09-18T14:35:36+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/viewer-initial.png"}
+{"occurredAt":"2026-09-18T14:35:37+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/viewer-stable.png"}

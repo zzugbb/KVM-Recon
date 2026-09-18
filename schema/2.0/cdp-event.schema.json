@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/cdp-event.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/cdp/events.jsonl 行",
+  "type": "object",
+  "required": ["seq", "timestamp", "method", "params"],
+  "additionalProperties": false,
+  "properties": {
+    "seq": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string" },
+    "targetId": { "type": "string" },
+    "params": { "type": "object" }
+  }
+}

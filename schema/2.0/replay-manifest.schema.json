@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/replay-manifest.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 replay/manifest.json",
+  "type": "object",
+  "required": ["schemaVersion", "replayable", "clockPolicy", "requests", "channels"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "replayable": { "type": "boolean" },
+    "clockPolicy": { "enum": ["deterministic-accelerated", "realtime"] },
+    "requests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requestId", "url", "method", "requiresDynamicValueIds"],
+        "additionalProperties": false,
+        "properties": {
+          "requestId": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "method": { "type": "string", "minLength": 1 },
+          "requiresDynamicValueIds": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["channelId", "kind", "framesIndexPath", "requiresDynamicValueIds"],
+        "additionalProperties": false,
+        "properties": {
+          "channelId": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": ["websocket", "webrtc", "webtransport", "sse", "download", "other"]
+          },
+          "framesIndexPath": { "type": ["string", "null"] },
+          "requiresDynamicValueIds": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

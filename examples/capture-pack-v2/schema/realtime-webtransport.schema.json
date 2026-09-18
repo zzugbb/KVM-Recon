@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/realtime-webtransport.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/realtime/webtransport.jsonl 行",
+  "type": "object",
+  "required": ["occurredAt", "targetId", "transportId", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "transportId": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "created",
+        "connected",
+        "closed",
+        "stream-opened",
+        "stream-message",
+        "datagram",
+        "other"
+      ]
+    },
+    "direction": { "enum": ["up", "down"] },
+    "streamId": { "type": "string", "minLength": 1 },
+    "messageIndex": { "type": "integer", "minimum": 0 },
+    "fin": { "type": "boolean" },
+    "detail": { "type": "object", "additionalProperties": true },
+    "messageRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "stream-message" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["direction", "streamId", "messageIndex", "fin", "messageRef"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "datagram" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["direction", "messageIndex", "fin", "messageRef"]
+      }
+    }
+  ]
+}

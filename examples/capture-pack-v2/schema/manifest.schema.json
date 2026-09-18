@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/manifest.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "tool",
+    "job",
+    "target",
+    "captureIntegrity",
+    "workflowStatus",
+    "classificationStatus",
+    "security",
+    "environment"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version", "buildId"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "KVM-Recon" },
+        "version": { "type": "string" },
+        "buildId": { "type": "string" }
+      }
+    },
+    "job": {
+      "type": "object",
+      "required": ["id", "shortId", "startedAt", "endedAt", "deviceLabel"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "shortId": { "type": "string", "minLength": 1 },
+        "startedAt": { "type": "string", "minLength": 1 },
+        "endedAt": { "type": ["string", "null"] },
+        "deviceLabel": { "type": "string" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["host", "port", "scheme", "originalInput"],
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "scheme": { "enum": ["http", "https"] },
+        "originalInput": { "type": "string" }
+      }
+    },
+    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+    "workflowStatus": { "enum": ["KVM_REACHED", "LOGIN_REACHED", "TARGET_OPENED"] },
+    "classificationStatus": { "enum": ["KNOWN", "UNKNOWN"] },
+    "security": {
+      "type": "object",
+      "required": ["dataHandling", "containsSensitiveData"],
+      "additionalProperties": false,
+      "properties": {
+        "dataHandling": { "const": "UNREDACTED" },
+        "containsSensitiveData": { "const": true }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "chromium",
+        "electron",
+        "os",
+        "userAgent",
+        "language",
+        "timezone",
+        "screen"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "chromium": { "type": "string" },
+        "electron": { "type": "string" },
+        "os": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "language": { "type": "string" },
+        "timezone": { "type": "string" },
+        "screen": { "type": "string" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "captureIntegrity": { "const": "COMPLETE" } },
+        "required": ["captureIntegrity"]
+      },
+      "then": {
+        "properties": { "workflowStatus": { "const": "KVM_REACHED" } }
+      }
+    }
+  ]
+}

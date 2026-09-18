@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "2.0.0",
+  "nodes": [
+    {
+      "id": "value-0001",
+      "kind": "http-response",
+      "name": "m7d61c4a3（登录响应 Set-Cookie）",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000002"
+    },
+    {
+      "id": "value-0002",
+      "kind": "cookie",
+      "name": "m7d61c4a3",
+      "evidencePath": "raw/browser/storage.json"
+    },
+    {
+      "id": "value-0003",
+      "kind": "header",
+      "name": "cookie",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000004"
+    },
+    {
+      "id": "value-0004",
+      "kind": "header",
+      "name": "cookie",
+      "evidencePath": "raw/websocket/ws-0001/metadata.json",
+      "evidenceId": "ws-0001"
+    },
+    {
+      "id": "value-0005",
+      "kind": "http-response",
+      "name": "viewerToken（KVM 启动响应）",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000004"
+    },
+    {
+      "id": "value-0006",
+      "kind": "ws-frame",
+      "name": "首条上行控制帧",
+      "evidencePath": "raw/websocket/ws-0001/frames.index.jsonl",
+      "evidenceId": "ws-0001"
+    },
+    {
+      "id": "value-0007",
+      "kind": "http-response",
+      "name": "登录挑战 nonce（登录页隐藏字段）",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000001"
+    },
+    {
+      "id": "value-0008",
+      "kind": "crypto-output",
+      "name": "SHA-256 摘要凭据（crypto-0001 输出）",
+      "evidencePath": "raw/runtime/crypto.jsonl",
+      "evidenceId": "crypto-0001"
+    },
+    {
+      "id": "value-0009",
+      "kind": "http-request-body",
+      "name": "登录请求凭据字段",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000002"
+    },
+    {
+      "id": "value-0010",
+      "kind": "http-response",
+      "name": "csrfToken（登录响应）",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000002"
+    },
+    {
+      "id": "value-0011",
+      "kind": "header",
+      "name": "x-2eeb22da-csrf（KVM 启动请求 CSRF 头）",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "evidenceId": "http-000004"
+    },
+    {
+      "id": "value-0012",
+      "kind": "url-param",
+      "name": "WS 握手查询参数 t（viewerToken）",
+      "evidencePath": "raw/websocket/ws-0001/metadata.json",
+      "evidenceId": "ws-0001"
+    }
+  ],
+  "edges": [
+    {
+      "from": "value-0001",
+      "to": "value-0002",
+      "relation": "propagated-to",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0002",
+      "to": "value-0003",
+      "relation": "propagated-to",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0002",
+      "to": "value-0004",
+      "relation": "propagated-to",
+      "evidencePath": "raw/websocket/ws-0001/metadata.json",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0005",
+      "to": "value-0012",
+      "relation": "propagated-to",
+      "evidencePath": "raw/websocket/ws-0001/metadata.json",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0007",
+      "to": "value-0008",
+      "relation": "derived-from",
+      "evidencePath": "raw/runtime/crypto.jsonl",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0008",
+      "to": "value-0009",
+      "relation": "used-in",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "replaySubstitution": true
+    },
+    {
+      "from": "value-0010",
+      "to": "value-0011",
+      "relation": "propagated-to",
+      "evidencePath": "raw/http/transactions.jsonl",
+      "replaySubstitution": true
+    }
+  ]
+}

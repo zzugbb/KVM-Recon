@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/ai-value-flow.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 ai/value-flow.json",
+  "type": "object",
+  "required": ["schemaVersion", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "name", "evidencePath"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": [
+              "http-response",
+              "http-request-body",
+              "cookie",
+              "storage",
+              "header",
+              "url-param",
+              "ws-frame",
+              "crypto-output"
+            ]
+          },
+          "name": { "type": "string", "minLength": 1 },
+          "evidencePath": { "type": "string", "minLength": 1 },
+          "evidenceId": { "type": "string" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "relation", "evidencePath"],
+        "additionalProperties": false,
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 },
+          "relation": { "enum": ["propagated-to", "derived-from", "used-in"] },
+          "evidencePath": { "type": "string", "minLength": 1 },
+          "replaySubstitution": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

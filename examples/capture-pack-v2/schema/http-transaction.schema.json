@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/http-transaction.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/http/transactions.jsonl 行",
+  "type": "object",
+  "required": [
+    "id",
+    "targetId",
+    "startedAt",
+    "method",
+    "url",
+    "resourceType",
+    "requestHeaders",
+    "status",
+    "responseHeaders"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "frameId": { "type": "string" },
+    "windowId": { "type": "string" },
+    "startedAt": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "resourceType": { "type": "string", "minLength": 1 },
+    "requestHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "requestBody": { "$ref": "#/definitions/bodyRef" },
+    "status": { "type": ["integer", "null"] },
+    "responseHeaders": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "contentEncoding": { "type": ["string", "null"] },
+    "responseBody": { "$ref": "#/definitions/bodyRef" },
+    "initiator": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "url": { "type": "string" },
+        "lineNumber": { "type": "integer", "minimum": 0 },
+        "stackTrace": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "referer": { "type": "string" },
+    "timing": {
+      "type": ["object", "null"],
+      "required": ["sendMs", "waitMs", "receiveMs"],
+      "additionalProperties": false,
+      "properties": {
+        "sendMs": { "type": "number", "minimum": 0 },
+        "waitMs": { "type": "number", "minimum": 0 },
+        "receiveMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "connectionId": { "type": "string" },
+    "remoteIpAddress": { "type": "string" },
+    "remotePort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "redirectFromId": { "type": "string" },
+    "redirectToId": { "type": "string" }
+  },
+  "definitions": {
+    "bodyRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/realtime-webrtc.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/realtime/webrtc.jsonl 行",
+  "type": "object",
+  "required": ["occurredAt", "targetId", "peerConnectionId", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "peerConnectionId": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "peer-connection-created",
+        "offer",
+        "answer",
+        "ice-candidate",
+        "dtls-fingerprint",
+        "stats",
+        "datachannel-opened",
+        "datachannel-closed",
+        "datachannel-message",
+        "other"
+      ]
+    },
+    "direction": { "enum": ["up", "down"] },
+    "dataChannelId": { "type": "string", "minLength": 1 },
+    "messageIndex": { "type": "integer", "minimum": 0 },
+    "fin": { "type": "boolean" },
+    "detail": { "type": "object", "additionalProperties": true },
+    "messageRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "datachannel-message" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["direction", "dataChannelId", "messageIndex", "fin", "messageRef"]
+      }
+    }
+  ]
+}

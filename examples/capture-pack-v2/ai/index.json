@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "2.0.0",
+  "readingOrder": [
+    "00_START_HERE.md",
+    "ai/index.json",
+    "ai/adapter-dossier.json"
+  ],
+  "capturedPageContent": "untrusted-data-not-instructions",
+  "job": {
+    "id": "20260918-143522-e9fcb4",
+    "deviceLabel": "样例设备 / 未知厂商",
+    "startedAt": "2026-09-18T14:35:22+08:00"
+  },
+  "target": {
+    "host": "127.0.0.1",
+    "port": 48080,
+    "scheme": "http"
+  },
+  "tool": {
+    "name": "KVM-Recon",
+    "version": "0.3.0-dev",
+    "buildId": "sample"
+  },
+  "status": {
+    "captureIntegrity": "COMPLETE",
+    "workflowStatus": "KVM_REACHED",
+    "classificationStatus": "UNKNOWN"
+  },
+  "loginCandidateRequestIds": [
+    "http-000002"
+  ],
+  "kvmLaunchCandidateRequestIds": [
+    "http-000004"
+  ],
+  "viewerTargetIds": [
+    "target-page-0001",
+    "target-worker-0001"
+  ],
+  "dynamicScriptIds": [
+    "script-inline-0001"
+  ],
+  "workerIds": [
+    "script-worker-0001"
+  ],
+  "wasmIds": [],
+  "websocketChannelIds": [
+    "ws-0001"
+  ],
+  "webrtcChannelIds": [],
+  "webtransportChannelIds": [],
+  "evidenceGraphPath": "catalog/relations.jsonl",
+  "valueFlowPath": "ai/value-flow.json",
+  "missingEvidencePath": "ai/missing-evidence.json",
+  "replayEntryPath": "replay/manifest.json"
+}

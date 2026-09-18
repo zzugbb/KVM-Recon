@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/realtime-sse.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/realtime/sse.jsonl 行",
+  "type": "object",
+  "required": ["id", "occurredAt", "targetId", "url", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["connected", "event", "error", "closed"] },
+    "event": { "type": "string" },
+    "serverEventId": { "type": "string" },
+    "retryMs": { "type": "integer", "minimum": 0 },
+    "dataRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

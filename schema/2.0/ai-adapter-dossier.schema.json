@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/ai-adapter-dossier.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 ai/adapter-dossier.json",
+  "type": "object",
+  "required": ["schemaVersion", "status", "candidateChain"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "status": {
+      "type": "object",
+      "required": ["captureIntegrity", "workflowStatus", "classificationStatus"],
+      "additionalProperties": false,
+      "properties": {
+        "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+        "workflowStatus": { "enum": ["KVM_REACHED", "LOGIN_REACHED", "TARGET_OPENED"] },
+        "classificationStatus": { "enum": ["KNOWN", "UNKNOWN"] }
+      }
+    },
+    "candidateChain": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "title", "evidenceIds", "evidencePaths"],
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "login-interaction",
+              "session-established",
+              "kvm-click",
+              "launch-request",
+              "viewer-opened",
+              "script-worker-wasm",
+              "realtime-channel"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "evidenceIds": { "type": "array", "items": { "type": "string" } },
+          "evidencePaths": { "type": "array", "items": { "type": "string" } },
+          "occurredAt": { "type": "string" }
+        }
+      }
+    }
+  }
+}

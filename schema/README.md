@@ -1,6 +1,6 @@
 # Capture Pack JSON Schema
 
-> **版本范围：Capture Pack 1.x / KVM-Recon 0.2.x。** 当前 Schema 必须保留，用于校验已发布格式和旧现场包。0.3.0 阶段 0 将新增版本化的 2.0 Schema；在迁移代码和测试之前不要删除或原地改写这些 1.x 文件。
+> **版本范围：Capture Pack 1.x / KVM-Recon 0.2.x。** 当前 Schema 必须保留，用于校验已发布格式和旧现场包。0.3.0 阶段 0 已新增版本化的 2.0 Schema（[`2.0/`](2.0/README.md)）；在迁移代码和测试之前不要删除或原地改写这些 1.x 文件。
 
 本目录是 Capture Pack 的独立 JSON Schema，方便出机房后用任意校验器核对 zip 内文件。
 

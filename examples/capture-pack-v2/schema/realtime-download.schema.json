@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/realtime-download.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/realtime/downloads.jsonl 行",
+  "type": "object",
+  "required": ["id", "occurredAt", "targetId", "url", "completed"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "suggestedFileName": { "type": "string" },
+    "mimeType": { "type": "string" },
+    "fileRef": {
+      "type": "object",
+      "required": ["sha256", "bytes", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "completed": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "completed": { "const": true } },
+        "required": ["completed"]
+      },
+      "then": { "required": ["fileRef"] }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "2.0.0",
+  "channels": [
+    {
+      "channelId": "ws-0001",
+      "kind": "websocket",
+      "framesIndexPath": "raw/websocket/ws-0001/frames.index.jsonl",
+      "requiresDynamicValueIds": [
+        "value-0002",
+        "value-0005"
+      ]
+    }
+  ]
+}

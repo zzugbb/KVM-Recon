@@ -1,0 +1,5 @@
+// Remote viewer decode worker (mock).
+"use strict";
+var boot = "4baa81443f20";
+self.onmessage = function (event) { self.postMessage(event.data); };
+self.postMessage({ type: "worker-ready", boot: boot });

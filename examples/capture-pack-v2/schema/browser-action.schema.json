@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/browser-action.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/browser/actions.jsonl 行",
+  "type": "object",
+  "required": ["id", "occurredAt", "kind", "targetId", "elementSummary"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["click", "form-submit"] },
+    "targetId": { "type": "string", "minLength": 1 },
+    "elementSummary": { "type": "string", "minLength": 1 },
+    "url": { "type": "string" }
+  }
+}

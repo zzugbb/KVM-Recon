@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "2.0.0",
+  "tool": {
+    "name": "KVM-Recon",
+    "version": "0.3.0-dev",
+    "buildId": "sample"
+  },
+  "job": {
+    "id": "20260918-143522-e9fcb4",
+    "shortId": "e9fcb4",
+    "startedAt": "2026-09-18T14:35:22+08:00",
+    "endedAt": "2026-09-18T14:35:37+08:00",
+    "deviceLabel": "样例设备 / 未知厂商"
+  },
+  "target": {
+    "host": "127.0.0.1",
+    "port": 48080,
+    "scheme": "http",
+    "originalInput": "127.0.0.1:48080"
+  },
+  "captureIntegrity": "COMPLETE",
+  "workflowStatus": "KVM_REACHED",
+  "classificationStatus": "UNKNOWN",
+  "security": {
+    "dataHandling": "UNREDACTED",
+    "containsSensitiveData": true
+  },
+  "environment": {
+    "chromium": "152.0.7977.76",
+    "electron": "44.3.0",
+    "os": "darwin 25.6.0",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.76 Safari/537.36",
+    "language": "zh-CN",
+    "timezone": "Asia/Shanghai",
+    "screen": "3008x1702@2x"
+  }
+}

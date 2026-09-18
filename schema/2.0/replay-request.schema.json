@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/replay-request.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 replay/http.jsonl 行",
+  "type": "object",
+  "required": ["requestId", "url", "method", "requestBodyPath", "responseBodyPath", "occurredAt"],
+  "additionalProperties": false,
+  "properties": {
+    "requestId": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "requestBodyPath": { "type": ["string", "null"] },
+    "responseBodyPath": { "type": ["string", "null"] },
+    "occurredAt": { "type": "string", "minLength": 1 }
+  }
+}

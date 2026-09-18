@@ -1,0 +1,9 @@
+{"from":"target-page-0001","to":"http-000001","relation":"initiated","occurredAt":"2026-09-18T14:35:23+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"http-000002","relation":"initiated","occurredAt":"2026-09-18T14:35:24+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"http-000003","relation":"initiated","occurredAt":"2026-09-18T14:35:25+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"http-000004","relation":"initiated","occurredAt":"2026-09-18T14:35:26+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"http-000005","relation":"initiated","occurredAt":"2026-09-18T14:35:27+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"http-000006","relation":"initiated","occurredAt":"2026-09-18T14:35:28+08:00","evidencePath":"raw/http/transactions.jsonl"}
+{"from":"target-page-0001","to":"script-worker-0001","relation":"created","occurredAt":"2026-09-18T14:35:29+08:00","evidencePath":"raw/scripts/index.json"}
+{"from":"target-page-0001","to":"ws-0001","relation":"opened","occurredAt":"2026-09-18T14:35:31+08:00","evidencePath":"raw/websocket/ws-0001/metadata.json"}
+{"from":"value-0001","to":"value-0002","relation":"value-flow","occurredAt":"2026-09-18T14:35:24+08:00","evidencePath":"ai/value-flow.json"}

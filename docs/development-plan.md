@@ -16,7 +16,9 @@
 - 厂商/型号只作铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-09-15）
+## 3. 当前状态（2026-09-18）
+
+**0.3.0 阶段 0（契约先行）已实现（经六轮审查修订），运行版本仍是 0.2.10。** 已落地：`src/core/capture-pack-v2/` 的 Capture Pack 2.0 类型、三正交状态（captureIntegrity / workflowStatus / classificationStatus）与 11 个 `INCOMPLETE` 稳定原因代码（十项门禁失败全部映射显式原因，门禁集合必须恰好覆盖十个唯一 ID）；`schema/2.0/`（30 个 Schema，与类型同步，含状态关系约束、包内 Schema 自校验（缺任一副本或 `$id` 与文件名不符均拒绝）与正负向 Ajv 测试，`ajv` 移入运行时依赖）；随机 URL 未知 Mock KVM（`src/core/mock-kvm/`，登录走 SHA-256 摘要凭据链（服务端验证用户名与摘要），KVM 启动接口校验 CSRF 头（缺失/错误 403），WS 握手与会话严格校验签发的 sessionToken 与 viewerToken，页面脚本可在真实浏览器走通登录 → 控制台 → Viewer → Worker → WebSocket 全链，含 Electron 真实输入浏览器流程 E2E）；11 个完整度失败 Fixture 与正向（COMPLETE + KVM_REACHED + UNKNOWN）、legacy（`LEGACY_UNVERIFIED`）Fixture；独立样例包一致性验证器（负向测试 36 项：删除正文/删除截图/删除 Schema 副本/篡改 Schema `$id`/悬空引用/篡改哈希/状态不一致/Schema 违约/空 journal/重复路径/非法顶层条目/门禁 ID 非法/重复 replay ID/通道动态值集合不一致/正文指向另一现存正文等）；`examples/capture-pack-v2/` 样例包（完整度从观察事实与预验证派生，含双占位截图、crypto 调用、SSE/下载/WebRTC/WebTransport 消息契约；Replay 与 value-flow 只记录实际协议事实——启动请求依赖 CSRF 头、WS 握手携带 Cookie 与 token 查询参数，replay 通道显式声明动态值依赖（三方对齐 + ID 唯一 + 通道完整语义（含动态值集合相等）+ 正文路径与 catalog BodyRef 逐项一致），无编造关系）。未开始：单作业磁盘工作区、BodyStore、流式 ZIP64（阶段 1）、协议无关采集器（阶段 2）、证据图与完整度引擎（阶段 3）、AI/Replay 生成器（阶段 4）、单屏新界面（阶段 5）、全量验收（阶段 6）。0.2.x 运行文档（architecture / capture-pack-spec / offline-field-guide）未改写。
 
 **0.2.10 自动化门禁需要 typecheck / 单测 / 构建 / 生产采集 E2E。第二批现场语料可通过 `KVM_RECON_FIELD_COLLECTION_2` 运行 27 个 ZIP + 16 份 HAR 的只读离线回归；新构建仍应先做代表机验证，不要直接批量重采。**
 
@@ -69,7 +71,7 @@ KVM-Recon 交出 Capture Pack，不写 Adapter。出机房联网后，工程师�
 - 自动登录、MITM、机房内调用 AI、根据 Capture Pack 自动写 Adapter、完整 KVM 视频解码。
 - 界面英文化、为窗口标题再挂版本（页面已有 `vX.Y.Z`）。
 - Apple / 微软付费代码签名与公证（当前 ad-hoc / 无 Authenticode 足够内部分发）。
-- 运行时引入 ajv；为 README / yaml / HAR 再补项目内 Schema。
+- ~~运行时引入 ajv~~（0.2 曾刻意不做；0.3.0 起 Capture Pack 2.0 导出完整度门禁要求按包内 Schema 副本执行自校验，`ajv` 已移入运行时依赖，0.2.x 行为不变）；为 README / yaml / HAR 再补项目内 Schema。
 
 ## 8. 开源治理与发布
 

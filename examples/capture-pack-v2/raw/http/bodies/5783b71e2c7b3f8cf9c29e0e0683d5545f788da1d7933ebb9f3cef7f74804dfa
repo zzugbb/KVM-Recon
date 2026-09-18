@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Console Gateway</title></head>
+<body>
+<h1 id="console-title">远程控制台</h1>
+<p id="console-hint">点击下方按钮打开 HTML5 远程控制台。</p>
+<button id="console-open" data-launch="/4baa81443f20/6bd45ecb6b" data-viewer="/4baa81443f20/8109a05e47.html">打开远程控制台</button>
+<script id="console-launch">
+(function () {
+  var button = document.getElementById("console-open");
+  button.addEventListener("click", function () {
+    var csrf = sessionStorage.getItem("s8d3cc42f5ac") || "";
+    fetch(button.dataset.launch, {
+      method: "POST",
+      headers: { "x-2eeb22da-csrf": csrf },
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data && data.ok) {
+          sessionStorage.setItem("s1eafb40370v", data.viewerToken);
+          location.href = button.dataset.viewer;
+        }
+      });
+  });
+}());
+</script>
+</body>
+</html>
