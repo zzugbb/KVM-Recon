@@ -88,11 +88,29 @@ export interface PackV2ConsistencyOptions {
   requireStatusFiles?: boolean;
   /** 执行包内 Schema 自校验（默认 true）。 */
   requireSchemaValidation?: boolean;
+  /**
+   * raw journal（原始日志）内容校验交给外部流式通道（默认 false）。
+   * 为 true 时：cdp journal 递增/netlog 空、WS 帧偏移与计数、实时事件
+   * 关联、raw journal ID 收集等内容检查被跳过（存在性/checksums/布局
+   * 仍强制），ID 闭合并入 rawJournalIds。用于导出器对无界日志的有界
+   * 内存校验；必须与流式校验配合使用，不得单独开启。
+   */
+  skipRawJournalContentChecks?: boolean;
+  /** skipRawJournalContentChecks 时由流式通道收集的 raw journal ID 集合。 */
+  rawJournalIds?: ReadonlySet<string>;
 }
 
 export interface PackV2ArtifactLike {
   path: string;
   content: string | Uint8Array;
+  /**
+   * 调用方背书的预计算 SHA-256（文件背书：由导出器等对文件流式计算得出）。
+   * 提供时验证器跳过内容哈希（用于大正文不整体载入内存的流式校验），
+   * 与逐字节哈希完全等价；提供错误值会被 checksums / BodyRef 比较抓出。
+   */
+  sha256?: string;
+  /** 调用方背书的字节数；与 sha256 配套使用。 */
+  bytes?: number;
 }
 
 /**
@@ -110,7 +128,7 @@ const STATUS_FILES = [
 ];
 const CHECKSUM_FILE = 'checksums.sha256';
 /** 包内 Schema 副本必须使用的 $id 前缀；$id 与文件名一一对应，否则视为 Schema 被篡改。 */
-const SCHEMA_ID_PREFIX = 'https://kvm-recon.local/schema/2.0';
+export const SCHEMA_ID_PREFIX = 'https://kvm-recon.local/schema/2.0';
 
 /** 包内路径 → Schema 文件（包内 schema/ 副本）映射；jsonl=true 时逐行校验。 */
 const SCHEMA_TARGETS: ReadonlyArray<{
@@ -159,6 +177,32 @@ function schemaFor(path: string): { schema: string; jsonl: boolean } | undefined
   );
 }
 
+/** 导出器流式 raw-journal 校验复用同一份 path→Schema 映射（单一事实源）。 */
+export function packV2SchemaTargetFor(
+  path: string,
+): { schema: string; jsonl: boolean } | undefined {
+  return schemaFor(path);
+}
+
+/**
+ * 无界 raw journal 路径全集：CDP 事件/命令、NetLog、HTTP 事务、浏览器
+ * 与实时/运行时 JSONL、WebSocket 帧索引。导出器对它们做流式校验
+ * （不整体载入内存），其余结构化文件（catalog/replay/ai/状态/Schema）
+ * 属于索引与元数据规模，保留在内存校验。
+ */
+export function isRawJournalPath(path: string): boolean {
+  return (
+    path === 'raw/netlog/netlog.json' ||
+    path === 'raw/cdp/events.jsonl' ||
+    path === 'raw/cdp/commands.jsonl' ||
+    path === 'raw/http/transactions.jsonl' ||
+    path === 'raw/runtime/crypto.jsonl' ||
+    (path.startsWith('raw/browser/') && path.endsWith('.jsonl')) ||
+    (path.startsWith('raw/realtime/') && path.endsWith('.jsonl')) ||
+    /^raw\/websocket\/[^/]+\/frames\.index\.jsonl$/.test(path)
+  );
+}
+
 function toBuffer(content: string | Uint8Array): Buffer {
   return typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content);
 }
@@ -172,6 +216,8 @@ export function validatePackV2Consistency(
   options: PackV2ConsistencyOptions = {},
 ): PackV2ConsistencyResult {
   const problems: PackV2ConsistencyProblem[] = [];
+  /** raw journal 内容校验委托：哈希背书工件无内容，跳过其解析/单行 Schema。 */
+  const skipRawJournalContent = options.skipRawJournalContentChecks === true;
   const add = (code: PackV2ConsistencyProblemCode, detail: string, path?: string) => {
     problems.push({ code, detail, ...(path ? { path } : {}) });
   };
@@ -186,6 +232,17 @@ export function validatePackV2Consistency(
     byPath.set(artifact.path, artifact);
   }
   const has = (path: string) => byPath.has(path);
+  const shaOf = (path: string): string => {
+    const artifact = byPath.get(path);
+    if (!artifact) return '';
+    return artifact.sha256 ?? sha256(artifact.content);
+  };
+  const bytesOf = (path: string): number => {
+    const artifact = byPath.get(path);
+    if (!artifact) return 0;
+    if (artifact.bytes !== undefined) return artifact.bytes;
+    return toBuffer(artifact.content).length;
+  };
   const bufferOf = (path: string) => {
     const artifact = byPath.get(path);
     return artifact ? toBuffer(artifact.content) : null;
@@ -252,11 +309,11 @@ export function validatePackV2Consistency(
       add(danglingCode, `${owner} 引用的正文文件缺失：${ref.path}`, ref.path);
       return;
     }
-    const digest = sha256(byPath.get(ref.path)!.content);
+    const digest = shaOf(ref.path);
     if (digest !== ref.sha256) {
       add('BODY_HASH_MISMATCH', `${owner} 引用的 ${ref.path} sha256 不一致`, ref.path);
     }
-    const actualBytes = bufferOf(ref.path)!.length;
+    const actualBytes = bytesOf(ref.path);
     if (actualBytes !== ref.bytes) {
       add('BODY_HASH_MISMATCH', `${owner} 引用的 ${ref.path} 字节数 ${actualBytes} != ${ref.bytes}`, ref.path);
     }
@@ -366,7 +423,9 @@ export function validatePackV2Consistency(
         add('CHANNEL_FILE_MISSING', `通道 ${channel.id} 缺少 ${channel.payloadPath}`, channel.payloadPath);
         continue;
       }
-      const framesBin = bufferOf(channel.payloadPath)!;
+      // frames.bin 只参与长度越界判断：用（可预计算的）字节数即可，不载入内容。
+      if (options.skipRawJournalContentChecks) continue;
+      const framesBinBytes = bytesOf(channel.payloadPath);
       const frameRows = jsonlOf(framesIndexPath) as PackV2WsFrameIndexRow[];
       let expectedOffset = 0;
       let upCount = 0;
@@ -382,10 +441,10 @@ export function validatePackV2Consistency(
             framesIndexPath,
           );
         }
-        if (frame.payloadOffset + frame.payloadLength > framesBin.length) {
+        if (frame.payloadOffset + frame.payloadLength > framesBinBytes) {
           add(
             'FRAME_OFFSET_MISMATCH',
-            `通道 ${channel.id} 第 ${index} 帧越界：${frame.payloadOffset}+${frame.payloadLength} > ${framesBin.length}`,
+            `通道 ${channel.id} 第 ${index} 帧越界：${frame.payloadOffset}+${frame.payloadLength} > ${framesBinBytes}`,
             framesIndexPath,
           );
         }
@@ -393,10 +452,10 @@ export function validatePackV2Consistency(
         if (frame.direction === 'up') upCount += 1;
         else downCount += 1;
       }
-      if (expectedOffset !== framesBin.length) {
+      if (expectedOffset !== framesBinBytes) {
         add(
           'FRAME_OFFSET_MISMATCH',
-          `通道 ${channel.id} 帧总长 ${expectedOffset} != frames.bin ${framesBin.length}`,
+          `通道 ${channel.id} 帧总长 ${expectedOffset} != frames.bin ${framesBinBytes}`,
           framesIndexPath,
         );
       }
@@ -416,8 +475,9 @@ export function validatePackV2Consistency(
 
   // catalog 通道必须与实时事件文件按 ID / URL 关联：
   // 存在通道却没有对应生命周期或消息记录，说明实时事实缺失（规范 §8.5 / §14 条件 5）。
-  for (const channel of channelsFile?.channels || []) {
-    if (channel.kind === 'webrtc') {
+  if (!options.skipRawJournalContentChecks) {
+    for (const channel of channelsFile?.channels || []) {
+      if (channel.kind === 'webrtc') {
       if (!webrtcRows.some(row => row.peerConnectionId === channel.id)) {
         add(
           'CHANNEL_EVENT_MISSING',
@@ -450,6 +510,7 @@ export function validatePackV2Consistency(
         );
       }
     }
+    }
   }
 
   // ---- 4. 浏览器状态（截图 / DOM 快照 / 原始 journal） ----
@@ -468,6 +529,7 @@ export function validatePackV2Consistency(
 
   for (const journalPath of ['raw/cdp/events.jsonl', 'raw/cdp/commands.jsonl']) {
     if (!has(journalPath)) continue;
+    if (options.skipRawJournalContentChecks) continue;
     let lastSeq = 0;
     const rows = jsonlOf(journalPath);
     for (const [index, row] of rows.entries()) {
@@ -487,9 +549,13 @@ export function validatePackV2Consistency(
       add('RAW_JOURNAL_EMPTY', `${journalPath} 为空但包内存在 ${transactions.length} 个 HTTP 事务`, journalPath);
     }
   }
-  const netlog = jsonOf('raw/netlog/netlog.json') as { events?: unknown[] } | undefined;
-  if (netlog && (netlog.events || []).length === 0 && transactions.length > 0) {
-    add('RAW_JOURNAL_EMPTY', 'raw/netlog/netlog.json 没有任何事件但包内存在 HTTP 事务', 'raw/netlog/netlog.json');
+  if (options.skipRawJournalContentChecks) {
+    // netlog 内容为空性检查由流式通道负责。
+  } else {
+    const netlog = jsonOf('raw/netlog/netlog.json') as { events?: unknown[] } | undefined;
+    if (netlog && (netlog.events || []).length === 0 && transactions.length > 0) {
+      add('RAW_JOURNAL_EMPTY', 'raw/netlog/netlog.json 没有任何事件但包内存在 HTTP 事务', 'raw/netlog/netlog.json');
+    }
   }
 
   // ---- 5. 稳定 ID 引用闭环 ----
@@ -501,15 +567,20 @@ export function validatePackV2Consistency(
   for (const row of catalogTargetsFile?.targets || []) knownIds.add(row.id);
   for (const channel of channelsFile?.channels || []) knownIds.add(channel.id);
   for (const script of scriptIndex?.scripts || []) knownIds.add(script.id);
-  for (const row of jsonlOf('raw/browser/actions.jsonl') as Array<{ id?: string }>) {
-    if (row.id) knownIds.add(row.id);
-  }
-  for (const row of cryptoRows) knownIds.add(row.id);
-  for (const row of jsonlOf('raw/realtime/sse.jsonl') as Array<{ id?: string }>) {
-    if (row.id) knownIds.add(row.id);
-  }
-  for (const row of jsonlOf('raw/realtime/downloads.jsonl') as Array<{ id?: string }>) {
-    if (row.id) knownIds.add(row.id);
+  if (options.skipRawJournalContentChecks) {
+    // raw journal 行 ID 由流式通道收集后注入（同一集合语义，非跳过）。
+    for (const id of options.rawJournalIds ?? []) knownIds.add(id);
+  } else {
+    for (const row of jsonlOf('raw/browser/actions.jsonl') as Array<{ id?: string }>) {
+      if (row.id) knownIds.add(row.id);
+    }
+    for (const row of cryptoRows) knownIds.add(row.id);
+    for (const row of jsonlOf('raw/realtime/sse.jsonl') as Array<{ id?: string }>) {
+      if (row.id) knownIds.add(row.id);
+    }
+    for (const row of jsonlOf('raw/realtime/downloads.jsonl') as Array<{ id?: string }>) {
+      if (row.id) knownIds.add(row.id);
+    }
   }
   interface ValueFlowNodeLike {
     id: string;
@@ -1006,7 +1077,7 @@ export function validatePackV2Consistency(
           add('CHECKSUM_MISSING_ENTRY', `checksums.sha256 缺少 ${path}`, CHECKSUM_FILE);
           continue;
         }
-        if (entries.get(path) !== sha256(byPath.get(path)!.content)) {
+        if (entries.get(path) !== shaOf(path)) {
           add('CHECKSUM_MISMATCH', `${path} 的 sha256 与 checksums.sha256 不一致`, path);
         }
       }
@@ -1090,6 +1161,8 @@ export function validatePackV2Consistency(
           // Schema 缺失时已在上方报告 PACK_SCHEMA_MISSING；此处只校验 Schema 在场的文件，
           // 不再因缺 Schema 静默放过额外问题（checksums / 状态检查仍独立生效）。
           if (!target || !packSchemas.has(target.schema)) continue;
+          // raw journal 内容校验被委托给流式通道（哈希背书工件没有内容可解析）。
+          if (skipRawJournalContent && isRawJournalPath(path)) continue;
           const validate = validators.get(target.schema);
           if (!validate) {
             // 理论上不可达（$id/编译失败会先报 SCHEMA_VIOLATION）；

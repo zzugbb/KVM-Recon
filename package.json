@@ -43,12 +43,18 @@
     "ajv": "^8.20.0",
     "jszip": "^3.10.2",
     "react": "^19.2.8",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "stream-json": "^3.7.0",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.3.0",
+    "@types/stream-json": "^1.7.8",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "cross-env": "^10.1.0",
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",

@@ -64,3 +64,6 @@ playwright-report/
 
 # Editor / agent local state
 .cursor/
+
+# Vitest JSON reporter artifacts
+.vitest/

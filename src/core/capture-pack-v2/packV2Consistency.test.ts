@@ -536,4 +536,58 @@ describe('validatePackV2Consistency（独立一致性验证器）', () => {
     expect(codes).not.toContain('DANGLING_EVIDENCE_PATH');
     expect(validatePackV2Consistency(mutated).valid).toBe(false);
   }, 30000);
+
+  it('文件背书的预计算 sha256/bytes 与逐字节校验完全等价（大正文不载入内存）', async () => {
+    const sample = await createSampleCapturePackV2();
+    const bytesOfContent = (content: string | Uint8Array) =>
+      (typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content)).length;
+    const isStructured = (path: string) =>
+      /\.(json|jsonl|md|html)$/.test(path) || path === 'checksums.sha256';
+    const fileBacked = sample.artifacts.map(artifact => ({
+      path: artifact.path,
+      // 二进制（正文/截图/frames.bin/har/脚本文件）内容置空，只保留流式预计算值。
+      content: isStructured(artifact.path) ? artifact.content : new Uint8Array(0),
+      sha256: createHash('sha256').update(Buffer.from(artifact.content as Uint8Array)).digest('hex'),
+      bytes: bytesOfContent(artifact.content),
+    }));
+    const result = validatePackV2Consistency(fileBacked);
+    expect(result.problems).toEqual([]);
+    expect(result.valid).toBe(true);
+  }, 30000);
+
+  it('预计算 sha256 与 BodyRef 不符 → BODY_HASH_MISMATCH（错误背书不能蒙混）', async () => {
+    const sample = await createSampleCapturePackV2();
+    const bodyPath = sample.artifacts.find(
+      artifact => artifact.path.startsWith('raw/http/bodies/'),
+    )!.path;
+    const forged = sample.artifacts.map(artifact =>
+      artifact.path === bodyPath
+        ? {
+            path: artifact.path,
+            content: new Uint8Array(0),
+            sha256: '0'.repeat(64),
+            bytes: Buffer.from(artifact.content as Uint8Array).length,
+          }
+        : artifact,
+    );
+    expect(codesOf(forged)).toContain('BODY_HASH_MISMATCH');
+  }, 30000);
+
+  it('预计算 bytes 与 BodyRef 不符 → BODY_HASH_MISMATCH', async () => {
+    const sample = await createSampleCapturePackV2();
+    const bodyPath = sample.artifacts.find(
+      artifact => artifact.path.startsWith('raw/http/bodies/'),
+    )!.path;
+    const forged = sample.artifacts.map(artifact =>
+      artifact.path === bodyPath
+        ? {
+            path: artifact.path,
+            content: new Uint8Array(0),
+            sha256: createHash('sha256').update(Buffer.from(artifact.content as Uint8Array)).digest('hex'),
+            bytes: Buffer.from(artifact.content as Uint8Array).length + 1,
+          }
+        : artifact,
+    );
+    expect(codesOf(forged)).toContain('BODY_HASH_MISMATCH');
+  }, 30000);
 });
