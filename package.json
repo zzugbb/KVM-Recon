@@ -13,7 +13,7 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node e2e/launch-app.mjs && node e2e/popup-native-window.mjs && node e2e/capture-controller.mjs && node e2e/capture-controller.mjs --expect-early-close-fail && node e2e/mock-kvm-browser-flow.mjs",
+    "test:e2e": "node e2e/launch-app.mjs && node e2e/popup-native-window.mjs && node e2e/capture-controller.mjs && node e2e/capture-controller.mjs --close-before-assert && node e2e/mock-kvm-browser-flow.mjs && node e2e/mock-kvm-collector-flow.mjs && node e2e/field-har-replay.mjs",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -41,7 +41,6 @@
   "homepage": "https://github.com/zzugbb/KVM-Recon#readme",
   "dependencies": {
     "ajv": "^8.20.0",
-    "jszip": "^3.10.2",
     "react": "^19.2.8",
     "react-dom": "^19.3.0",
     "stream-json": "^3.7.0",

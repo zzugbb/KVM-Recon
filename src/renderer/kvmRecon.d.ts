@@ -1,201 +1,65 @@
 export {};
 
-interface FormattedCaptureError {
-  title: string;
-  impact: string;
-  action: string;
-  detail: string;
-}
-
-interface StartCaptureTarget {
-  host: string;
-  port: number;
-  scheme: 'http' | 'https';
-  operatorNote?: string;
-  operatorObserved?: {
-    vendor?: string;
-    product?: string;
-    firmware?: string;
-    location?: string;
-    note?: string;
+interface CaptureStatusJob {
+  jobId: string;
+  state: 'capturing' | 'stopped' | 'exported';
+  windowsOpen: boolean;
+  storageLimited: boolean;
+  windowsLabel: string;
+  diagnostics: {
+    droppedEvents: number;
+    droppedEventByMethod: Record<string, number>;
+    gapCounts: Record<string, number>;
+    storageLimitReached: boolean;
   };
 }
 
-interface CaptureJobSummary {
-  jobId: string;
-  host: string;
-  port: number;
-  scheme: 'http' | 'https';
-  family: string;
-  startedAt: string;
-  vendor: string;
-  product: string;
-  windowsOpen: boolean;
-  paused: boolean;
-  exported: boolean;
-  exportedAt?: string;
-  readiness: 'YES' | 'PARTIAL' | 'NO';
+interface CaptureExportInfo {
+  zipPath: string;
+  fileName: string;
+  status: {
+    captureIntegrity: 'COMPLETE' | 'INCOMPLETE' | 'LEGACY_UNVERIFIED';
+    workflowStatus: string;
+    classificationStatus: string;
+  };
 }
 
-interface CapturePackSummary {
-  family: string;
-  readiness: string;
-  host: string;
-  port: number;
-  jobId: string;
-  httpRequestCount: number;
-  webSocketCount: number;
-  webSocketUrls: string[];
-  screenshotRoles: string[];
-  pathHits: string[];
-  blockingItems: string[];
-  schemaErrors: string[];
-  observedVendor: string;
-  observedProduct: string;
+interface RecoveryNotice {
+  kind: 'exported' | 'refused' | 'failed';
+  jobId?: string;
+  zipPath?: string;
+  reason?: string;
+  error?: string;
+  conservative?: boolean;
 }
 
-interface CapturePackDiff {
-  field: string;
-  left: string;
-  right: string;
-  changed: boolean;
-}
+type IpcError = { ok: false; error: string };
 
-interface CapturePackComparison {
-  left: CapturePackSummary;
-  right: CapturePackSummary;
-  diffs: CapturePackDiff[];
-}
+type StartResult =
+  | { ok: true; jobId: string; target: { host: string; port: number; scheme: string } }
+  | IpcError;
 
-interface LiveCaptureSnapshot {
-  readiness: 'YES' | 'PARTIAL' | 'NO';
-  items: Array<{
-    id: string;
-    title: string;
-    status: 'pass' | 'fail' | 'unknown' | 'missing' | 'not_applicable' | 'needs_user_action';
-    severity: 'blocking' | 'warning' | 'info';
-    evidence: string[];
-    userAction: string;
-  }>;
-  windowsOpen?: boolean;
-  paused?: boolean;
-  capturingScreenshot?: boolean;
-  jobs?: CaptureJobSummary[];
-}
-
-interface PageCaptureResult {
-  captured: boolean;
-  reason: string;
-  operatorConfirmed: boolean;
-  windowRole?: 'main' | 'popup';
-  path?: string;
-}
-
-type StartCaptureResult =
+type StatusResult =
   | {
       ok: true;
-      jobId: string;
-      family: unknown;
-      timeline: unknown;
-      network: unknown;
-      snapshot: LiveCaptureSnapshot;
-      jobs: CaptureJobSummary[];
+      job: CaptureStatusJob | null;
+      export: CaptureExportInfo | null;
+      recovery: RecoveryNotice | null;
+      zipPath?: string;
+      fileName?: string;
     }
-  | {
-      ok: false;
-      error: FormattedCaptureError;
-    };
-
-type ExportCaptureResult =
-  | {
-      ok: true;
-      fileName: string;
-      filePath: string;
-      readiness: 'YES' | 'PARTIAL' | 'NO';
-      jobs?: CaptureJobSummary[];
-    }
-  | {
-      ok: false;
-      canceled?: boolean;
-      error: FormattedCaptureError;
-      jobs?: CaptureJobSummary[];
-    };
-
-type SnapshotResult =
-  | ({
-      ok: true;
-      windowsOpen: boolean;
-      paused?: boolean;
-      jobs?: CaptureJobSummary[];
-      pageCapture?: PageCaptureResult;
-    } & LiveCaptureSnapshot)
-  | {
-      ok: false;
-      error: FormattedCaptureError;
-    };
-
-type JobListResult =
-  | {
-      ok: true;
-      jobs: CaptureJobSummary[];
-    }
-  | {
-      ok: false;
-      error: FormattedCaptureError;
-    };
-
-type PackChooseResult =
-  | {
-      ok: true;
-      filePath: string;
-    }
-  | {
-      ok: false;
-      canceled?: boolean;
-      error?: FormattedCaptureError;
-    };
-
-type PackSummaryResult =
-  | {
-      ok: true;
-      summary: CapturePackSummary;
-      filePath: string;
-    }
-  | {
-      ok: false;
-      error: FormattedCaptureError;
-    };
-
-type PackCompareResult =
-  | {
-      ok: true;
-      comparison: CapturePackComparison;
-      leftPath: string;
-      rightPath: string;
-    }
-  | {
-      ok: false;
-      error: FormattedCaptureError;
-    };
+  | IpcError;
 
 declare global {
   interface Window {
     kvmRecon?: {
       appName: string;
       appVersion: string;
-      startCapture(target: StartCaptureTarget): Promise<StartCaptureResult>;
-      exportCapture(jobId: string): Promise<ExportCaptureResult>;
-      getCaptureSnapshot(jobId: string): Promise<SnapshotResult>;
-      collectCapturePage(jobId: string, role?: string): Promise<SnapshotResult>;
-      stopCapture(jobId: string): Promise<SnapshotResult>;
-      refreshCaptureProbe(jobId: string): Promise<SnapshotResult>;
-      listCaptureJobs(): Promise<JobListResult>;
-      pauseCapture(jobId: string): Promise<SnapshotResult>;
-      resumeCapture(jobId: string): Promise<SnapshotResult>;
-      closeCaptureJob(jobId: string): Promise<JobListResult>;
-      chooseCapturePack(): Promise<PackChooseResult>;
-      summarizeCapturePack(filePath: string): Promise<PackSummaryResult>;
-      compareCapturePacks(leftPath: string, rightPath: string): Promise<PackCompareResult>;
+      startCapture(target: string, deviceLabel?: string): Promise<StartResult>;
+      getCaptureStatus(): Promise<StatusResult>;
+      stopCapture(): Promise<StatusResult>;
+      exportCapture(zipDir?: string): Promise<StatusResult>;
+      discardCapture(): Promise<StatusResult>;
     };
   }
 }

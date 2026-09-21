@@ -35,9 +35,9 @@ export default defineConfig({
     define,
     build: {
       outDir: resolve(rootDir, 'dist/main'),
-      // 把 jszip 打进主进程包，安装包 files 不含 node_modules 时导出 zip 仍可用
+      // 把 zip 读写库打进主进程包，安装包 files 不含 node_modules 时导出 zip 仍可用
       externalizeDeps: {
-        exclude: ['jszip'],
+        exclude: ['yazl', 'yauzl', 'ajv', 'stream-json'],
       },
     },
   },

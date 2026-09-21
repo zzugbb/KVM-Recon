@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/controller-diagnostic.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/controller/diagnostics.jsonl 行",
+  "type": "object",
+  "required": ["occurredAt", "kind", "detail"],
+  "additionalProperties": false,
+  "properties": {
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "window-created",
+        "load-start",
+        "load-done",
+        "load-failed",
+        "cdp-attached",
+        "cdp-attach-failed",
+        "cert-trusted",
+        "renderer-gone",
+        "popup-created"
+      ]
+    },
+    "detail": { "type": "string", "minLength": 1 }
+  }
+}

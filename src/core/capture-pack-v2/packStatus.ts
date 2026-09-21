@@ -72,7 +72,9 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
   const storageLimit = summary.storageLimitReached;
   const exportValidation = summary.exportValidationFailures.length > 0;
   const workflowNotReached = summary.workflowStatus !== 'KVM_REACHED';
-  const rawJournal = !summary.rawJournalsClosed;
+  // journal 行写入磁盘失败 = raw journal 缺行，按 §14 映射 INCOMPLETE_RAW_JOURNAL
+  const rawJournal =
+    !summary.rawJournalsClosed || summary.journalWriteFailures.length > 0;
   const browserState = !summary.browserStateWritten;
   const evidenceReference = !summary.evidenceReferencesClosed;
 
@@ -133,7 +135,14 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
           .map(gap => `${gap.id}${gap.detail ? `: ${gap.detail}` : ''}`)
           .join('; ') || undefined,
     },
-    { id: 'raw-journals-closed', passed: summary.rawJournalsClosed },
+    {
+      id: 'raw-journals-closed',
+      passed: rawJournal === false,
+      detail:
+        summary.journalWriteFailures
+          .map(gap => `${gap.id}${gap.detail ? `: ${gap.detail}` : ''}`)
+          .join('; ') || undefined,
+    },
     { id: 'browser-state-written', passed: summary.browserStateWritten },
     { id: 'evidence-references-closed', passed: summary.evidenceReferencesClosed },
     {

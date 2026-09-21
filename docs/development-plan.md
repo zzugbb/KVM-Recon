@@ -2,35 +2,39 @@
 
 本文说明产品边界和当前状态。已完成阶段不再逐条展开；现场看 `docs/offline-field-guide.md`，出机房后看**包内** `README.md`。
 
-> **0.3.0 目标设计提示：** 本文主体记录 0.2.x 当前实现。下一阶段将重构为协议无关、证据优先的 Capture Pack 2.0 采集器；产品流程、无脱敏策略、单作业界面、手动导出、包格式和完整度门禁以 [`docs/v0.3-development-spec.md`](v0.3-development-spec.md) 为唯一权威规范。开发时不要把本文的 8 作业、包对比、大小限制、脱敏或 YES/PARTIAL/NO 继续带入新架构。
+> **0.3.0 目标设计提示：** 主分支已进入 0.3.0 开发（Capture Pack 2.0，协议无关、证据优先、不脱敏、单作业）。产品流程、无脱敏策略、单作业界面、手动导出、包格式和完整度门禁以 [`docs/v0.3-development-spec.md`](v0.3-development-spec.md) 为唯一权威规范。本文第 2 节之后描述的 8 作业、包对比、大小限制、脱敏与 YES/PARTIAL/NO 清单只对**已发布的 0.2.10 安装包**有效，不要带入新架构。
 
 ## 1. 目标
 
-机房离线运行的 macOS / Windows 桌面客户端：采集 BMC HTML5 KVM 适配所需资料，导出脱敏 Capture Pack，并用离场清单判断资料是否够离开机房后做网关适配。
+机房离线运行的 macOS / Windows 桌面客户端：采集 BMC HTML5 KVM 适配所需资料，导出 Capture Pack，并用完整度门禁判断资料是否够离开机房后做网关适配。
 
 ## 2. 全局约束
 
 - 不依赖公网，不在现场调用外部分析服务。
-- 不保存明文密码、Cookie 值、完整 KVM 视频码流。
+- 采集不脱敏：POST 口令 / Cookie 值 / 帧正文必须逐字节在包（规范 §13），包 manifest 显式声明 `UNREDACTED`。
 - 不实现生产 KVM 网关，不实现浏览器插件。
-- 厂商/型号只作铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
+- 厂商/型号只作设备说明铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-09-20）
+## 3. 当前状态（2026-09-21）
 
-**0.3.0 阶段 0（契约先行）与阶段 1（磁盘工作区与流式导出）已实现，运行版本仍是 0.2.10。** 已落地：`src/core/capture-pack-v2/` 的 Capture Pack 2.0 类型、三正交状态（captureIntegrity / workflowStatus / classificationStatus）与 11 个 `INCOMPLETE` 稳定原因代码（十项门禁失败全部映射显式原因，门禁集合必须恰好覆盖十个唯一 ID）；`schema/2.0/`（30 个 Schema，与类型同步，含状态关系约束、包内 Schema 自校验（缺任一副本或 `$id` 与文件名不符均拒绝）与正负向 Ajv 测试，`ajv` 移入运行时依赖）；随机 URL 未知 Mock KVM（`src/core/mock-kvm/`，登录走 SHA-256 摘要凭据链（服务端验证用户名与摘要），KVM 启动接口校验 CSRF 头（缺失/错误 403），WS 握手与会话严格校验签发的 sessionToken 与 viewerToken，页面脚本可在真实浏览器走通登录 → 控制台 → Viewer → Worker → WebSocket 全链，含 Electron 真实输入浏览器流程 E2E）；11 个完整度失败 Fixture 与正向（COMPLETE + KVM_REACHED + UNKNOWN）、legacy（`LEGACY_UNVERIFIED`）Fixture；独立样例包一致性验证器（负向测试 36 项：删除正文/删除截图/删除 Schema 副本/篡改 Schema `$id`/悬空引用/篡改哈希/状态不一致/Schema 违约/空 journal/重复路径/非法顶层条目/门禁 ID 非法/重复 replay ID/通道动态值集合不一致/正文指向另一现存正文等）；`examples/capture-pack-v2/` 样例包（完整度从观察事实与预验证派生，含双占位截图、crypto 调用、SSE/下载/WebRTC/WebTransport 消息契约；Replay 与 value-flow 只记录实际协议事实——启动请求依赖 CSRF 头、WS 握手携带 Cookie 与 token 查询参数，replay 通道显式声明动态值依赖（三方对齐 + ID 唯一 + 通道完整语义（含动态值集合相等）+ 正文路径与 catalog BodyRef 逐项一致），无编造关系）。**阶段 1 已落地**：`src/core/job-workspace/` 单作业磁盘工作区（单 active 作业；`workspace.json` 含 `workspaceId`/`exported`；读写/导出/清理核验实例身份；跨进程互斥为 OS 内核独占——Windows 版本化命名管道、Linux 抽象 socket、macOS `O_EXLOCK` 版本化锁文件，旧 unix socket 失败关闭不自动 unlink；`waitMs` 有限非负数；`current/.owner` 只创建不偷取，close 先释放 owner 再 closed；空/损坏 `current` 失败关闭保留证据；finalized-unexported 可恢复，仅 markExported 后允许清理；磁盘水位 5 GiB、`storageLimited` 粘性；标记原子写；finalize 不可变边界；JSONL 周期 fsync）。`src/core/body-store/` SHA-256 内容寻址流式正文（finish/abort 清理失败不释放租赁，可 abort 重试；零大小上限）。`src/core/export/` checksums 与流式 ZIP64（DOM `.html` 只走流式哈希，不整文件载入）。遗留 0.2.x 链路（内存型 recorder 的大小上限、JSZip 整包内存导出）按规范 §18 于阶段 2 采集器替换时一并删除，阶段 1 未改动 0.2.x 链路。未开始：协议无关采集器（阶段 2）、证据图与完整度引擎（阶段 3）、AI/Replay 生成器（阶段 4）、单屏新界面（阶段 5）、全量验收（阶段 6）。0.2.x 运行文档（architecture / capture-pack-spec / offline-field-guide）未改写。
+**0.3.0 阶段 0–2 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
 
-**0.2.10 自动化门禁需要 typecheck / 单测 / 构建 / 生产采集 E2E。第二批现场语料可通过 `KVM_RECON_FIELD_COLLECTION_2` 运行 27 个 ZIP + 16 份 HAR 的只读离线回归；新构建仍应先做代表机验证，不要直接批量重采。**
+- 阶段 0（契约）：Capture Pack 2.0 类型与三正交状态、`schema/2.0/`（30 个 Schema，包内自校验）、随机 URL Mock KVM、完整度失败 Fixture 与样例包一致性验证器。
+- 阶段 1（工作区）：单作业 `JobWorkspace`（跨进程互斥、磁盘水位、finalize 不可变）、SHA-256 内容寻址 `BodyStore`、流式 ZIP64 导出。
+- 阶段 2（采集）：`src/core/collector/` 协议无关全量采集（CDP journal、HTTP/HAR、WS 全帧、WebCrypto、脚本/Worker/WASM、NetLog、截图/DOM 快照/时间线、Storage、实时通道）；生产 Controller + 单作业 Electron 壳 + 崩溃恢复导出（保守证据摘要）。
+- 0.2.x 运行链路与五项大小上限已删除；新链路无上限、不脱敏；导出恒为 `INCOMPLETE + TARGET_OPENED`，workflowStatus 由阶段 3 派生。
+- 验证：vitest + E2E 全绿，含 Mock KVM 真实浏览器对照与现场 HAR 回放（`KVM_RECON_FIELD_COLLECTION_2` 指向语料目录，只读）；真机验收按产品安排最后统一进行。
 
-已具备：无副作用探测与 TLS、手工登录采集、HTTP 重定向 hop/ExtraInfo/受控正文、WS 握手与有界帧采样（含 popup/OOPIF）、自动 KVM 画面截图、脱敏导出、YES / PARTIAL / NO 清单、暂停/多作业、登录后复验、现场铭牌、本地打开/对比 zip。每个导出包根目录有中文 `README.md`（阅读地图 + 适配前裁定），manifest 同时记录版本和 build ID。
+未开始：阶段 3（证据图与完整度引擎）、阶段 4（AI/Replay 生成器）、阶段 5（界面收口）、阶段 6（全量验收）。
+
+**下一步：** 阶段 3——稳定 ID、资源依赖图、值传播图、严格 COMPLETE 门禁、Viewer 活动识别与自动收尾。
 
 安装包由 GitHub Actions 构建：macOS 为 ad-hoc 签名，Windows 无 Authenticode。
 
-**下一步：** 先用 H3C HDM2、Dell iDRAC、HPE iLO、Huawei legacy 和真实 OpenBMC H5 代表机试采，当场核对版本/build ID、登录链、KVM 启动链、WS 帧和 viewer 截图；通过后再批量重采。三族真机闸门与付费签名按产品安排，见第 5、8 节。
+**产品边界止于导出 Capture Pack。** 自动写 Adapter、机房内 AI、MITM、自动登录、完整视频解码不属于本项目。
 
-**产品边界止于导出脱敏 Capture Pack。** 自动写 Adapter、机房内 AI、MITM、自动登录、完整视频解码不属于本项目。
-
-## 4. 已完成能力（摘要）
+## 4. 已发布 0.2.10 能力（历史，主分支已由 0.3.0 链路替换）
 
 | 能力 | 说明 |
 | --- | --- |

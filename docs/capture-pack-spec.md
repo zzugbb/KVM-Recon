@@ -1,6 +1,6 @@
 # Capture Pack 与离场验收清单
 
-> **版本范围：Capture Pack 1.x / KVM-Recon 0.2.x。** 本文仍是当前安装包、旧现场包、现有 Schema 与回归测试的有效契约。Capture Pack 2.0 的目标格式见 [`v0.3-development-spec.md`](v0.3-development-spec.md)；在 0.3.0 实现完成前不要用目标格式改写本文。
+> **历史文档（Capture Pack 1.x / KVM-Recon 0.2.x）。** 主分支已进入 0.3.0 开发，0.2.x 生成链路已删除；本文只对已发布的 0.2.10 安装包导出的旧现场包与仓库 `schema/`（1.x）校验有效。Capture Pack 2.0 的权威契约是 `src/core/capture-pack-v2/` + `schema/2.0/` 与 [`v0.3-development-spec.md`](v0.3-development-spec.md)；发布 0.3.0 时本文整体迁移并保留 1.x 迁移说明，不要用目标格式改写本文。
 
 ## 1. 目标
 

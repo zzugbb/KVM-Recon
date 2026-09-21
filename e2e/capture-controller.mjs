@@ -28,7 +28,8 @@ if (!existsSync(mainEntry)) {
   process.exit(1);
 }
 
-const expectEarlyCloseFail = process.argv.includes('--expect-early-close-fail');
+// 0.3 韧性变体：断言前销毁全部采集窗口，stop/export 仍必须收尾出 INCOMPLETE 包
+const closeBeforeAssert = process.argv.includes('--close-before-assert');
 const successMarker = 'production capture controller e2e passed';
 
 const childEnv = { ...process.env };
@@ -42,7 +43,7 @@ const child = spawn(
   [
     mainEntry,
     '--e2e-capture-controller',
-    ...(expectEarlyCloseFail ? ['--e2e-capture-close-before-assert'] : []),
+    ...(closeBeforeAssert ? ['--e2e-capture-close-before-assert'] : []),
     '--no-sandbox',
     '--disable-gpu',
   ],
@@ -82,15 +83,7 @@ const timeout = setTimeout(() => {
 child.on('exit', code => {
   clearTimeout(timeout);
   const passed = output.includes(successMarker);
-  if (expectEarlyCloseFail) {
-    if (passed || code === 0) {
-      console.error('预期断言前关窗应失败，但 E2E 以成功退出');
-      process.exit(1);
-    }
-    process.exit(0);
-    return;
-  }
-  if (code !== 0 || !passed) {
+  if (!passed || code !== 0) {
     console.error(
       passed ? `生产采集 E2E 退出码 ${code}` : '生产采集 E2E 退出但未出现成功标记',
     );

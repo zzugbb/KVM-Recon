@@ -4,41 +4,27 @@ import { describe, expect, it } from 'vitest';
 import { App } from './App';
 import { APP_VERSION } from '../version';
 
-describe('App', () => {
-  it('renders the desktop client starting point and empty capture readiness', () => {
+describe('App（单作业工作台，阶段 2）', () => {
+  it('渲染单作业工作台：未脱敏常驻提示 + 两个输入 + 生命周期按钮', () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain('KVM-Recon');
     expect(html).toContain(`v${APP_VERSION}`);
-    expect(html).toContain('离线 BMC/KVM 资料采集工具');
-    expect(html).toContain('离场适配就绪：NO');
-    expect(html).toContain('新建采集作业');
-    expect(html).toContain('停止采集并导出');
-    expect(html).toContain('作业备注');
-    expect(html).toContain('现场厂商');
-    expect(html).toContain('现场型号');
-    expect(html).toContain('机柜位置');
-    expect(html).toContain('field-row-pair');
-    expect(html).toContain('补拍画面（可选）');
-    expect(html).toContain('采集当前画面');
-    expect(html).toContain('value="login"');
-    expect(html).toContain('actions-extra');
-    expect(html).toContain('当前阶段：新建采集');
-    expect(html).toContain('填写 BMC 地址后点「新建采集作业」');
-    expect(html).not.toContain('请开始采集并至少完成 BMC 登录、HTML5 KVM 入口点击和 WebSocket 建立。');
-    expect(html).toContain('采集进度');
-    expect(html).toContain('aria-label="离场适配就绪"');
-    expect(html).toContain('aria-label="采集进度"');
-    expect(html).toContain('aria-label="作业列表"');
-    expect(html).toContain('aria-label="本地打开 Capture Pack"');
-    expect(html).toContain('关闭采集窗口');
-    expect(html).toContain('登录后复验探测');
-    expect(html).toContain('暂停采集');
-    expect(html).toContain('作业列表');
-    expect(html).toContain('打开 Capture Pack');
-    expect(html).toContain('对比两份');
-    expect(html).toContain('KVM 画面截图');
-    expect(html).not.toContain('viewer 页面截图已采集');
-    expect(html).toMatch(/采集当前画面[\s\S]*disabled|disabled[\s\S]*采集当前画面/);
+    expect(html).toContain('原始资料 · 未脱敏');
+    expect(html).toContain('BMC 地址');
+    expect(html).toContain('设备说明');
+    expect(html).toContain('开始采集');
+    expect(html).toContain('停止并收尾');
+    expect(html).toContain('导出采集包');
+    expect(html).toContain('丢弃已导出作业');
+    expect(html).toContain('当前作业');
+    expect(html).toContain('空闲：填写 BMC 地址后点「开始采集」');
+    // 单作业模型：不再有多作业列表 / 打开与对比包 / 暂停 / 手动截图入口
+    expect(html).not.toContain('作业列表');
+    expect(html).not.toContain('打开 Capture Pack');
+    expect(html).not.toContain('对比');
+    expect(html).not.toContain('暂停采集');
+    expect(html).not.toContain('采集当前画面');
+    expect(html).not.toContain('离场适配就绪');
   });
 });

@@ -168,6 +168,8 @@ export interface PackIntegrityEvidenceSummary {
   channelGaps: IntegrityEvidenceGap[];
   /** 观察到但当前无法采集的通道（条件 6、§2.2）。 */
   unsupportedChannels: IntegrityEvidenceGap[];
+  /** journal 行（事务 / 资源索引）写入磁盘失败的证据（缺口持久记账，§3）。 */
+  journalWriteFailures: IntegrityEvidenceGap[];
   /** ZIP 重开校验失败项（条件 10）。 */
   exportValidationFailures: IntegrityEvidenceGap[];
   workflowStatus: WorkflowStatus;
@@ -736,6 +738,32 @@ export interface PackV2BrowserStorageFile {
   sessionStorage: Record<string, string>;
   indexedDb: PackV2IndexedDbEntry[];
   cacheStorage: PackV2CacheStorageEntry[];
+}
+
+/** raw/browser/frame-tree.json：收尾时 Page.getFrameTree 的原始 Frame Tree（规范 §8.4）。 */
+export interface PackV2BrowserFrameTreeFile {
+  schemaVersion: typeof PACK_V2_SCHEMA_VERSION;
+  targetId: string;
+  capturedAt: string;
+  frameTree: Record<string, unknown>;
+}
+
+export type ControllerDiagnosticKind =
+  | 'window-created'
+  | 'load-start'
+  | 'load-done'
+  | 'load-failed'
+  | 'cdp-attached'
+  | 'cdp-attach-failed'
+  | 'cert-trusted'
+  | 'renderer-gone'
+  | 'popup-created';
+
+/** raw/controller/diagnostics.jsonl 每行：Controller 层采集过程事实（规范 §8.4，含证书错误）。 */
+export interface PackV2ControllerDiagnosticRow {
+  occurredAt: string;
+  kind: ControllerDiagnosticKind;
+  detail: string;
 }
 
 export type BrowserConsoleLevel = 'log' | 'info' | 'warning' | 'error';

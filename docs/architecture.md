@@ -1,6 +1,6 @@
 # KVM-Recon 技术架构
 
-> **版本范围：0.2.x 当前实现。** 本文用于维护已发布代码与 Capture Pack 1.x，不是 0.3.0 的目标架构。0.3.0 开发以 [`v0.3-development-spec.md`](v0.3-development-spec.md) 为准；发布 0.3.0 时再将本文重写为新架构，并把本版本归档。
+> **历史文档（0.2.x / Capture Pack 1.x）。** 主分支已进入 0.3.0 开发，0.2.x 运行链路已删除；本文描述的架构只对已发布的 0.2.10 安装包与旧现场包有效。0.3.0 目标架构以 [`v0.3-development-spec.md`](v0.3-development-spec.md) 为准；发布 0.3.0 时本文整体迁移到 Capture Pack 2.0 并归档，不按本文继续维护新代码。
 
 ## 1. 背景
 

@@ -1,559 +1,220 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
-import { readFile, writeFile } from 'node:fs/promises';
+/**
+ * KVM-Recon 主进程入口（0.3.0 阶段 2：生产 Controller + 单作业模型）。
+ *
+ * IPC 面只保留单作业生命周期：start / status / stop / export / discard。
+ * 启动时先恢复上一个未完成作业（recoverCrashedJobExport，规范 §4.2：
+ * 应用异常退出后只恢复这一份；拒绝恢复时现场资料保留）。
+ * 0.2.x 的多作业 / 暂停 / 手动截图 / 打开对比包 / 离场复验 IPC 已删除。
+ */
+
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
+import { APP_VERSION, BUILD_ID } from '../version';
+import { recoverCrashedJobExport } from '../core/export/recoverCrashedJobExport';
 import {
-  compareCapturePacks,
-  summarizeCapturePackZip,
-} from '../core/capture-pack/summarizeCapturePack';
-import type { CaptureTarget } from '../core/capture-pack/types';
-import { parseCapturePort } from '../core/capture-pack/parseCapturePort';
-import { canAddCaptureJob, type CaptureJobSummary } from '../core/delivery/captureJob';
-import { exportCaptureJob, type CaptureExportJob } from '../core/delivery/exportCaptureJob';
-import { normalizeOperatorObserved, type OperatorObservedAsset } from '../core/delivery/operatorObserved';
-import {
-  classifyCaptureError,
-  formatCaptureError,
-} from '../core/delivery/formatCaptureError';
-import { buildLiveCaptureSnapshot } from '../core/delivery/buildLiveCaptureSnapshot';
-import { createCaptureLogger } from '../core/log/createCaptureLogger';
-import { applyAuthenticatedProbe, probeBmcTarget } from '../core/probe/probeBmcTarget';
-import { scoreCapturedKvmFamily } from '../core/signatures/detectKvmFamily';
-import { createNodeProbeHttpClient } from '../core/probe/createNodeProbeHttpClient';
-import { createCaptureBrowserController } from './capture/createCaptureBrowserController';
-import { createElectronCaptureBrowserAdapter } from './capture/createElectronCaptureBrowserAdapter';
+  createProductionCapture,
+  type ProductionCaptureController,
+  type ProductionCaptureExportResult,
+  type ProductionCaptureTarget,
+} from './capture/productionCaptureController';
 import { getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
-import { isE2eCaptureControllerLaunch, runProductionCaptureE2e } from './capture/runProductionCaptureE2e';
-
-const logger = createCaptureLogger();
+import {
+  isE2eCaptureControllerLaunch,
+  runProductionCaptureE2e,
+} from './capture/runProductionCaptureE2e';
+import { runFieldHarReplayE2e } from './capture/runFieldHarReplayE2e';
 
 // 必须在 app ready 之前：现场 BMC 自签证书在 Chrome 要点「高级」，采集窗没有该页面，不忽略就会白屏。
 app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('allow-running-insecure-content');
 
-interface CaptureSession extends CaptureExportJob {
-  controller: ReturnType<typeof createCaptureBrowserController>;
-  exported: boolean;
-  exportedAt?: string;
+function workspacesRootDir() {
+  return join(app.getPath('userData'), 'workspaces');
 }
 
-const captureSessions = new Map<string, CaptureSession>();
-
-function sessionSnapshot(session: CaptureSession) {
-  return {
-    windowsOpen: session.controller.windowsOpen(),
-    paused: session.controller.isPaused(),
-    capturingScreenshot: session.controller.isCapturingScreenshot(),
-    ...buildLiveCaptureSnapshot({
-      probe: session.probe,
-      page: session.controller.timeline(),
-      network: session.controller.network(),
-      networkIdle: session.controller.networkCaptureStatus(),
-    }),
-  };
-}
-
-function toJobSummary(session: CaptureSession): CaptureJobSummary {
-  const snapshot = sessionSnapshot(session);
-  return {
-    jobId: session.jobId,
-    host: session.target.host,
-    port: session.target.port,
-    scheme: session.target.scheme,
-    family: scoreCapturedKvmFamily(session.probe, session.controller.network()).primary,
-    startedAt: session.startedAt,
-    vendor: session.operatorObserved?.vendor || '',
-    product: session.operatorObserved?.product || '',
-    windowsOpen: snapshot.windowsOpen,
-    paused: snapshot.paused,
-    exported: session.exported,
-    exportedAt: session.exportedAt,
-    readiness: snapshot.readiness,
-  };
-}
-
-function listJobSummaries() {
-  return [...captureSessions.values()]
-    .map(toJobSummary)
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
-}
-
-function missingSessionResult() {
-  return {
-    ok: false as const,
-    error: formatCaptureError({
-      code: 'EXPORT_FAILED',
-      detail: '没有正在进行的采集作业。',
-    }),
-  };
-}
-
-async function refreshAuthenticatedProbe(session: CaptureSession) {
+/**
+ * 解析现场输入的 BMC 地址（规范 §4.1：支持 IP、主机名及带 scheme/port 的地址）。
+ * 解析失败返回 null（不猜）；缺省 scheme 为 https、缺省端口 443。
+ */
+export function parseTargetInput(input: string): ProductionCaptureTarget | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
   try {
-    const cookieNames = new Set<string>();
-    const authenticated = await probeBmcTarget({
-      target: session.target,
-      httpClient: createNodeProbeHttpClient(session.target, {
-        extraHeadersForPath: async path => {
-          const cookies = await session.controller.readSessionCookies(path);
-          for (const cookie of cookies) {
-            if (cookie.name) cookieNames.add(cookie.name);
-          }
-          const header = cookies
-            .filter(cookie => cookie.name && cookie.value)
-            .map(cookie => `${cookie.name}=${cookie.value}`)
-            .join('; ');
-          const headers: Record<string, string> = {};
-          if (header) headers.Cookie = header;
-          return headers;
-        },
-      }),
-    });
-    if (cookieNames.size === 0) {
-      if (!session.probe.authenticated) {
-        session.probe = {
-          ...session.probe,
-          authenticated: {
-            attempted: true,
-            cookieNames: [],
-            paths: {},
-          },
-        };
-      }
-      return;
-    }
-    const capturedCookieNames = [...cookieNames];
-    session.probe = applyAuthenticatedProbe(session.probe, authenticated, capturedCookieNames);
-    logger.info('authenticated-probe', {
-      jobId: session.jobId,
-      cookieCount: capturedCookieNames.length,
-      family: session.probe.familySignatures.primary,
-    });
-  } catch (error) {
-    // 捕获登录后复验失败：BMC 可能拒绝带会话的探测或网络中断
-    // 策略：保留匿名 probe，不把 Cookie 值写入日志，不阻断导出
-    logger.info('authenticated-probe-failed', { jobId: session.jobId });
-    void error;
+    url = new URL(withScheme);
+  } catch {
+    return null;
   }
+  const scheme = url.protocol.replace(':', '');
+  if (scheme !== 'http' && scheme !== 'https') return null;
+  const host = url.hostname;
+  if (!host) return null;
+  const port = url.port ? Number(url.port) : scheme === 'https' ? 443 : 80;
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
+  return { host, port, scheme: scheme as 'http' | 'https', originalInput: trimmed };
+}
+
+interface CaptureStatusJob {
+  jobId: string;
+  /** capturing = 采集窗口工作中；stopped = 已收尾可导出；exported = 已导出。 */
+  state: 'capturing' | 'stopped' | 'exported';
+  windowsOpen: boolean;
+  storageLimited: boolean;
+  windowsLabel: string;
+  diagnostics: {
+    droppedEvents: number;
+    droppedEventByMethod: Record<string, number>;
+    gapCounts: Record<string, number>;
+    storageLimitReached: boolean;
+  };
+}
+
+interface CaptureStatusPayload {
+  ok: true;
+  job: CaptureStatusJob | null;
+  export: (ProductionCaptureExportResult & { zipPath: string }) | null;
+  /** 上次启动的崩溃恢复结果（null = 没有可恢复的作业）。 */
+  recovery: RecoveryNotice | null;
+}
+
+interface RecoveryNotice {
+  kind: 'exported' | 'refused' | 'failed';
+  jobId?: string;
+  zipPath?: string;
+  reason?: string;
+  error?: string;
+  conservative?: boolean;
+}
+
+let activeController: ProductionCaptureController | null = null;
+let lastExport: (ProductionCaptureExportResult & { zipPath: string }) | null = null;
+let recoveryNotice: RecoveryNotice | null = null;
+
+function statusJob(): CaptureStatusJob | null {
+  if (!activeController) return null;
+  const stopped = activeController.session.workspace.state !== 'active';
+  return {
+    jobId: activeController.session.workspace.jobId,
+    state: lastExport ? 'exported' : stopped ? 'stopped' : 'capturing',
+    windowsOpen: activeController.windowsOpen(),
+    storageLimited: activeController.session.workspace.storageLimited,
+    windowsLabel: activeController.session.workspace.deviceLabel ?? '',
+    diagnostics: activeController.session.evidence().diagnostics() as CaptureStatusJob['diagnostics'],
+  };
+}
+
+function statusPayload(): CaptureStatusPayload {
+  return {
+    ok: true,
+    job: statusJob(),
+    export: lastExport,
+    recovery: recoveryNotice,
+  };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function registerCaptureHandlers() {
   ipcMain.handle(
     'capture:start',
-    async (
-      _event,
-      payload: CaptureTarget & {
-        operatorNote?: string;
-        operatorObserved?: Partial<OperatorObservedAsset> | null;
-      },
-    ) => {
-    try {
-      const limit = canAddCaptureJob(captureSessions.size);
-      if (!limit.ok) {
-        return {
-          ok: false as const,
-          error: formatCaptureError({
-            code: 'UNKNOWN',
-            detail: limit.message,
-          }),
-        };
-      }
-      const port = parseCapturePort(payload.port);
-      if (port === null) {
-        throw new Error('端口必须是 1 到 65535 之间的整数。');
-      }
-      const target: CaptureTarget = {
-        host: String(payload.host || '').trim(),
-        port,
-        scheme: payload.scheme,
-      };
-      const jobId = `job-${Date.now()}`;
-      const startedAt = new Date().toISOString();
-      const screenshotDir = join(app.getPath('userData'), 'captures', jobId, 'screenshots');
-      const probe = await probeBmcTarget({ target });
-      const controller = createCaptureBrowserController({
-        jobId,
-        target,
-        adapter: createElectronCaptureBrowserAdapter({
-          screenshotDir,
-        }),
-      });
-
-      await controller.start();
-      const operatorObserved = normalizeOperatorObserved({
-        ...payload.operatorObserved,
-        note: payload.operatorObserved?.note ?? payload.operatorNote,
-      });
-      logger.info('capture-start', {
-        jobId,
-        host: target.host,
-        port: target.port,
-        vendor: operatorObserved.vendor || undefined,
-        product: operatorObserved.product || undefined,
-      });
-      const session: CaptureSession = {
-        jobId,
-        startedAt,
-        target,
-        probe,
-        operatorNote: operatorObserved.note,
-        operatorObserved,
-        controller,
-        exported: false,
-      };
-      captureSessions.set(jobId, session);
-
-      return {
-        ok: true as const,
-        jobId,
-        family: probe.familySignatures,
-        timeline: controller.timeline(),
-        network: controller.network(),
-        snapshot: sessionSnapshot(session),
-        jobs: listJobSummaries(),
-      };
-    } catch (error) {
-      // 捕获采集启动失败：BMC 不可达、证书策略、权限不足或窗口创建失败
-      // 策略：返回现场可读错误，避免主窗口白屏或抛出技术堆栈
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
-    }
-  });
-
-  ipcMain.handle('capture:export', async (event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) {
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: 'EXPORT_FAILED',
-          detail: '没有正在进行的采集作业。',
-        }),
-      };
-    }
-
-    const parentWindow = BrowserWindow.fromWebContents(event.sender);
-    await refreshAuthenticatedProbe(session);
-    const result = await exportCaptureJob({
-      job: session,
-      collectPageFacts: label => session.controller.collectPageFacts(label),
-      getPage: () => session.controller.timeline(),
-      getNetwork: () => session.controller.network(),
-      getSourceFiles: () => session.controller.sourceFiles(),
-      waitForNetworkIdle: () => session.controller.waitForNetworkIdle(),
-      getChromiumAccess: () => session.controller.chromiumAccess(),
-      confirmExport: async summary => {
-        logger.info('export-confirm', {
-          jobId,
-          readiness: summary.readiness,
-          redactionStatus: summary.redactionStatus,
-          redactedFields: summary.redactedFields,
-        });
-        const detail = [
-          `脱敏：${summary.redactionStatus}，已脱敏字段 ${summary.redactedFields}`,
-          ...summary.pendingActions.slice(0, 6),
-        ].join('\n');
-        const result = parentWindow
-          ? await dialog.showMessageBox(parentWindow, {
-              type: 'info',
-              title: '确认导出 Capture Pack',
-              message: `离场适配就绪：${summary.readiness}`,
-              detail,
-              buttons: ['取消', '选择保存位置'],
-              defaultId: 1,
-              cancelId: 0,
-            })
-          : await dialog.showMessageBox({
-              type: 'info',
-              title: '确认导出 Capture Pack',
-              message: `离场适配就绪：${summary.readiness}`,
-              detail,
-              buttons: ['取消', '选择保存位置'],
-              defaultId: 1,
-              cancelId: 0,
-            });
-        return result.response === 1;
-      },
-      chooseSavePath: async fileName => {
-        const options = {
-          title: '导出 Capture Pack',
-          defaultPath: join(app.getPath('downloads'), fileName),
-          filters: [{ name: 'Capture Pack', extensions: ['zip'] }],
-        };
-        const result = parentWindow
-          ? await dialog.showSaveDialog(parentWindow, options)
-          : await dialog.showSaveDialog(options);
-        return result.canceled || !result.filePath ? null : result.filePath;
-      },
-      writeFile,
-    });
-    if (result.ok) {
-      session.exported = true;
-      session.exportedAt = new Date().toISOString();
+    async (_event, payload: { target: string; deviceLabel?: string }) => {
       try {
-        await session.controller.stop();
+        if (activeController) {
+          return {
+            ok: false as const,
+            error: '已有进行中的采集作业（单作业模型）。先停止并导出，或丢弃已导出的作业。',
+          };
+        }
+        const target = parseTargetInput(String(payload?.target ?? ''));
+        if (!target) {
+          return { ok: false as const, error: 'BMC 地址无效：支持 IP、主机名或带 scheme/port 的地址。' };
+        }
+        const controller = await createProductionCapture({
+          // 随机后缀防同毫秒碰撞（单作业模型下双击重试的理论场景）
+          jobId: `job-${Date.now()}-${randomUUID().slice(0, 8)}`,
+          workspacesRootDir: workspacesRootDir(),
+          target,
+          deviceLabel: payload?.deviceLabel?.trim() || undefined,
+          tool: { version: APP_VERSION, buildId: BUILD_ID },
+        });
+        await controller.start();
+        activeController = controller;
+        return { ok: true as const, jobId: controller.session.workspace.jobId, target };
       } catch (error) {
-        // 捕获导出后关窗失败：窗口可能已被用户手动关掉
-        // 策略：导出已成功，忽略关窗错误，避免把成功结果改成失败
-        void error;
+        return { ok: false as const, error: errorMessage(error) };
       }
-    }
-    return {
-      ...result,
-      jobs: listJobSummaries(),
-    };
-  });
+    },
+  );
 
-  ipcMain.handle('capture:stop', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) {
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: 'EXPORT_FAILED',
-          detail: '没有正在进行的采集作业。',
-        }),
-      };
-    }
+  ipcMain.handle('capture:status', () => statusPayload());
 
+  ipcMain.handle('capture:stop', async () => {
+    if (!activeController) {
+      return { ok: false as const, error: '没有进行中的采集作业。' };
+    }
     try {
-      await session.controller.ingestLiveEvents();
-      await session.controller.stop();
-      logger.info('capture-stop', { jobId });
-      return {
-        ok: true as const,
-        ...sessionSnapshot(session),
-        jobs: listJobSummaries(),
-      };
+      await activeController.stop();
+      return statusPayload();
     } catch (error) {
-      // 捕获停止采集失败：窗口可能已关闭，作业数据仍应可导出
-      // 策略：返回当前快照与可读错误，避免现场无法继续导出
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
+      return { ok: false as const, error: errorMessage(error) };
     }
   });
 
-  ipcMain.handle('capture:snapshot', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) {
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: 'EXPORT_FAILED',
-          detail: '没有正在进行的采集作业。',
-        }),
-      };
+  ipcMain.handle('capture:export', async (event, payload?: { zipDir?: string }) => {
+    if (!activeController) {
+      return { ok: false as const, error: '没有进行中的采集作业。' };
     }
-
-    await session.controller.ingestLiveEvents();
-    return {
-      ok: true as const,
-      ...sessionSnapshot(session),
-      jobs: listJobSummaries(),
-    };
-  });
-
-  ipcMain.handle('capture:collectPage', async (_event, jobId: string, role = 'login') => {
-    const session = captureSessions.get(jobId);
-    if (!session) {
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: 'EXPORT_FAILED',
-          detail: '没有正在进行的采集作业。',
-        }),
-      };
-    }
-
     try {
-      if (!session.controller.windowsOpen()) {
+      // 导出前先收尾（窗口保留：收尾快照需要活页面；导出成功后再关）
+      await activeController.stop();
+      let zipDir = typeof payload?.zipDir === 'string' && payload.zipDir ? payload.zipDir : null;
+      if (!zipDir) {
+        const parentWindow = BrowserWindow.fromWebContents(event.sender);
+        const options = {
+          title: '选择保存位置',
+          defaultPath: app.getPath('downloads'),
+          properties: ['openDirectory' as const, 'createDirectory' as const],
+        };
+        const result = parentWindow
+          ? await dialog.showOpenDialog(parentWindow, options)
+          : await dialog.showOpenDialog(options);
+        if (result.canceled || !result.filePaths[0]) {
+          return { ok: false as const, error: '已取消导出（作业与采集窗口保留，可重新导出）。' };
+        }
+        zipDir = result.filePaths[0];
+      }
+      const result = await activeController.exportPack(zipDir);
+      lastExport = result;
+      await activeController.closeWindows();
+      return { ...statusPayload(), zipPath: result.zipPath, fileName: result.fileName };
+    } catch (error) {
+      return { ok: false as const, error: errorMessage(error) };
+    }
+  });
+
+  ipcMain.handle('capture:discard', async () => {
+    if (!activeController) {
+      return { ok: false as const, error: '没有进行中的采集作业。' };
+    }
+    try {
+      if (!activeController.session.workspace.exported) {
         return {
           ok: false as const,
-          error: formatCaptureError({
-            code: 'UNKNOWN',
-            detail: '采集窗口已关闭，无法补采当前画面。可直接导出已采集资料。',
-          }),
+          error: '作业尚未导出，不能丢弃（未导出的现场资料必须保留）。先导出再丢弃。',
         };
       }
-      const screenshotRole = typeof role === 'string' && role ? role : 'login';
-      logger.info('collect-page', { jobId, role: screenshotRole });
-      const pageCapture = await session.controller.collectPageFacts(screenshotRole, {
-        operatorConfirmed: screenshotRole === 'viewer',
-      });
-      if (!pageCapture.captured) {
-        return {
-          ok: false as const,
-          error: formatCaptureError({
-            code: 'UNKNOWN',
-            detail: `当前画面未采集：${pageCapture.reason || '未知原因'}`,
-          }),
-        };
-      }
-      return {
-        ok: true as const,
-        pageCapture,
-        ...sessionSnapshot(session),
-        jobs: listJobSummaries(),
-      };
+      await activeController.closeWindows();
+      await activeController.session.workspace.cleanup();
+      activeController = null;
+      lastExport = null;
+      return statusPayload();
     } catch (error) {
-      // 捕获页面补采失败：采集窗口可能已关闭或截图目录不可写
-      // 策略：返回现场可读错误，保留当前作业，便于重试补采
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
-    }
-  });
-
-  ipcMain.handle('capture:listJobs', async () => {
-    return {
-      ok: true as const,
-      jobs: listJobSummaries(),
-    };
-  });
-
-  ipcMain.handle('capture:pause', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) return missingSessionResult();
-    session.controller.pause();
-    logger.info('capture-pause', { jobId });
-    return {
-      ok: true as const,
-      ...sessionSnapshot(session),
-      jobs: listJobSummaries(),
-    };
-  });
-
-  ipcMain.handle('capture:resume', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) return missingSessionResult();
-    session.controller.resume();
-    logger.info('capture-resume', { jobId });
-    return {
-      ok: true as const,
-      ...sessionSnapshot(session),
-      jobs: listJobSummaries(),
-    };
-  });
-
-  ipcMain.handle('capture:closeJob', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) return missingSessionResult();
-    try {
-      await session.controller.stop();
-    } catch (error) {
-      // 捕获关闭作业时关窗失败：窗口可能已不存在
-      // 策略：仍从内存列表移除作业，避免残留不可操作的条目
-      void error;
-    }
-    captureSessions.delete(jobId);
-    logger.info('capture-close-job', { jobId });
-    return {
-      ok: true as const,
-      jobs: listJobSummaries(),
-    };
-  });
-
-  ipcMain.handle('pack:choose', async event => {
-    const parentWindow = BrowserWindow.fromWebContents(event.sender);
-    const options = {
-      title: '打开 Capture Pack',
-      filters: [{ name: 'Capture Pack', extensions: ['zip'] }],
-      properties: ['openFile' as const],
-    };
-    const result = parentWindow
-      ? await dialog.showOpenDialog(parentWindow, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled || !result.filePaths[0]) {
-      return { ok: false as const, canceled: true as const };
-    }
-    return { ok: true as const, filePath: result.filePaths[0] };
-  });
-
-  ipcMain.handle('pack:summarize', async (_event, filePath: string) => {
-    try {
-      const bytes = await readFile(filePath);
-      const summary = await summarizeCapturePackZip(bytes);
-      return { ok: true as const, summary, filePath };
-    } catch (error) {
-      // 捕获打开资料包失败：路径无效、不是 zip 或 JSON 损坏
-      // 策略：返回可读错误，不调用公网，不影响当前采集作业
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
-    }
-  });
-
-  ipcMain.handle('pack:compare', async (_event, leftPath: string, rightPath: string) => {
-    try {
-      const [leftBytes, rightBytes] = await Promise.all([readFile(leftPath), readFile(rightPath)]);
-      const left = await summarizeCapturePackZip(leftBytes);
-      const right = await summarizeCapturePackZip(rightBytes);
-      return {
-        ok: true as const,
-        comparison: compareCapturePacks(left, right),
-        leftPath,
-        rightPath,
-      };
-    } catch (error) {
-      // 捕获对比资料包失败：其中一个 zip 无法读取或解析
-      // 策略：返回可读错误，保留已打开的另一份摘要（由界面决定是否清空）
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
-    }
-  });
-
-  ipcMain.handle('capture:refreshProbe', async (_event, jobId: string) => {
-    const session = captureSessions.get(jobId);
-    if (!session) {
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: 'EXPORT_FAILED',
-          detail: '没有正在进行的采集作业。',
-        }),
-      };
-    }
-
-    try {
-      await refreshAuthenticatedProbe(session);
-      return {
-        ok: true as const,
-        ...sessionSnapshot(session),
-        jobs: listJobSummaries(),
-      };
-    } catch (error) {
-      // 捕获登录后复验 IPC 失败：探测超时或目标拒绝
-      // 策略：返回可读错误，保留当前作业和已采集网络事实
-      return {
-        ok: false as const,
-        error: formatCaptureError({
-          code: classifyCaptureError(error),
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      };
+      return { ok: false as const, error: errorMessage(error) };
     }
   });
 }
@@ -633,10 +294,6 @@ function createMainWindow() {
   mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
     // 捕获预加载失败：安装包把 CJS preload 当成 ESM 加载，或签名后路径失效
     // 策略：打日志便于现场排查；界面会因缺少 window.kvmRecon 给出可读提示
-    logger.info('preload-error', {
-      preloadPath,
-      message: error instanceof Error ? error.message : String(error),
-    });
     console.error('preload-error', preloadPath, error);
   });
 
@@ -660,9 +317,60 @@ function createMainWindow() {
   }
 }
 
+/** 启动时崩溃恢复（规范 §4.2）：恢复上一个未完成作业并直接导出到下载目录。 */
+async function recoverPreviousJob() {
+  const result = await recoverCrashedJobExport({
+    rootDir: workspacesRootDir(),
+    zipDir: app.getPath('downloads'),
+    tool: { version: APP_VERSION, buildId: BUILD_ID },
+    resetStaleOwner: true,
+  });
+  if (result.kind === 'no-workspace') return;
+  if (result.kind === 'exported') {
+    recoveryNotice = {
+      kind: 'exported',
+      jobId: result.jobId,
+      zipPath: result.zipPath,
+      conservative: result.conservative,
+    };
+    void shell.showItemInFolder(result.zipPath);
+    return;
+  }
+  if (result.kind === 'refused') {
+    recoveryNotice = { kind: 'refused', jobId: result.jobId, reason: result.reason };
+    return;
+  }
+  recoveryNotice = { kind: 'failed', jobId: result.jobId, error: result.error };
+}
+
+// 采集中的正常退出也要收尾：把真实证据摘要写进 capture-facts，
+// 下次启动的恢复导出就能用真实摘要而不是保守摘要。
+app.on('before-quit', event => {
+  if (!activeController || activeController.session.workspace.state !== 'active') return;
+  event.preventDefault();
+  void (async () => {
+    try {
+      await activeController.stop();
+    } catch (error) {
+      recordCaptureWindowLog(`capture-quit-stop-failed ${errorMessage(error)}`);
+    }
+    app.quit();
+  })();
+});
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 app.whenReady().then(async () => {
   if (isE2eCaptureControllerLaunch()) {
-    await runProductionCaptureE2e();
+    const fieldHar = process.env.KVM_RECON_E2E_FIELD_HAR;
+    if (fieldHar) {
+      await runFieldHarReplayE2e(fieldHar);
+    } else {
+      await runProductionCaptureE2e();
+    }
     return;
   }
   app.on('certificate-error', (event, webContents, url, error, _certificate, callback) => {
@@ -677,6 +385,12 @@ app.whenReady().then(async () => {
   if (!isE2eSmokeLaunch()) {
     installApplicationMenu();
   }
+  try {
+    await recoverPreviousJob();
+  } catch (error) {
+    // 捕获启动恢复失败（未知状态目录等）：保留现场，不阻断应用启动
+    recoveryNotice = { kind: 'failed', error: errorMessage(error) };
+  }
   registerCaptureHandlers();
   createMainWindow();
 
@@ -685,6 +399,14 @@ app.whenReady().then(async () => {
       createMainWindow();
     }
   });
+});
+
+app.on('second-instance', () => {
+  const window = BrowserWindow.getAllWindows().find(candidate => candidate.getTitle() === 'KVM-Recon');
+  if (window) {
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  }
 });
 
 app.on('window-all-closed', () => {

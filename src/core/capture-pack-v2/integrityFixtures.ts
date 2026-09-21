@@ -38,6 +38,7 @@ function allEvidencePresentSummary(): PackIntegrityEvidenceSummary {
     missingWorkerSources: [],
     channelGaps: [],
     unsupportedChannels: [],
+    journalWriteFailures: [],
     exportValidationFailures: [],
     workflowStatus: 'KVM_REACHED',
   };

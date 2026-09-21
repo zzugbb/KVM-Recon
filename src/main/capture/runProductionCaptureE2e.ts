@@ -1,19 +1,33 @@
+/**
+ * 生产采集链路 E2E（阶段 2 第 4 刀）：createProductionCapture → stop →
+ * exportPack → 直接断言 ZIP 内容。
+ *
+ * 与 0.2.x 的关键差异（规范 §13 不脱敏策略）：POST token 必须原样在场
+ * （e2e-secret-token 在请求正文文件里逐字节可见），不再断言脱敏。
+ * 血缘断言：popup 根 target 带 windowRole=popup + openerTargetId=target-root。
+ * 包一致性：verifyPackV2Zip 重开逐条目校验 + INCOMPLETE + capture-facts 终态。
+ */
+
 import { app, BrowserWindow } from 'electron';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { buildCapturePackZip } from '../../core/capture-pack/buildCapturePackZip';
-import { summarizeCapturePackZip } from '../../core/capture-pack/summarizeCapturePack';
-import { assembleCapturePackForExport } from '../../core/delivery/assembleCapturePackForExport';
-import { createCaptureBrowserController } from './createCaptureBrowserController';
-import { createElectronCaptureBrowserAdapter } from './createElectronCaptureBrowserAdapter';
+import yauzl from 'yauzl';
+
+import { parseChecksumsManifest, sha256OfContent } from '../../core/export/checksumsManifest';
+import { PACK_V2_CHECKSUMS_PATH, verifyPackV2Zip } from '../../core/export/exportPackV2Zip';
+import type { ProbeBmcTargetResult } from '../../core/probe/probeBmcTarget';
+import { createProductionCapture } from './productionCaptureController';
+import { createElectronNetlogSource } from './electronNetlogSource';
 import { PRODUCTION_CAPTURE_E2E_PASSED } from './evaluateProductionCaptureE2eExit';
 
 const VIEWER_JS_MARKER = 'kvm-recon-e2e-viewer-js';
 const POPUP_HTML_MARKER = 'kvm-recon-e2e-popup-html';
 const POST_TOKEN = 'e2e-secret-token';
+
+export const FIELD_HAR_REPLAY_E2E_PASSED = 'field har replay e2e passed';
 
 export function isE2eCaptureControllerLaunch() {
   return process.argv.includes('--e2e-capture-controller') || process.env.KVM_RECON_E2E_CAPTURE === '1';
@@ -26,11 +40,6 @@ export function isE2eCaptureCloseBeforeAssert() {
   );
 }
 
-function headerValue(headers: Record<string, string> | undefined, name: string) {
-  const found = Object.entries(headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return found ? String(found[1] || '') : '';
-}
-
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -41,30 +50,50 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+/** E2E 内读取 ZIP 全部条目（页面很小，内存断言可接受；生产链路不走这里）。 */
+export async function readZipEntries(zipPath: string): Promise<Map<string, string>> {
+  const zipfile = await yauzl.openPromise(zipPath, { lazyEntries: true, decodeStrings: true });
+  const entries = new Map<string, string>();
+  return new Promise<Map<string, string>>((resolve, reject) => {
+    zipfile.readEntry();
+    zipfile.on('entry', (entry: yauzl.Entry) => {
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error || !stream) {
+          reject(error ?? new Error(`打开条目失败：${entry.fileName}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        stream.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        stream.on('end', () => {
+          entries.set(entry.fileName, Buffer.concat(chunks).toString('utf8'));
+          zipfile.readEntry();
+        });
+      });
+    });
+    zipfile.on('end', () => resolve(entries));
+    zipfile.on('error', reject);
+  });
+}
+
 export async function runProductionCaptureE2e() {
-  const screenshotDir = await mkdtemp(join(tmpdir(), 'kvm-recon-e2e-capture-'));
-  const posted = { received: false, referer: '' };
-  const popupGets = { received: false, referer: '' };
+  const workspacesRoot = await mkdtemp(join(tmpdir(), 'kvm-recon-e2e-ws-'));
+  const zipDir = await mkdtemp(join(tmpdir(), 'kvm-recon-e2e-zip-'));
+  const posted = { received: false };
+  const popupLoaded = { received: false };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = String(req.url || '/');
-    const referer = String(req.headers.referer || req.headers.referrer || '');
     if (url.startsWith('/viewer-app.js')) {
       res.setHeader('content-type', 'application/javascript; charset=utf-8');
       res.end(`window.__viewerAppLoaded = true; // ${VIEWER_JS_MARKER}`);
       return;
     }
     if (url.startsWith('/popup')) {
-      popupGets.received = true;
-      popupGets.referer = referer;
+      popupLoaded.received = true;
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(`<!doctype html><html><body>
         <!-- ${POPUP_HTML_MARKER} -->
         <script src="/viewer-app.js"></script>
-        <script>
-          window.__hasOpener = Boolean(window.opener);
-          window.__name = window.name;
-        </script>
         popup
       </body></html>`);
       return;
@@ -76,12 +105,8 @@ export async function runProductionCaptureE2e() {
         return;
       }
       posted.received = true;
-      posted.referer = referer;
       res.setHeader('content-type', 'text/html; charset=utf-8');
-      res.end(`<!doctype html><html><body>
-        <script>window.__posted = true;</script>
-        posted
-      </body></html>`);
+      res.end('<!doctype html><html><body>posted</body></html>');
       return;
     }
     res.setHeader('content-type', 'text/html; charset=utf-8');
@@ -105,16 +130,33 @@ export async function runProductionCaptureE2e() {
   });
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
-  const origin = `http://127.0.0.1:${port}`;
-  const startedAt = new Date().toISOString();
-  const controller = createCaptureBrowserController({
-    jobId: 'e2e-capture-controller',
-    target: { host: '127.0.0.1', port, scheme: 'http' },
-    adapter: createElectronCaptureBrowserAdapter({ screenshotDir }),
+
+  // probe 用确定性桩（E2E 断言采集链路，probe 正确性另有单测）
+  const e2eProbe = async (): Promise<ProbeBmcTargetResult> => ({
+    basic: { host: '127.0.0.1', port, scheme: 'http', vendor: '', product: '', firmwareVersion: '' },
+    paths: {},
+    familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
+    tls: {
+      reachable: true,
+      authorized: true,
+      authorizationError: '',
+      protocol: '',
+      cipher: null,
+      certificate: null,
+    },
   });
 
+  const controller = await createProductionCapture({
+    jobId: 'e2e-capture-controller',
+    workspacesRootDir: workspacesRoot,
+    target: { host: '127.0.0.1', port, scheme: 'http', originalInput: `http://127.0.0.1:${port}/` },
+    tool: { version: '0.3.0-dev', buildId: 'e2e' },
+    probeRunner: e2eProbe,
+    netlog: createElectronNetlogSource(),
+  });
+
+  const startTimeoutMs = 15000;
   const startClock = Date.now();
-  const startTimeoutMs = 8000;
   try {
     await Promise.race([
       controller.start(),
@@ -123,177 +165,160 @@ export async function runProductionCaptureE2e() {
       }),
     ]);
   } catch (error) {
-    // 捕获生产采集 Controller 启动失败：空窗口 Network.enable 卡死或页面加载拒绝
-    // 策略：以非零退出让 E2E 失败，避免烟测通过却无法开始采集
     console.error(error instanceof Error ? error.message : String(error));
     server.close();
-    await rm(screenshotDir, { recursive: true, force: true }).catch(() => undefined);
+    await rm(workspacesRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(zipDir, { recursive: true, force: true }).catch(() => undefined);
     app.exit(1);
     return;
   }
   const startElapsedMs = Date.now() - startClock;
-  if (startElapsedMs >= startTimeoutMs) {
-    fail(`controller.start() 耗时 ${startElapsedMs}ms`);
+
+  // 等待页面链路走完（弹窗 + POST 到达服务端 + 事务落盘）
+  let transactionsText = '';
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      transactionsText = (await controller.session.workspace.readArtifact('raw/http/transactions.jsonl')).toString('utf8');
+    } catch {
+      transactionsText = '';
+    }
+    if (posted.received && popupLoaded.received && transactionsText.includes('/form-target') && transactionsText.includes('/viewer-app.js')) {
+      break;
+    }
+    await sleep(250);
   }
 
+  // 断言前关窗变体：窗口全部销毁后 stop/export 仍必须收尾出包（INCOMPLETE）
   if (isE2eCaptureCloseBeforeAssert()) {
     for (const win of BrowserWindow.getAllWindows()) {
       win.destroy();
     }
     await sleep(300);
-    fail('断言前采集窗口已关闭');
   }
 
-  let lastDump = '';
-  let popupDocument;
-  let popupScript;
-  let postRequest;
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const network = controller.network();
-    lastDump = network.httpRequests
-      .map(
-        item =>
-          `${item.method} ${item.url} captured=${item.responseBodyCaptured} skip=${item.responseBodySkippedReason || ''} opener=${item.openerCaptureWindowId || ''}`,
-      )
-      .join('\n');
-    popupDocument = network.httpRequests.find(item => item.url.includes('/popup.html'));
-    popupScript = network.httpRequests.find(item => item.url.includes('/viewer-app.js'));
-    postRequest = network.httpRequests.find(
-      item => item.method.toUpperCase() === 'POST' && item.url.includes('/form-target'),
-    );
-    if (popupDocument && popupScript && posted.received && postRequest) {
-      break;
-    }
-    await sleep(100);
-  }
+  await controller.stop();
+  const exportResult = await controller.exportPack(zipDir);
 
-  try {
-    await controller.waitForNetworkIdle();
-    await controller.ingestLiveEvents();
-  } catch (error) {
-    // 捕获等待网络静默失败：E2E 仍用当前快照断言，避免 idle 超时掩盖正文问题
-    void error;
-  }
+  const zipEntries = await readZipEntries(exportResult.zipPath);
 
-  const network = controller.network();
-  const timeline = controller.timeline();
-  const sourceFiles = controller.sourceFiles();
-  popupDocument = network.httpRequests.find(item => item.url.includes('/popup.html'));
-  popupScript = network.httpRequests.find(item => item.url.includes('/viewer-app.js'));
-  postRequest = network.httpRequests.find(
-    item => item.method.toUpperCase() === 'POST' && item.url.includes('/form-target'),
+  const transactions = zipEntries.get('raw/http/transactions.jsonl') ?? '';
+  const transactionRows = transactions
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as { url: string; method: string; requestBody?: { path: string; sha256: string } });
+  const postRequest = transactionRows.find(
+    row => row.method.toUpperCase() === 'POST' && row.url.includes('/form-target'),
   );
-  const mainDocument = network.httpRequests.find(
-    item =>
-      item.windowRole === 'main' &&
-      /document/i.test(item.resourceType || '') &&
-      item.url.startsWith(origin) &&
-      !item.url.includes('/popup') &&
-      !item.url.includes('/form') &&
-      !item.url.includes('/viewer-app.js'),
-  );
-  const popupEvent = timeline.events.find(event => event.type === 'popup');
-  const popupReferer = headerValue(popupDocument?.requestHeaders, 'referer');
-  const postReferer = headerValue(postRequest?.requestHeaders, 'referer') || posted.referer;
-  const postSample = JSON.stringify(postRequest?.requestBodySummary.sample || '');
+  const popupDocument = transactionRows.find(row => row.url.includes('/popup'));
+  const viewerScript = transactionRows.find(row => row.url.includes('/viewer-app.js'));
+
+  const targetsFile = JSON.parse(zipEntries.get('raw/browser/targets.json') ?? '{"targets":[]}') as {
+    targets: Array<{ id: string; type: string; openerTargetId?: string }>;
+  };
+  const captureFacts = JSON.parse(zipEntries.get('catalog/capture-facts.json') ?? 'null') as {
+    stopped: boolean;
+    evidenceSummary: unknown;
+    environment: unknown;
+  } | null;
+  const manifest = JSON.parse(zipEntries.get('manifest.json') ?? 'null') as {
+    workflowStatus?: string;
+    security?: { dataHandling?: string };
+    environment?: { userAgent?: string };
+  } | null;
+  const netlog = JSON.parse(zipEntries.get('raw/netlog/netlog.json') ?? 'null') as {
+    captureMode?: string;
+  } | null;
+  const diagnosticsRows = (zipEntries.get('raw/controller/diagnostics.jsonl') ?? '')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as { kind?: string });
+  const closeBeforeAssert = isE2eCaptureCloseBeforeAssert();
+
   const failures = [
-    !mainDocument ? '缺少主窗口 Document' : '',
-    !popupDocument ? '缺少弹窗 Document' : '',
-    popupDocument?.responseBodyCaptured !== true ? `弹窗 HTML 未采到正文 skip=${popupDocument?.responseBodySkippedReason || ''}` : '',
-    popupDocument?.responseBodySkippedReason ? `弹窗 HTML skipped=${popupDocument.responseBodySkippedReason}` : '',
-    !String(popupDocument?.responseBodySummary.sample || '').includes(POPUP_HTML_MARKER) &&
-    !sourceFiles.some(file => file.url.includes('/popup.html') && file.text.includes(POPUP_HTML_MARKER))
-      ? '弹窗 HTML marker 缺失'
-      : '',
-    !popupScript ? '缺少弹窗脚本' : '',
-    popupScript?.responseBodyCaptured !== true ? `弹窗脚本未采到正文 skip=${popupScript?.responseBodySkippedReason || ''}` : '',
-    popupScript?.responseBodySkippedReason ? `弹窗脚本 skipped=${popupScript.responseBodySkippedReason}` : '',
-    !sourceFiles.some(file => file.kind === 'html' && file.text.includes(POPUP_HTML_MARKER))
-      ? `sourceFiles 缺少 Viewer HTML: ${sourceFiles.map(file => file.url).join(', ') || '(empty)'}`
-      : '',
-    !sourceFiles.some(file => file.kind === 'javascript' && file.text.includes(VIEWER_JS_MARKER))
-      ? 'sourceFiles 缺少 Viewer JS marker'
-      : '',
-    !(
-      Boolean(popupEvent?.openerCaptureWindowId) &&
-      Array.isArray(popupEvent?.ancestorCaptureWindowIds) &&
-      (popupEvent?.ancestorCaptureWindowIds as unknown[]).length > 0
-    )
-      ? 'timeline 缺少 opener/ancestor 血缘'
-      : '',
-    !popupDocument?.openerCaptureWindowId || !popupDocument.ancestorCaptureWindowIds?.length
-      ? '弹窗 HTTP 缺少 opener/ancestor 血缘'
-      : '',
     !posted.received ? 'target=_blank POST 未到达服务端' : '',
-    !postRequest ? '缺少 POST 网络记录' : '',
-    !(popupReferer.includes(origin) || popupGets.referer.includes(origin)) ? '弹窗 referrer 丢失' : '',
-    !postReferer.includes(origin) ? 'POST referrer 丢失' : '',
-    !postSample.includes('html5') ? `POST 摘要缺少非敏感 viewer 字段: ${postSample}` : '',
-    !postRequest?.requestBodySummary.redactedFields.some(field => /token/i.test(field))
-      ? `POST token 未脱敏: ${JSON.stringify(postRequest?.requestBodySummary.redactedFields || [])}`
+    !popupLoaded.received ? '弹窗未加载' : '',
+    !postRequest ? `缺少 POST 事务记录（transactions: ${transactions.slice(0, 400) || '(empty)'}）` : '',
+    !popupDocument ? '缺少弹窗 Document 事务' : '',
+    !viewerScript ? '缺少弹窗脚本事务' : '',
+    // 不脱敏断言（规范 §13）：POST token 必须原样在场，禁止任何脱敏残留
+    !postRequest?.requestBody ? 'POST 缺少请求正文引用' : '',
+    postRequest?.requestBody && !(zipEntries.get(postRequest.requestBody.path) ?? '').includes(POST_TOKEN)
+      ? `POST token 未原样保留（正文文件 ${postRequest.requestBody.path}）`
       : '',
-    JSON.stringify(postRequest || {}).includes(POST_TOKEN) ? 'POST 明文 token 残留' : '',
+    zipEntries.get(postRequest?.requestBody?.path ?? '')?.includes('viewer=html5') ? '' : 'POST 正文缺少 viewer=html5 字段',
+    !targetsFile.targets.some(
+      target => target.type === 'popup' && target.openerTargetId === 'target-root',
+    )
+      ? `popup 根 target 缺少血缘（targets: ${JSON.stringify(targetsFile.targets.map(t => [t.id, t.type, t.openerTargetId]))}）`
+      : '',
+    !captureFacts?.stopped ? 'capture-facts 缺少 stopped 终态' : '',
+    !captureFacts?.evidenceSummary ? 'capture-facts 缺少证据摘要' : '',
+    !captureFacts?.environment ? 'capture-facts 缺少采集环境' : '',
+    manifest?.workflowStatus !== 'TARGET_OPENED' ? `manifest workflowStatus 异常：${manifest?.workflowStatus}` : '',
+    manifest?.security?.dataHandling !== 'UNREDACTED' ? `manifest dataHandling 异常：${manifest?.security?.dataHandling}` : '',
+    !manifest?.environment?.userAgent ? 'manifest 缺少页面环境（userAgent）' : '',
+    netlog?.captureMode !== 'include-sensitive' ? `netlog captureMode 异常：${netlog?.captureMode ?? '(missing)'}` : '',
+    !diagnosticsRows.some(row => row.kind === 'window-created')
+      ? 'Controller 诊断缺少 window-created 事实（规范 §8.4）'
+      : '',
+    !diagnosticsRows.some(row => row.kind === 'popup-created')
+      ? 'Controller 诊断缺少 popup-created 事实（规范 §8.4）'
+      : '',
+    // 关窗变体里窗口已销毁、Page.getFrameTree 必然失败并记账，只对常规变体断言
+    !closeBeforeAssert && !zipEntries.get('raw/browser/frame-tree.json')
+      ? '缺少 Frame Tree 快照（规范 §8.4）'
+      : '',
+    exportResult.status.captureIntegrity !== 'INCOMPLETE' ? `包完整度应为 INCOMPLETE：${exportResult.status.captureIntegrity}` : '',
+    !exportResult.derived.reasons.includes('INCOMPLETE_WORKFLOW_NOT_REACHED')
+      ? 'INCOMPLETE 包缺少 INCOMPLETE_WORKFLOW_NOT_REACHED 原因'
+      : '',
   ].filter(Boolean);
 
-  if (failures.length) {
-    fail(
-      [
-        '生产采集链路 E2E 正文/血缘断言失败',
-        ...failures,
-        lastDump || '(no http requests)',
-      ].join('\n'),
-    );
+  // 弹窗正文 marker：事务引用的响应正文文件必须包含 marker
+  const resourcesText = zipEntries.get('catalog/resources.jsonl') ?? '';
+  const resourceRows = resourcesText
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as { url: string; responseBody?: { path: string } });
+  const popupResource = resourceRows.find(row => row.url.includes('/popup'));
+  const viewerResource = resourceRows.find(row => row.url.includes('/viewer-app.js'));
+  if (!popupResource?.responseBody) {
+    failures.push('catalog/resources 缺少弹窗 HTML 正文引用');
+  } else if (!(zipEntries.get(popupResource.responseBody.path) ?? '').includes(POPUP_HTML_MARKER)) {
+    failures.push(`弹窗 HTML 正文缺 marker（${popupResource.responseBody.path}）`);
+  }
+  if (!viewerResource?.responseBody) {
+    failures.push('catalog/resources 缺少弹窗脚本正文引用');
+  } else if (!(zipEntries.get(viewerResource.responseBody.path) ?? '').includes(VIEWER_JS_MARKER)) {
+    failures.push(`弹窗脚本正文缺 marker（${viewerResource.responseBody.path}）`);
   }
 
-  const assembled = assembleCapturePackForExport({
-    jobId: 'e2e-capture-controller',
-    startedAt,
-    endedAt: new Date().toISOString(),
-    target: { host: '127.0.0.1', port, scheme: 'http' },
-    probe: {
-      basic: {
-        host: '127.0.0.1',
-        port,
-        scheme: 'http',
-        vendor: '',
-        product: '',
-        firmwareVersion: '',
-      },
-      paths: {},
-      familySignatures: {
-        primary: 'unknown-h5',
-        confidence: 0,
-        candidates: [],
-      },
-      tls: {
-        reachable: true,
-        authorized: true,
-        authorizationError: '',
-        protocol: '',
-        cipher: null,
-        certificate: null,
-      },
-    },
-    page: controller.timeline(),
-    network: controller.network(),
-    sourceFiles: controller.sourceFiles(),
-    networkIdle: controller.networkCaptureStatus(),
-  });
-  const zip = await buildCapturePackZip(assembled.pack);
-  const summary = await summarizeCapturePackZip(zip);
-  if (summary.schemaErrors.length) {
-    fail(`导出 zip 自校验失败: ${summary.schemaErrors.join('; ')}`);
+  if (failures.length) {
+    fail(['生产采集链路 E2E（0.3.0 新链路）断言失败', ...failures].join('\n'));
+  }
+
+  // 包一致性：checksums 清单 + 自身哈希 → 重开逐条目校验
+  const checksums = zipEntries.get(PACK_V2_CHECKSUMS_PATH);
+  if (!checksums) {
+    fail('ZIP 缺少 checksums.sha256');
+  }
+  const expected = parseChecksumsManifest(checksums!);
+  expected.set(PACK_V2_CHECKSUMS_PATH, sha256OfContent(checksums!));
+  try {
+    await verifyPackV2Zip(exportResult.zipPath, expected);
+  } catch (error) {
+    fail(`ZIP 重开校验失败：${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
-    await controller.stop();
+    await controller.closeWindows();
   } catch (error) {
     // 捕获 E2E 关窗失败：断言已通过
     // 策略：仍退出 0，避免清理失败掩盖生产链路已通过
     void error;
   }
   server.close();
-  await rm(screenshotDir, { recursive: true, force: true }).catch(() => undefined);
-  console.log(`${PRODUCTION_CAPTURE_E2E_PASSED} in ${startElapsedMs}ms`);
+  await rm(workspacesRoot, { recursive: true, force: true }).catch(() => undefined);
+  console.log(`${PRODUCTION_CAPTURE_E2E_PASSED} in ${startElapsedMs}ms zip=${exportResult.zipPath}`);
   app.exit(0);
 }

@@ -1,0 +1,1544 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { startCaptureSession, type CaptureSession, type CdpSession } from './createCaptureSession';
+
+/**
+ * 阶段 2 采集会话：协议无关采集把 CDP 事实落到 JobWorkspace。
+ * 不接 0.2.x recorder，不截断，不脱敏。
+ */
+
+const tempRoots: string[] = [];
+const sessions: CaptureSession[] = [];
+
+async function newRootDir(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'kvm-recon-collector-test-'));
+  tempRoots.push(root);
+  return root;
+}
+
+async function startSession(
+  options: Parameters<typeof startCaptureSession>[0],
+): Promise<CaptureSession> {
+  const session = await startCaptureSession(options);
+  sessions.push(session);
+  return session;
+}
+
+afterEach(async () => {
+  await Promise.all(
+    sessions.splice(0).map(async session => {
+      try {
+        await session.workspace.close();
+      } catch (error) {
+        // 捕获测试收尾 close 失败：目录随后会整棵删除
+        // 策略：不阻断 afterEach 清理
+        void error;
+      }
+    }),
+  );
+  await Promise.all(tempRoots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+});
+
+function sha256Hex(bytes: Uint8Array | string): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function jsonl(buffer: Buffer): Array<Record<string, unknown>> {
+  return buffer
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as Record<string, unknown>);
+}
+
+function electronLikeSendCommand(
+  impl: (command: string, params?: Record<string, unknown>, sessionId?: string) => unknown,
+): CdpSession['sendCommand'] {
+  return function sendCommand(command, params, sessionId) {
+    if (arguments.length >= 3 && !(typeof sessionId === 'string' && sessionId)) {
+      throw new Error('Empty session id is not allowed');
+    }
+    if (typeof sessionId === 'string' && sessionId) {
+      return impl(command, params, sessionId);
+    }
+    return impl(command, params);
+  };
+}
+
+function createFakeCdp(options?: {
+  responseBodies?: Record<string, { body: string; base64Encoded?: boolean }>;
+  postData?: Record<string, string>;
+  cookies?: Array<Record<string, unknown>>;
+  storage?: { localStorage: Record<string, string>; sessionStorage: Record<string, string> };
+  scriptSources?: Record<string, { scriptSource?: string; bytecode?: string }>;
+  indexedDb?: Array<Record<string, unknown>>;
+  cacheStorage?: Array<Record<string, unknown>>;
+  environment?: { userAgent: string; language: string; timezone: string; screen: string };
+  domHtml?: string;
+  screenshotData?: string;
+  frameTree?: Record<string, unknown>;
+}): { cdp: CdpSession; emit: (method: string, params: Record<string, unknown>, sessionId?: string) => void; commands: string[] } {
+  const listeners: Array<
+    (event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void
+  > = [];
+  const commands: string[] = [];
+  const cdp: CdpSession = {
+    async attach() {},
+    sendCommand: electronLikeSendCommand(async (command, params, sessionId) => {
+      commands.push(sessionId ? `${command}@${sessionId}` : command);
+      if (command === 'Network.getResponseBody') {
+        const requestId = String((params as { requestId?: string })?.requestId ?? '');
+        return (
+          options?.responseBodies?.[requestId] ?? {
+            body: '{"ok":true}',
+            base64Encoded: false,
+          }
+        );
+      }
+      if (command === 'Network.getRequestPostData') {
+        const requestId = String((params as { requestId?: string })?.requestId ?? '');
+        return { postData: options?.postData?.[requestId] ?? '' };
+      }
+      if (command === 'Network.getCookies') {
+        return { cookies: options?.cookies ?? [] };
+      }
+      if (command === 'Debugger.getScriptSource') {
+        const scriptId = String((params as { scriptId?: string })?.scriptId ?? '');
+        return (
+          options?.scriptSources?.[scriptId] ?? {
+            scriptSource: `// source ${scriptId}`,
+          }
+        );
+      }
+      if (command === 'Page.captureScreenshot') {
+        return options?.screenshotData ? { data: options.screenshotData } : {};
+      }
+      if (command === 'Page.getFrameTree') {
+        return { frameTree: options?.frameTree ?? { frame: { id: 'frame-root', url: 'about:blank' } } };
+      }
+      if (command === 'Runtime.evaluate') {
+        const expression = String((params as { expression?: string })?.expression ?? '');
+        if (expression.includes('sessionStorage')) {
+          return {
+            result: {
+              type: 'object',
+              value: options?.storage ?? { localStorage: {}, sessionStorage: {} },
+            },
+          };
+        }
+        if (expression.includes('navigator.userAgent')) {
+          return {
+            result: { type: 'object', value: options?.environment ?? null },
+          };
+        }
+        if (expression.includes('indexedDB')) {
+          return { result: { type: 'object', value: options?.indexedDb ?? [] } };
+        }
+        if (expression.includes('caches')) {
+          return { result: { type: 'object', value: options?.cacheStorage ?? [] } };
+        }
+        if (expression.includes('document.documentElement')) {
+          return { result: { type: 'string', value: options?.domHtml ?? '<html><body></body></html>' } };
+        }
+        return {};
+      }
+      return {};
+    }),
+    on(event, listener) {
+      if (event === 'message') listeners.push(listener);
+    },
+  };
+  return {
+    cdp,
+    commands,
+    emit(method, params, sessionId) {
+      for (const listener of listeners) listener({}, method, params, sessionId);
+    },
+  };
+}
+
+describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态）', () => {
+  it('CDP journal 记录命令与事件，未知 params 字段原样保留', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-cdp',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-doc',
+      type: 'Document',
+      undocumentedFutureField: { keep: true },
+      request: { method: 'GET', url: 'http://bmc.test/login', headers: {} },
+    });
+    await session.stop();
+
+    const events = jsonl(await session.workspace.readArtifact('raw/cdp/events.jsonl'));
+    const commands = jsonl(await session.workspace.readArtifact('raw/cdp/commands.jsonl'));
+    expect(commands.some(row => row.method === 'Network.enable')).toBe(true);
+    expect(commands.some(row => row.method === 'Target.setAutoAttach')).toBe(true);
+    const requestEvent = events.find(row => row.method === 'Network.requestWillBeSent');
+    expect(requestEvent).toMatchObject({
+      seq: 1,
+      timestamp: '2026-09-21T01:00:00.000Z',
+      method: 'Network.requestWillBeSent',
+      targetId: 'target-root',
+    });
+    expect((requestEvent?.params as { undocumentedFutureField?: unknown }).undocumentedFutureField).toEqual({
+      keep: true,
+    });
+  });
+
+  it('HTTP 全 hop 正文写入 BodyStore：不截断、不脱敏，redirect 拆 hop', async () => {
+    const rootDir = await newRootDir();
+    const largeBody = 'A'.repeat(2 * 1024 * 1024 + 17);
+    const loginBody = 'user=operator&password=operator-passphrase&nonce=abc';
+    const session = await startSession({
+      jobId: 'job-collector-http',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp({
+      responseBodies: {
+        'req-login': { body: largeBody, base64Encoded: false },
+      },
+      postData: { 'req-login': loginBody },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root', windowId: 'window-1' });
+
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-redirect',
+      type: 'Document',
+      frameId: 'frame-1',
+      initiator: { type: 'other' },
+      request: {
+        method: 'GET',
+        url: 'http://bmc.test/old',
+        headers: { Referer: 'http://bmc.test/' },
+      },
+    });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-redirect',
+      type: 'Document',
+      redirectHasExtraInfo: false,
+      redirectResponse: { status: 302, headers: { location: 'http://bmc.test/new' } },
+      request: { method: 'GET', url: 'http://bmc.test/new', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-redirect',
+      hasExtraInfo: false,
+      response: { status: 200, headers: { 'content-type': 'text/html' }, mimeType: 'text/html' },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-redirect', encodedDataLength: 4 });
+
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'XHR',
+      initiator: { type: 'script', url: 'http://bmc.test/login', lineNumber: 12 },
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        hasPostData: true,
+      },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      hasExtraInfo: false,
+      response: {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'content-encoding': 'identity' },
+        mimeType: 'application/json',
+      },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: largeBody.length });
+
+    await session.stop();
+
+    const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(rows).toHaveLength(3);
+    const [hop0, hop1, login] = rows;
+    expect(hop0).toMatchObject({
+      id: 'req-redirect',
+      status: 302,
+      url: 'http://bmc.test/old',
+      redirectToId: 'req-redirect::redirect-1',
+    });
+    expect(hop1).toMatchObject({
+      id: 'req-redirect::redirect-1',
+      status: 200,
+      url: 'http://bmc.test/new',
+      redirectFromId: 'req-redirect',
+    });
+    expect(login).toMatchObject({
+      method: 'POST',
+      url: 'http://bmc.test/api/login',
+      status: 200,
+      targetId: 'target-root',
+      windowId: 'window-1',
+    });
+    const requestRef = login.requestBody as { sha256: string; bytes: number; path: string };
+    const responseRef = login.responseBody as { sha256: string; bytes: number; path: string };
+    expect(requestRef.bytes).toBe(Buffer.byteLength(loginBody));
+    expect(requestRef.sha256).toBe(sha256Hex(loginBody));
+    expect(requestRef.path).toBe(`raw/http/bodies/${requestRef.sha256}`);
+    const storedLogin = await session.workspace.readArtifact(requestRef.path);
+    expect(storedLogin.toString('utf8')).toBe(loginBody);
+    expect(storedLogin.toString('utf8')).toContain('operator-passphrase');
+    expect(responseRef.bytes).toBe(Buffer.byteLength(largeBody));
+    expect(responseRef.sha256).toBe(sha256Hex(largeBody));
+    const storedLarge = await session.workspace.readArtifact(responseRef.path);
+    expect(storedLarge.byteLength).toBe(Buffer.byteLength(largeBody));
+    expect(storedLarge.toString('utf8')).toBe(largeBody);
+  });
+
+  it('WebSocket 全部双向帧写入 frames.bin，超过旧 64 帧上限', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-ws',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.webSocketCreated', {
+      requestId: 'ws-1',
+      url: 'ws://bmc.test/kvm',
+    });
+    fake.emit('Network.webSocketWillSendHandshakeRequest', {
+      requestId: 'ws-1',
+      request: { headers: { 'Sec-WebSocket-Protocol': 'binary, base64' } },
+    });
+    fake.emit('Network.webSocketHandshakeResponseReceived', {
+      requestId: 'ws-1',
+      response: {
+        status: 101,
+        headers: { 'sec-websocket-protocol': 'binary', 'sec-websocket-extensions': 'permessage-deflate' },
+      },
+    });
+    const payloads: Buffer[] = [];
+    for (let index = 0; index < 80; index += 1) {
+      const down = Buffer.from(`down-${index}`);
+      const up = Buffer.from(`up-${index}`);
+      payloads.push(down, up);
+      fake.emit('Network.webSocketFrameReceived', {
+        requestId: 'ws-1',
+        response: { opcode: 2, payloadData: down.toString('base64') },
+      });
+      fake.emit('Network.webSocketFrameSent', {
+        requestId: 'ws-1',
+        response: { opcode: 1, payloadData: up.toString('utf8') },
+      });
+    }
+    fake.emit('Network.webSocketClosed', { requestId: 'ws-1' });
+    await session.stop();
+
+    const metadata = JSON.parse(
+      (await session.workspace.readArtifact('raw/websocket/ws-1/metadata.json')).toString('utf8'),
+    );
+    expect(metadata).toMatchObject({
+      schemaVersion: '2.0.0',
+      channelId: 'ws-1',
+      url: 'ws://bmc.test/kvm',
+      handshakeStatus: 101,
+      acceptedSubProtocol: 'binary',
+      requestedSubProtocols: ['binary', 'base64'],
+      frameCounts: { up: 80, down: 80 },
+      framesBinPath: 'raw/websocket/ws-1/frames.bin',
+      closedAt: '2026-09-21T01:00:00.000Z',
+    });
+    const indexRows = jsonl(await session.workspace.readArtifact('raw/websocket/ws-1/frames.index.jsonl'));
+    expect(indexRows).toHaveLength(160);
+    const framesBin = await session.workspace.readArtifact('raw/websocket/ws-1/frames.bin');
+    expect(framesBin.equals(Buffer.concat(payloads))).toBe(true);
+    expect(indexRows[0]).toMatchObject({
+      frameIndex: 0,
+      direction: 'down',
+      opcode: 'binary',
+      fin: true,
+      payloadOffset: 0,
+      payloadLength: payloads[0].byteLength,
+    });
+  });
+
+  it('Worker Target 自动附加：Network.enable 后才 runIfWaitingForDebugger', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-worker',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const order: string[] = [];
+    const listeners: Array<
+      (event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void
+    > = [];
+    const cdp: CdpSession = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command, _params, sessionId) => {
+        order.push(sessionId ? `${command}@${sessionId}` : command);
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    await session.attachCdp(cdp, { targetId: 'target-root' });
+    for (const listener of listeners) {
+      listener(
+        {},
+        'Target.attachedToTarget',
+        {
+          sessionId: 'worker-session',
+          targetInfo: { type: 'worker', url: 'http://bmc.test/viewer-worker.js', targetId: 'target-worker' },
+        },
+      );
+    }
+    await session.stop();
+    const workerEnable = order.indexOf('Network.enable@worker-session');
+    const workerDebugger = order.indexOf('Debugger.enable@worker-session');
+    const workerResume = order.indexOf('Runtime.runIfWaitingForDebugger@worker-session');
+    expect(workerEnable).toBeGreaterThanOrEqual(0);
+    expect(workerDebugger).toBeGreaterThan(workerEnable);
+    expect(workerResume).toBeGreaterThan(workerDebugger);
+  });
+
+  it('WebCrypto 挂钩经 binding 写入 crypto.jsonl，输入输出进 BodyStore 且不脱敏', async () => {
+    const rootDir = await newRootDir();
+    const material = Buffer.from('operator-passphrase:abc');
+    const digest = createHash('sha256').update(material).digest();
+    const session = await startSession({
+      jobId: 'job-collector-crypto',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'crypto',
+        op: 'digest',
+        algorithm: 'SHA-256',
+        algorithmParams: { name: 'SHA-256' },
+        inputB64: material.toString('base64'),
+        outputB64: digest.toString('base64'),
+        scriptUrl: 'http://bmc.test/login:12',
+      }),
+    });
+    await session.stop();
+
+    const rows = jsonl(await session.workspace.readArtifact('raw/runtime/crypto.jsonl'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'crypto-0001',
+      kind: 'digest',
+      algorithm: 'SHA-256',
+      targetId: 'target-root',
+      scriptUrl: 'http://bmc.test/login:12',
+    });
+    const inputRef = rows[0].inputRef as { sha256: string; bytes: number; path: string };
+    const outputRef = rows[0].outputRef as { sha256: string; bytes: number; path: string };
+    const storedInput = await session.workspace.readArtifact(inputRef.path);
+    const storedOutput = await session.workspace.readArtifact(outputRef.path);
+    expect(storedInput.equals(material)).toBe(true);
+    expect(storedInput.toString('utf8')).toContain('operator-passphrase');
+    expect(storedOutput.equals(digest)).toBe(true);
+    expect(inputRef.path).toBe(`raw/runtime/bodies/${inputRef.sha256}`);
+  });
+
+  it('Debugger.scriptParsed 拉取源码写入 scripts 索引，Worker 标 kind=worker', async () => {
+    const rootDir = await newRootDir();
+    const wasmBytes = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    const session = await startSession({
+      jobId: 'job-collector-scripts',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp({
+      scriptSources: {
+        'script-login': { scriptSource: 'crypto.subtle.digest("SHA-256", material)' },
+        'script-worker': { scriptSource: 'self.onmessage = function () {}' },
+        'script-wasm': { bytecode: wasmBytes.toString('base64') },
+      },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Debugger.scriptParsed', {
+      scriptId: 'script-login',
+      url: '',
+    });
+    fake.emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: { type: 'worker', url: 'http://bmc.test/viewer-worker.js', targetId: 'target-worker' },
+    });
+    fake.emit(
+      'Debugger.scriptParsed',
+      { scriptId: 'script-worker', url: 'http://bmc.test/viewer-worker.js' },
+      'worker-session',
+    );
+    fake.emit('Debugger.scriptParsed', {
+      scriptId: 'script-wasm',
+      url: 'http://bmc.test/viewer.wasm',
+      scriptLanguage: 'WebAssembly',
+    });
+    await session.stop();
+
+    const index = JSON.parse((await session.workspace.readArtifact('raw/scripts/index.json')).toString('utf8')) as {
+      scripts: Array<Record<string, unknown>>;
+    };
+    expect(index.scripts).toHaveLength(3);
+    const login = index.scripts.find(row => String(row.id).endsWith('script-login'));
+    const worker = index.scripts.find(row => String(row.id).endsWith('script-worker'));
+    const wasm = index.scripts.find(row => String(row.id).endsWith('script-wasm'));
+    expect(login).toMatchObject({ kind: 'inline', targetId: 'target-root' });
+    expect(worker).toMatchObject({ kind: 'worker', targetId: 'target-worker' });
+    expect(wasm).toMatchObject({ kind: 'wasm' });
+    const loginRef = login?.bodyRef as { path: string };
+    const wasmRef = wasm?.bodyRef as { path: string };
+    expect((await session.workspace.readArtifact(loginRef.path)).toString('utf8')).toContain('SHA-256');
+    expect((await session.workspace.readArtifact(wasmRef.path)).equals(wasmBytes)).toBe(true);
+  });
+
+  it('不同 Target 的相同 CDP scriptId 都写入索引', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-script-id',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({
+      scriptSources: {
+        '1': { scriptSource: 'page-script' },
+      },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Debugger.scriptParsed', { scriptId: '1', url: 'http://bmc.test/login.js' });
+    fake.emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: { type: 'worker', url: 'http://bmc.test/viewer-worker.js', targetId: 'target-worker' },
+    });
+    fake.emit('Debugger.scriptParsed', { scriptId: '1', url: 'http://bmc.test/viewer-worker.js' }, 'worker-session');
+    await session.stop();
+    const index = JSON.parse((await session.workspace.readArtifact('raw/scripts/index.json')).toString('utf8')) as {
+      scripts: Array<Record<string, unknown>>;
+    };
+    expect(index.scripts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'network-script', url: 'http://bmc.test/login.js' }),
+        expect.objectContaining({ kind: 'worker', url: 'http://bmc.test/viewer-worker.js' }),
+      ]),
+    );
+  });
+
+  it('多根窗口挂载：popup 根独立 debugger，targets 目录带 opener 血缘', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-multi-root',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const main = createFakeCdp();
+    const popup = createFakeCdp();
+    await session.attachCdp(main.cdp, { targetId: 'target-window-1', windowId: '1', windowRole: 'main' });
+    await session.attachCdp(popup.cdp, {
+      targetId: 'target-window-2',
+      windowId: '2',
+      windowRole: 'popup',
+      openerTargetId: 'target-window-1',
+    });
+    main.emit('Network.requestWillBeSent', {
+      requestId: 'req-main',
+      type: 'Document',
+      request: { method: 'GET', url: 'http://bmc.test/login', headers: {} },
+    });
+    popup.emit('Network.requestWillBeSent', {
+      requestId: 'req-popup',
+      type: 'Document',
+      request: { method: 'GET', url: 'http://bmc.test/popup', headers: {} },
+    });
+    await session.stop();
+
+    const transactions = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(transactions.some(row => row.url === 'http://bmc.test/login')).toBe(true);
+    expect(transactions.some(row => row.url === 'http://bmc.test/popup')).toBe(true);
+    const targetsFile = JSON.parse(
+      (await session.workspace.readArtifact('catalog/targets.json')).toString('utf8'),
+    ) as { targets: Array<Record<string, unknown>> };
+    const popupRow = targetsFile.targets.find(row => row.id === 'target-window-2');
+    expect(popupRow).toMatchObject({
+      type: 'popup',
+      attached: true,
+      openerTargetId: 'target-window-1',
+    });
+    const mainRow = targetsFile.targets.find(row => row.id === 'target-window-1');
+    expect(mainRow).toMatchObject({ type: 'page', attached: true });
+    const summary = session.integrityEvidence('KVM_REACHED');
+    expect(summary.collectorReadyBeforeFirstNavigation).toBe(true);
+  });
+
+  it('收尾快照 Cookie/Storage，并记录 console 与导航时间线', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-browser',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp({
+      cookies: [{ name: 'sid', value: 'session-token-plain', domain: 'bmc.test', path: '/' }],
+      storage: {
+        localStorage: {},
+        sessionStorage: { csrfKey: 'csrf-token-plain', viewerKey: 'viewer-token-plain' },
+      },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Page.frameNavigated', {
+      frame: { id: 'frame-1', url: 'http://bmc.test/login' },
+    });
+    fake.emit('Runtime.consoleAPICalled', {
+      type: 'warning',
+      args: [{ type: 'string', value: 'kvm handshake retry' }],
+    });
+    await session.stop();
+
+    const storage = JSON.parse((await session.workspace.readArtifact('raw/browser/storage.json')).toString('utf8'));
+    expect(storage.cookies).toEqual([
+      { name: 'sid', value: 'session-token-plain', domain: 'bmc.test', path: '/' },
+    ]);
+    expect(storage.sessionStorage).toEqual({
+      csrfKey: 'csrf-token-plain',
+      viewerKey: 'viewer-token-plain',
+    });
+    expect(storage.indexedDb).toEqual([]);
+    expect(storage.cacheStorage).toEqual([]);
+    const consoleRows = jsonl(await session.workspace.readArtifact('raw/browser/console.jsonl'));
+    expect(consoleRows[0]).toMatchObject({
+      level: 'warning',
+      text: 'kvm handshake retry',
+      targetId: 'target-root',
+    });
+    const timeline = jsonl(await session.workspace.readArtifact('raw/browser/timeline.jsonl'));
+    expect(timeline[0]).toMatchObject({
+      kind: 'navigation',
+      url: 'http://bmc.test/login',
+    });
+  });
+
+  it('观察脚本 action 路由写入 actions.jsonl；垃圾 payload 显式记账不落行', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-actions',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'action',
+        actionKind: 'click',
+        elementSummary: 'button#login-submit text:"登录"',
+        url: 'http://bmc.test/login',
+      }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: 'not-json',
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'unknown-kind' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: 'someone-elses-binding',
+      payload: '{}',
+    });
+    await session.stop();
+
+    const actions = jsonl(await session.workspace.readArtifact('raw/browser/actions.jsonl'));
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      id: 'action-0001',
+      kind: 'click',
+      targetId: 'target-root',
+      elementSummary: 'button#login-submit text:"登录"',
+      url: 'http://bmc.test/login',
+    });
+    const cryptoRows = jsonl(await session.workspace.readArtifact('raw/runtime/crypto.jsonl'));
+    expect(cryptoRows).toHaveLength(0);
+    const diagnostics = session.evidence().diagnostics();
+    expect(diagnostics.droppedEventByMethod['Runtime.bindingCalled']).toBe(2);
+  });
+
+  it('观察脚本钩子安装失败（observer-hook-failed）必须显式记 droppedEvent，不得静默', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-hook-failure',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'observer-hook-failed',
+        hook: 'crypto',
+        stage: 'install',
+        detail: 'subtle is not extensible',
+      }),
+    });
+    await session.stop();
+
+    const diagnostics = session.evidence().diagnostics();
+    expect(diagnostics.droppedEventByMethod['observer-hook-failed']).toBe(1);
+    // droppedEvent 记账必须随 capture-facts 落盘进包（进程内计数在导出包里可见）；
+    // 快照在收尾序列末尾写入，也包含收尾期的丢带（如 fake CDP 无截图域）
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    ) as { stopped: boolean; droppedEventByMethod: Record<string, number> | null };
+    expect(facts.stopped).toBe(true);
+    expect(facts.droppedEventByMethod?.['observer-hook-failed']).toBe(1);
+  });
+
+  it('WS FIN 后视推导（不伪造）：continuation 首帧 fin=false；close 后到达帧记缺口', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-ws-fin',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.webSocketCreated', { requestId: 'ws-fin', url: 'ws://bmc.test/kvm' });
+    fake.emit('Network.webSocketFrameReceived', {
+      requestId: 'ws-fin',
+      response: { opcode: 2, payloadData: Buffer.from('hello').toString('base64') },
+    });
+    fake.emit('Network.webSocketFrameReceived', {
+      requestId: 'ws-fin',
+      response: { opcode: 0, payloadData: Buffer.from('-fragment').toString('base64') },
+    });
+    fake.emit('Network.webSocketFrameSent', {
+      requestId: 'ws-fin',
+      response: { opcode: 1, payloadData: 'next-message' },
+    });
+    fake.emit('Network.webSocketClosed', { requestId: 'ws-fin' });
+    // 反例：关闭后到达的帧必须显式记账，不能悄悄追加
+    fake.emit('Network.webSocketFrameReceived', {
+      requestId: 'ws-fin',
+      response: { opcode: 2, payloadData: Buffer.from('late').toString('base64') },
+    });
+    await session.stop();
+
+    const indexRows = jsonl(await session.workspace.readArtifact('raw/websocket/ws-fin/frames.index.jsonl'));
+    expect(indexRows).toHaveLength(3);
+    expect(indexRows.map(row => row.fin)).toEqual([false, true, true]);
+    const framesBin = await session.workspace.readArtifact('raw/websocket/ws-fin/frames.bin');
+    expect(framesBin.equals(Buffer.concat([Buffer.from('hello'), Buffer.from('-fragment'), Buffer.from('next-message')]))).toBe(true);
+    const summary = session.integrityEvidence('KVM_REACHED');
+    expect(summary.channelGaps.some(gap => gap.id === 'ws-fin')).toBe(true);
+  });
+
+  it('WebRTC / WebTransport / SSE / 下载：行落盘 + 消息进 BodyStore + 不可观测通道显式缺口', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-realtime',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    const message = Buffer.from('kvm-frame-payload');
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'webrtc', pcId: 'pc-1', eventKind: 'peer-connection-created' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'webrtc',
+        pcId: 'pc-1',
+        eventKind: 'datachannel-message',
+        direction: 'down',
+        dataChannelId: 'control',
+        messageIndex: 0,
+        fin: true,
+        messageB64: message.toString('base64'),
+      }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'webtransport', wtId: 'wt-1', eventKind: 'created', url: 'https://bmc.test/wt' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'sse', sseId: 'sse-1', eventKind: 'connected', url: 'http://bmc.test/events' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'sse',
+        sseId: 'sse-1',
+        eventKind: 'event',
+        serverEventId: '42',
+        dataB64: Buffer.from('data: field value').toString('base64'),
+      }),
+    });
+    fake.emit('Browser.downloadWillBegin', {
+      guid: 'dl-1',
+      url: 'http://bmc.test/firmware.bin',
+      suggestedFilename: 'firmware.bin',
+    });
+    fake.emit('Browser.downloadProgress', { guid: 'dl-1', state: 'Completed' });
+    await session.stop();
+
+    const webrtc = jsonl(await session.workspace.readArtifact('raw/realtime/webrtc.jsonl'));
+    expect(webrtc).toHaveLength(2);
+    expect(webrtc[1]).toMatchObject({
+      peerConnectionId: 'pc-1',
+      kind: 'datachannel-message',
+      direction: 'down',
+      dataChannelId: 'control',
+      messageIndex: 0,
+      fin: true,
+    });
+    const messageRef = webrtc[1].messageRef as { sha256: string; bytes: number; path: string };
+    expect(messageRef.path).toBe(`raw/realtime/bodies/${messageRef.sha256}`);
+    expect((await session.workspace.readArtifact(messageRef.path)).equals(message)).toBe(true);
+
+    const webtransport = jsonl(await session.workspace.readArtifact('raw/realtime/webtransport.jsonl'));
+    expect(webtransport).toHaveLength(1);
+    expect(webtransport[0]).toMatchObject({ transportId: 'wt-1', kind: 'created' });
+
+    const sse = jsonl(await session.workspace.readArtifact('raw/realtime/sse.jsonl'));
+    expect(sse).toHaveLength(2);
+    expect(sse[1]).toMatchObject({ id: 'sse-1', kind: 'event', serverEventId: '42' });
+    const dataRef = sse[1].dataRef as { sha256: string; path: string };
+    expect((await session.workspace.readArtifact(dataRef.path)).toString('utf8')).toBe('data: field value');
+
+    const downloads = jsonl(await session.workspace.readArtifact('raw/realtime/downloads.jsonl'));
+    expect(downloads).toHaveLength(2);
+    expect(downloads[1]).toMatchObject({ id: 'dl-1', completed: true, suggestedFileName: 'firmware.bin' });
+
+    const channels = JSON.parse(
+      (await session.workspace.readArtifact('catalog/channels.json')).toString('utf8'),
+    ) as { channels: Array<Record<string, unknown>> };
+    const byId = new Map(channels.channels.map(row => [String(row.id), row]));
+    expect(byId.get('pc-1')).toMatchObject({ kind: 'webrtc', frameCounts: { up: 0, down: 1 } });
+    expect(byId.get('wt-1')).toMatchObject({ kind: 'webtransport', frameCounts: null });
+    expect(byId.get('sse-1')).toMatchObject({ kind: 'sse', frameCounts: { up: 0, down: 1 } });
+    expect(byId.get('dl-1')).toMatchObject({ kind: 'download' });
+
+    // 反例：不可观测通道必须显式记账，不能假装已采集
+    const summary = session.integrityEvidence('KVM_REACHED');
+    expect(summary.unsupportedChannels.some(gap => gap.id === 'wt-1')).toBe(true);
+    expect(summary.unsupportedChannels.some(gap => gap.id === 'dl-1')).toBe(true);
+  });
+
+  it('NetLog 源流式包装进包，constants 原样透传', async () => {
+    const rootDir = await newRootDir();
+    const sourcePath = join(rootDir, 'netlog-src.json');
+    await writeFile(
+      sourcePath,
+      JSON.stringify({
+        constants: { logEventTypes: { 1: 'TYPE_A', 2: 'TYPE_B' }, unknownFutureField: { keep: true } },
+        events: [
+          { time: '1', type: 1, phase: 1 },
+          { time: '2', type: 2, phase: 1 },
+          { time: '3', type: 1, phase: 2, params: { url: 'http://bmc.test/login' } },
+        ],
+      }),
+    );
+    const session = await startSession({
+      jobId: 'job-collector-netlog',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+      netlog: {
+        start: async () => {},
+        stop: async () => ({ sourcePath, captureMode: 'include-sensitive' }),
+      },
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    await session.stop();
+
+    const netlog = JSON.parse((await session.workspace.readArtifact('raw/netlog/netlog.json')).toString('utf8'));
+    expect(netlog.schemaVersion).toBe('2.0.0');
+    expect(netlog.captureMode).toBe('include-sensitive');
+    expect(netlog.events).toHaveLength(3);
+    expect(netlog.events[2]).toMatchObject({ time: '3', type: 1, phase: 2 });
+    expect(netlog.constants).toEqual({
+      logEventTypes: { 1: 'TYPE_A', 2: 'TYPE_B' },
+      unknownFutureField: { keep: true },
+    });
+  });
+
+  it('NetLog 残缺源（截断 JSON）不输出静默截断副本：落兜底文件并记账', async () => {
+    const rootDir = await newRootDir();
+    const sourcePath = join(rootDir, 'netlog-broken.json');
+    await writeFile(sourcePath, '{"constants": {"a": 1}, "events": [{ "time": 1,');
+    const session = await startSession({
+      jobId: 'job-collector-netlog-broken',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+      netlog: {
+        start: async () => {},
+        stop: async () => ({ sourcePath, captureMode: 'include-sensitive' }),
+      },
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    await session.stop();
+
+    const netlog = JSON.parse((await session.workspace.readArtifact('raw/netlog/netlog.json')).toString('utf8'));
+    expect(netlog).toMatchObject({ schemaVersion: '2.0.0', captureMode: 'capture-failed', events: [] });
+    expect(session.evidence().diagnostics().droppedEventByMethod['netlog-wrap']).toBe(1);
+  });
+
+  it('HAR 互操作副本：文本正文内嵌，二进制正文记 size + bodyRef 注释', async () => {
+    const rootDir = await newRootDir();
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const session = await startSession({
+      jobId: 'job-collector-har',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp({
+      responseBodies: {
+        'req-binary': { body: pngBytes.toString('base64'), base64Encoded: true },
+        'req-text': { body: '{"rows":[1,2,3]}', base64Encoded: false },
+      },
+      postData: { 'req-text': 'user=operator&password=operator-passphrase' },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    for (const [requestId, url, resourceType, contentType] of [
+      ['req-binary', 'http://bmc.test/logo.png', 'Image', 'image/png'],
+      ['req-text', 'http://bmc.test/api/login', 'XHR', 'application/json'],
+    ] as const) {
+      fake.emit('Network.requestWillBeSent', {
+        requestId,
+        type: resourceType,
+        request: {
+          method: requestId === 'req-text' ? 'POST' : 'GET',
+          url,
+          headers: {
+            ...(requestId === 'req-text' ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+          },
+          hasPostData: requestId === 'req-text',
+        },
+      });
+      fake.emit('Network.responseReceived', {
+        requestId,
+        response: { status: 200, headers: { 'content-type': contentType } },
+      });
+      fake.emit('Network.loadingFinished', { requestId });
+    }
+    await session.stop();
+
+    const har = JSON.parse((await session.workspace.readArtifact('raw/http/session.har')).toString('utf8')) as {
+      log: {
+        version: string;
+        entries: Array<{
+          request: { url: string; postData?: { text: string } };
+          response: { content: { size: number; mimeType: string; text?: string; comment?: string } };
+        }>;
+      };
+    };
+    expect(har.log.version).toBe('1.2');
+    expect(har.log.entries).toHaveLength(2);
+    const [binary, text] = har.log.entries;
+    expect(binary.response.content.comment).toContain('raw/http/bodies/');
+    expect(binary.response.content.size).toBe(pngBytes.byteLength);
+    expect(binary.response.content.mimeType).toBe('image/png');
+    expect(binary.response.content.text).toBe('');
+    expect(text.request.postData?.text).toBe('user=operator&password=operator-passphrase');
+    expect(text.response.content.text).toBe('{"rows":[1,2,3]}');
+  });
+
+  it('targets 目录：attach/detach/destroy 生命周期与 popup 血缘', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-collector-targets',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Target.attachedToTarget', {
+      sessionId: 'worker-session',
+      targetInfo: { type: 'worker', url: 'http://bmc.test/viewer-worker.js', targetId: 'target-worker' },
+    });
+    fake.emit('Target.targetCreated', {
+      targetInfo: { targetId: 't-popup', type: 'page', url: 'http://bmc.test/popup', openerId: 'target-root' },
+    });
+    fake.emit('Target.detachedFromTarget', { sessionId: 'worker-session', targetId: 'target-worker' });
+    fake.emit('Target.targetDestroyed', { targetId: 't-popup' });
+    await session.stop();
+
+    const targetsFile = JSON.parse(
+      (await session.workspace.readArtifact('catalog/targets.json')).toString('utf8'),
+    ) as { targets: Array<Record<string, unknown>> };
+    const byId = new Map(targetsFile.targets.map(row => [String(row.id), row]));
+    expect(byId.get('target-root')).toMatchObject({ type: 'page', attached: true });
+    expect(byId.get('target-worker')).toMatchObject({ type: 'worker', attached: false, detachReason: 'detached' });
+    expect(byId.get('t-popup')).toMatchObject({
+      type: 'popup',
+      attached: false,
+      detachReason: 'destroyed',
+      openerTargetId: 'target-root',
+    });
+    const rawTargets = JSON.parse(
+      (await session.workspace.readArtifact('raw/browser/targets.json')).toString('utf8'),
+    ) as { targets: Array<Record<string, unknown>> };
+    expect(rawTargets.targets).toHaveLength(targetsFile.targets.length);
+  });
+
+  it('主框架导航点截图 + DOM 快照落盘；环境合并页面侧与主进程侧', async () => {
+    const rootDir = await newRootDir();
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const session = await startSession({
+      jobId: 'job-collector-screenshot',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+      mainEnvironment: { chromium: '140.0.0', electron: '44.0.0', os: 'darwin 25.6.0' },
+    });
+    const fake = createFakeCdp({
+      screenshotData: pngBytes.toString('base64'),
+      domHtml: '<html><body>viewer-stable</body></html>',
+      environment: { userAgent: 'Mozilla/5.0 KVM-Recon-Test', language: 'zh-CN', timezone: 'Asia/Shanghai', screen: '1024x768x24' },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Page.frameNavigated', {
+      frame: { id: 'frame-1', url: 'http://bmc.test/viewer' },
+    });
+    await session.stop();
+
+    const paths = await session.workspace.artifactPaths();
+    const screenshotPaths = paths.filter(path => path.startsWith('raw/browser/screenshots/'));
+    expect(screenshotPaths).toHaveLength(2);
+    const domPaths = paths.filter(path => path.startsWith('raw/browser/dom-snapshots/'));
+    expect(domPaths).toHaveLength(2);
+    expect((await session.workspace.readArtifact(domPaths[0])).toString('utf8')).toContain('viewer-stable');
+    const timeline = jsonl(await session.workspace.readArtifact('raw/browser/timeline.jsonl'));
+    expect(timeline.some(row => row.kind === 'screenshot-saved' && String(row.detail).startsWith('raw/browser/screenshots/'))).toBe(true);
+    expect(timeline.some(row => row.kind === 'dom-snapshot-saved' && String(row.detail).startsWith('raw/browser/dom-snapshots/'))).toBe(true);
+    expect(session.environment()).toEqual({
+      chromium: '140.0.0',
+      electron: '44.0.0',
+      os: 'darwin 25.6.0',
+      userAgent: 'Mozilla/5.0 KVM-Recon-Test',
+      language: 'zh-CN',
+      timezone: 'Asia/Shanghai',
+      screen: '1024x768x24',
+    });
+  });
+
+  it('capture-facts：挂载后即落 v1（target / 环境），stop 覆写终态（证据摘要 + stopped）', async () => {
+    const rootDir = await newRootDir();
+    const fake = createFakeCdp({
+      environment: { userAgent: 'Mozilla/5.0 KVM-Recon-Facts', language: 'zh-CN', timezone: 'Asia/Shanghai', screen: '1024x768x24' },
+    });
+    const session = await startSession({
+      jobId: 'job-collector-facts',
+      rootDir,
+      targetUrl: 'https://10.10.8.111:8443/login',
+      deviceLabel: '测试 BMC / 未知厂商',
+      mainEnvironment: { chromium: '152.0.7977.76', electron: '44.3.0', os: 'darwin 25.6.0' },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+
+    // v1：未收尾（stopped=false、无证据摘要），但 target 与真实环境已在盘——
+    // 硬崩溃后恢复导出仍能装配 manifest，不需要内存态。
+    const v1 = JSON.parse((await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'));
+    expect(v1.stopped).toBe(false);
+    expect(v1.evidenceSummary).toBeNull();
+    expect(v1.target).toEqual({ host: '10.10.8.111', port: 8443, scheme: 'https' });
+    expect(v1.environment).toEqual({
+      chromium: '152.0.7977.76',
+      electron: '44.3.0',
+      os: 'darwin 25.6.0',
+      userAgent: 'Mozilla/5.0 KVM-Recon-Facts',
+      language: 'zh-CN',
+      timezone: 'Asia/Shanghai',
+      screen: '1024x768x24',
+    });
+    expect(v1.workflowStatus).toBe('TARGET_OPENED');
+
+    await session.stop();
+    const final = JSON.parse((await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'));
+    expect(final.stopped).toBe(true);
+    expect(typeof final.endedAt).toBe('string');
+    expect(final.evidenceSummary.collectorReadyBeforeFirstNavigation).toBe(true);
+    expect(final.evidenceSummary.rawJournalsClosed).toBe(true);
+    expect(final.evidenceSummary.browserStateWritten).toBe(true);
+    expect(final.evidenceSummary.evidenceReferencesClosed).toBe(true);
+    expect(final.evidenceSummary.workflowStatus).toBe('TARGET_OPENED');
+    expect(session.environment()?.userAgent).toBe('Mozilla/5.0 KVM-Recon-Facts');
+  });
+
+  it('stop() 幂等：重复收尾不重放，netlog 不被 capture-failed 兜底覆盖', async () => {
+    // 反例：首次收尾成功后重入 stop()，会把已写好的 netlog.json
+    // 覆盖成 capture-failed 兜底（electronNetlogSource 第二次 stop 返回 null）。
+    const makeNetlog = (sourcePath: string) => {
+      let stops = 0;
+      return {
+        stopCalls: () => stops,
+        source: {
+          start: async () => {},
+          stop: async (): Promise<{ sourcePath: string; captureMode: string } | null> => {
+            stops += 1;
+            return stops === 1 ? { sourcePath, captureMode: 'include-sensitive' } : null;
+          },
+        },
+      };
+    };
+    const sharedRoot = await newRootDir();
+    await writeFile(
+      join(sharedRoot, 'netlog-src.json'),
+      JSON.stringify({ constants: { a: 1 }, events: [{ time: '1', type: 1 }] }),
+    );
+
+    // 顺序重入
+    const sequential = await startSession({
+      jobId: 'job-stop-idempotent',
+      rootDir: sharedRoot,
+      safetyMarginBytes: 1,
+      netlog: makeNetlog(join(sharedRoot, 'netlog-src.json')).source,
+    });
+    const fake = createFakeCdp();
+    await sequential.attachCdp(fake.cdp, { targetId: 'target-root' });
+    await sequential.stop();
+    const firstNetlog = (await sequential.workspace.readArtifact('raw/netlog/netlog.json')).toString('utf8');
+    await sequential.stop();
+    const secondNetlog = (await sequential.workspace.readArtifact('raw/netlog/netlog.json')).toString('utf8');
+    expect(JSON.parse(secondNetlog).captureMode).toBe('include-sensitive');
+    expect(secondNetlog).toBe(firstNetlog);
+
+    // 并发重入：共享同一次收尾（独立 rootDir，避免上一作业未导出拦截）
+    const concurrentNetlog = makeNetlog(join(sharedRoot, 'netlog-src.json'));
+    const concurrent = await startSession({
+      jobId: 'job-stop-concurrent',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+      netlog: concurrentNetlog.source,
+    });
+    await concurrent.attachCdp(createFakeCdp().cdp, { targetId: 'target-root' });
+    await Promise.all([concurrent.stop(), concurrent.stop()]);
+    const netlog = JSON.parse(
+      (await concurrent.workspace.readArtifact('raw/netlog/netlog.json')).toString('utf8'),
+    );
+    expect(netlog.captureMode).toBe('include-sensitive');
+    expect(netlog.events).toHaveLength(1);
+    expect(concurrentNetlog.stopCalls()).toBe(1);
+  });
+
+  it('全部根挂载失败：仍落诚实 storage.json 兜底，收尾不被中止', async () => {
+    // 反例：primary 为 null 时 snapshotBrowserState 被跳过，
+    // raw/browser/storage.json 从未写入 → 导出门禁 REQUIRED_FILE_MISSING。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-stop-no-attach',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    await session.stop();
+
+    const storage = JSON.parse(
+      (await session.workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
+    );
+    expect(storage).toMatchObject({
+      schemaVersion: '2.0.0',
+      cookies: [],
+      localStorage: {},
+      sessionStorage: {},
+      indexedDb: [],
+      cacheStorage: [],
+    });
+    // 收尾其余必需工件不受影响
+    const targets = JSON.parse(
+      (await session.workspace.readArtifact('catalog/targets.json')).toString('utf8'),
+    );
+    expect(targets.targets).toEqual([]);
+    expect(JSON.parse((await session.workspace.readArtifact('catalog/channels.json')).toString('utf8')).channels).toEqual([]);
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    );
+    expect(facts.stopped).toBe(true);
+    expect(facts.evidenceSummary.browserStateWritten).toBe(false);
+  });
+
+  it('attach 失败清理：移除 message 监听并 detach，不留活监听器', async () => {
+    // 反例：Network.enable 失败抛出后，message 监听器仍挂着，
+    // 事件继续进孤儿队列，debugger 不 detach。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-attach-cleanup',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const calls: string[] = [];
+    const listeners: unknown[] = [];
+    const cdp: CdpSession = {
+      async attach() {
+        calls.push('attach');
+      },
+      sendCommand(command: string) {
+        if (command === 'Network.enable') {
+          return Promise.reject(new Error('Network.enable timed out'));
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') {
+          calls.push('on');
+          listeners.push(listener);
+        }
+      },
+      off(event) {
+        if (event === 'message') {
+          calls.push('off');
+          listeners.length = 0;
+        }
+      },
+      async detach() {
+        calls.push('detach');
+      },
+    };
+    await expect(session.attachCdp(cdp, { targetId: 'target-root' })).rejects.toThrow('Network.enable');
+    expect(calls).toContain('off');
+    expect(calls).toContain('detach');
+    expect(listeners).toHaveLength(0);
+  });
+
+  it('HAR 构建失败：落显式兜底 HAR（空 entries + 失败注释）并记账，后续收尾不中止', async () => {
+    // 反例：HAR 构建抛错时 stop() 直接中止，targets/channels/facts 全没写。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-har-fallback',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'r1',
+      request: { method: 'GET', url: 'https://bmc.test/login', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'r1',
+      response: { status: 200, headers: {}, timing: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'r1' });
+    await session.drain();
+    // 直接写一行残缺事务行，让 HAR 构建在流式读入时抛错
+    await session.workspace.appendJsonl('raw/http/transactions.jsonl', { broken: true });
+    await session.stop();
+
+    const har = JSON.parse((await session.workspace.readArtifact('raw/http/session.har')).toString('utf8'));
+    expect(har.log.entries).toEqual([]);
+    expect(String(har.log.comment)).toContain('HAR 构建失败');
+    expect(session.evidence().diagnostics().droppedEventByMethod['har-build']).toBe(1);
+    // 后续收尾步骤不被中止：目录与终态 facts 仍在
+    expect(
+      JSON.parse((await session.workspace.readArtifact('catalog/targets.json')).toString('utf8')).targets.length,
+    ).toBeGreaterThan(0);
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    );
+    expect(facts.stopped).toBe(true);
+    expect(facts.evidenceSummary.rawJournalsClosed).toBe(true);
+  });
+
+  it('SSE 未知 eventKind：丢弃并记账，不伪造成 closed', async () => {
+    // 反例：页面可任意调用 binding，未知 kind 被映射为 closed，
+    // 通道在目录里被误关闭。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-sse-unknown-kind',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'sse', sseId: 'sse-9', eventKind: 'totally-bogus', url: 'https://bmc.test/sse' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'sse', sseId: 'sse-9', eventKind: 'connected', url: 'https://bmc.test/sse' }),
+    });
+    await session.stop();
+
+    const sse = jsonl(await session.workspace.readArtifact('raw/realtime/sse.jsonl'));
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({ id: 'sse-9', kind: 'connected' });
+    expect(session.evidence().diagnostics().droppedEventByMethod['sse-observer']).toBe(1);
+    const channels = JSON.parse(
+      (await session.workspace.readArtifact('catalog/channels.json')).toString('utf8'),
+    ) as { channels: Array<Record<string, unknown>> };
+    const sseChannel = channels.channels.find(row => row.id === 'sse-9');
+    expect(sseChannel).toMatchObject({ kind: 'sse', closedAt: null });
+  });
+
+  it('WS 目录名碰撞：不同 channelId 各自目录，不互相覆盖', async () => {
+    // 反例：'a b' 与 'a_b' 清洗后同名，第二个 open 覆盖第一个 socket。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-ws-dir-collision',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    for (const requestId of ['a b', 'a_b']) {
+      fake.emit('Network.webSocketCreated', { requestId, url: `ws://bmc.test/${requestId}` });
+      // opcode 1 = 文本帧：CDP 以明文传 payloadData（base64 只用于二进制帧）
+      fake.emit('Network.webSocketFrameReceived', {
+        requestId,
+        response: { opcode: 1, payloadData: `frame-${requestId}` },
+      });
+      fake.emit('Network.webSocketClosed', { requestId });
+    }
+    await session.stop();
+
+    const channels = JSON.parse(
+      (await session.workspace.readArtifact('catalog/channels.json')).toString('utf8'),
+    ) as { channels: Array<Record<string, unknown>> };
+    const wsChannels = channels.channels.filter(row => row.kind === 'websocket');
+    expect(wsChannels).toHaveLength(2);
+    const paths = wsChannels.map(row => row.payloadPath);
+    expect(new Set(paths).size).toBe(2);
+    for (const channel of wsChannels) {
+      const framesBin = await session.workspace.readArtifact(String(channel.payloadPath));
+      const expected = Buffer.from(`frame-${String(channel.id)}`);
+      expect(framesBin.equals(expected)).toBe(true);
+      expect((channel.frameCounts as { down: number }).down).toBe(1);
+    }
+  });
+
+  it('closed 阶段事件丢弃显式记账（不静默）', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-closed-drop-accounting',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    await session.stop();
+    fake.emit('Network.webSocketCreated', { requestId: 'ws-late', url: 'ws://bmc.test/late' });
+    expect(session.evidence().diagnostics().droppedEventByMethod['Network.webSocketCreated']).toBe(1);
+  });
+
+  it('drain 阶段事件丢弃显式记账（Promise 门控，不靠 sleep）', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-drain-drop-accounting',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    let releaseBody!: (value: { body: string; base64Encoded?: boolean }) => void;
+    const bodyGate = new Promise<{ body: string; base64Encoded?: boolean }>(resolve => {
+      releaseBody = resolve;
+    });
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>, sessionId?: string) => void> = [];
+    const cdp: CdpSession = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand(async (command: string) => {
+        if (command === 'Network.getResponseBody') return bodyGate;
+        return {};
+      }),
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener);
+      },
+    };
+    const emit = (method: string, params: Record<string, unknown>) => {
+      for (const listener of listeners) listener({}, method, params, undefined);
+    };
+    await session.attachCdp(cdp, { targetId: 'target-root' });
+    emit('Network.requestWillBeSent', {
+      requestId: 'r-gated',
+      request: { method: 'GET', url: 'https://bmc.test/gated', headers: {} },
+    });
+    emit('Network.responseReceived', {
+      requestId: 'r-gated',
+      response: { status: 200, headers: {}, timing: {} },
+    });
+    emit('Network.loadingFinished', { requestId: 'r-gated' });
+    // 等事件链跑到 getResponseBody 的门上（事件队列挂起）
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    const stopping = session.stop();
+    await new Promise(resolve => setImmediate(resolve));
+    // 此刻 stopAccepting 已执行（drain 阶段）：晚到的非 drain 事件被丢弃并记账
+    emit('Network.webSocketCreated', { requestId: 'ws-drain-late', url: 'ws://bmc.test/drain-late' });
+    expect(session.evidence().diagnostics().droppedEventByMethod['Network.webSocketCreated']).toBe(1);
+    releaseBody({ body: '{"ok":true}', base64Encoded: false });
+    await stopping;
+  });
+
+  it('快照命令无响应时有界收尾：stop() 不被 getCookies / storage 求值挂起', async () => {
+    // 反例：Network.getCookies 与 storage Runtime.evaluate 直 await 无超时，
+    // 渲染进程挂死时 stop() 永久挂起，INCOMPLETE 包无法导出。
+    const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+    vi.useFakeTimers();
+    try {
+      const rootDir = await newRootDir();
+      const session = await startSession({
+        jobId: 'job-snapshot-timeout',
+        rootDir,
+        safetyMarginBytes: 1,
+      });
+      const base = createFakeCdp();
+      const never = new Promise<never>(() => {});
+      const forward = (command: string, params?: Record<string, unknown>, sessionId?: string) =>
+        sessionId === undefined
+          ? base.cdp.sendCommand(command, params)
+          : base.cdp.sendCommand(command, params, sessionId);
+      const cdp: CdpSession = {
+        async attach() {},
+        sendCommand: electronLikeSendCommand((command, params, sessionId) => {
+          if (command === 'Network.getCookies') return never as unknown as Promise<unknown>;
+          if (
+            command === 'Runtime.evaluate' &&
+            String((params as { expression?: unknown })?.expression ?? '').includes('sessionStorage')
+          ) {
+            return never as unknown as Promise<unknown>;
+          }
+          return forward(command, params, sessionId);
+        }),
+        on(event, listener) {
+          base.cdp.on(event, listener);
+        },
+      };
+      await session.attachCdp(cdp, { targetId: 'target-root' });
+      const stopping = session.stop();
+      // 小步推进假时钟（每步让出事件循环，真实 fs IO 得以推进）；
+      // 后注册的 30s 超时定时器在后续推进中触发
+      let done = false;
+      stopping.then(
+        () => {
+          done = true;
+        },
+        () => {
+          done = true;
+        },
+      );
+      // 两条挂起命令各 30s 假时钟超时，推进预算 150s（每轮让出真实 macrotask
+      // 供 stop 链的 fs 回调运行）
+      for (let round = 0; round < 1500 && !done; round += 1) {
+        await vi.advanceTimersByTimeAsync(100);
+        // 真实 macrotask 让步：事件循环 poll 阶段处理 stop 链里的真实 fs 回调
+        await new Promise<void>(resolve => {
+          realSetTimeout(resolve, 0);
+        });
+      }
+      // 挂起防护（真实时间门）：实现无超时时快速失败，不拖垮同文件后续用例
+      await Promise.race([
+        stopping,
+        new Promise<never>((_, reject) => {
+          realSetTimeout(() => reject(new Error('stop() 挂起：快照命令无响应且无超时')), 4_000);
+        }),
+      ]);
+      const dropped = session.evidence().diagnostics().droppedEventByMethod;
+      expect(dropped['Network.getCookies']).toBe(1);
+      expect(dropped['storage-dump']).toBe(1);
+      const storage = JSON.parse(
+        (await session.workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
+      );
+      expect(storage.cookies).toEqual([]);
+      expect(storage.localStorage).toEqual({});
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('收尾保存 Frame Tree（规范 §8.4）：Page.getFrameTree 原样落盘', async () => {
+    // 反例：spec §8.4 要求保存 Frame Tree，快照链路从不调用 Page.getFrameTree。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-frame-tree',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => '2026-09-21T01:00:00.000Z',
+    });
+    const frameTree = {
+      frame: { id: 'frame-root', url: 'https://bmc.test/console' },
+      childFrames: [{ frame: { id: 'frame-1', url: 'https://bmc.test/kvm' } }],
+    };
+    const fake = createFakeCdp({ frameTree });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    await session.stop();
+
+    const saved = JSON.parse(
+      (await session.workspace.readArtifact('raw/browser/frame-tree.json')).toString('utf8'),
+    );
+    expect(saved).toMatchObject({
+      schemaVersion: '2.0.0',
+      targetId: 'target-root',
+      capturedAt: '2026-09-21T01:00:00.000Z',
+      frameTree,
+    });
+  });
+
+  it('Frame Tree 获取失败显式记账，不阻断收尾', async () => {
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-frame-tree-failed',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const base = createFakeCdp();
+    const forward = (command: string, params?: Record<string, unknown>, sessionId?: string) =>
+      sessionId === undefined
+        ? base.cdp.sendCommand(command, params)
+        : base.cdp.sendCommand(command, params, sessionId);
+    const cdp: CdpSession = {
+      async attach() {},
+      sendCommand: electronLikeSendCommand((command, params, sessionId) => {
+        if (command === 'Page.getFrameTree') throw new Error('Page 域不可用');
+        return forward(command, params, sessionId);
+      }),
+      on(event, listener) {
+        base.cdp.on(event, listener);
+      },
+    };
+    await session.attachCdp(cdp, { targetId: 'target-root' });
+    await session.stop();
+
+    expect(session.evidence().diagnostics().droppedEventByMethod['Page.getFrameTree']).toBe(1);
+    // 后续快照步骤不受影响
+    const storage = JSON.parse(
+      (await session.workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
+    );
+    expect(storage.schemaVersion).toBe('2.0.0');
+  });
+});
