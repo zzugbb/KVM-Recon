@@ -48,7 +48,7 @@
     "yazl": "^3.3.1"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.3.0",
     "@types/stream-json": "^1.7.8",
