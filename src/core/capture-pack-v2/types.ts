@@ -757,7 +757,11 @@ export type ControllerDiagnosticKind =
   | 'cdp-attach-failed'
   | 'cert-trusted'
   | 'renderer-gone'
-  | 'popup-created';
+  | 'popup-created'
+  | 'viewer-activity-detected'
+  | 'viewer-activity-error'
+  | 'viewer-auto-stop'
+  | 'viewer-auto-stop-failed';
 
 /** raw/controller/diagnostics.jsonl 每行：Controller 层采集过程事实（规范 §8.4，含证书错误）。 */
 export interface PackV2ControllerDiagnosticRow {

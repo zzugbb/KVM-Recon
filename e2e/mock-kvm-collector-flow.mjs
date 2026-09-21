@@ -53,6 +53,54 @@ async function main() {
     logLevel: 'silent',
     outfile: join(appDir, 'capture-session.mjs'),
   });
+  // 阶段 3 第 3 刀：Viewer 自动收尾看门狗 + 信号识别（会话级自动收尾断言用）
+  await build({
+    entryPoints: [join(rootDir, 'src/main/capture/viewerAutoStopWatchdog.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    logLevel: 'silent',
+    outfile: join(appDir, 'viewer-autostop-watchdog.mjs'),
+  });
+  await build({
+    entryPoints: [join(rootDir, 'src/core/collector/viewerActivity.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    logLevel: 'silent',
+    outfile: join(appDir, 'viewer-activity.mjs'),
+  });
+  // NetLog 源（Electron 内建模块外置，运行时由 Electron 主进程解析）：
+  // §20 场景 1 要求导出 COMPLETE——包内有 HTTP 事务时 netlog journal
+  // 不得为空（not-captured 兜底会被 RAW_JOURNAL_EMPTY 门禁拒绝）
+  await build({
+    entryPoints: [join(rootDir, 'src/main/capture/electronNetlogSource.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    logLevel: 'silent',
+    outfile: join(appDir, 'electron-netlog-source.mjs'),
+    external: ['electron'],
+  });
+  // 第 11 轮审核测试缺口：§20 验收场景 1 端到端闭环——完整会话导出
+  // exportJobWorkspaceZip 后断言 COMPLETE + KVM_REACHED。
+  // banner 注入 require：yazl/yauzl 等 CJS 依赖的 require('fs') 在 ESM
+  // 输出里没有 require 可用（Dynamic require of "fs" is not supported）
+  await build({
+    entryPoints: [join(rootDir, 'src/core/export/exportJobWorkspaceZip.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    logLevel: 'silent',
+    outfile: join(appDir, 'export-job-zip.mjs'),
+    banner: {
+      js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+    },
+  });
   writeFileSync(join(appDir, 'main.mjs'), readFileSync(join(here, 'mock-kvm-collector-flow-main.mjs')));
   writeFileSync(
     join(appDir, 'package.json'),
@@ -88,7 +136,7 @@ async function main() {
       console.error('Mock KVM 采集器 E2E 超时');
       process.exitCode = 1;
       resolve();
-    }, 60000);
+    }, 90000);
 
     child.on('error', error => {
       clearTimeout(timeout);

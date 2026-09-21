@@ -35,7 +35,7 @@
         .then(function (data) {
           if (data && data.ok) {
             sessionStorage.setItem("s8d3cc42f5ac", data.csrfToken);
-            location.href = "/4baa81443f20/935f1859fd.html";
+            setTimeout(function () { location.href = "/4baa81443f20/935f1859fd.html"; }, 500);
           }
         });
     });

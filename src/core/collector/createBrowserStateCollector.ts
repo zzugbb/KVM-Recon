@@ -46,6 +46,8 @@ export interface BrowserStateCollector {
   writeStorage(file: Omit<PackV2BrowserStorageFile, 'schemaVersion'>): Promise<void>;
   /** 收尾 Frame Tree 快照（Page.getFrameTree 原样落盘，规范 §8.4）。 */
   writeFrameTree(file: Omit<PackV2BrowserFrameTreeFile, 'schemaVersion'>): Promise<void>;
+  /** 派生引擎只读快照：全部用户动作行浅拷贝（阶段 3 workflowStatus 派生）。 */
+  actionRows(): PackV2BrowserActionRow[];
 }
 
 function safeLabel(label: string): string {
@@ -63,6 +65,7 @@ export function createBrowserStateCollector(
   let domSnapshotSeq = 0;
   let consoleSeq = 0;
   let timelineSeq = 0;
+  const actionRows: PackV2BrowserActionRow[] = [];
 
   /** journal 行写入失败持久作证（journalWriteFailures），丢失不只留进程内计数。 */
   async function appendJournalRow(
@@ -95,6 +98,7 @@ export function createBrowserStateCollector(
     async addAction(row) {
       actionSeq += 1;
       const record: PackV2BrowserActionRow = { id: `action-${String(actionSeq).padStart(4, '0')}`, ...row };
+      actionRows.push(record);
       await appendJournalRow(ACTIONS_PATH, record.id, '用户操作行', record);
     },
     async addScreenshot(label, bytes, meta) {
@@ -153,6 +157,9 @@ export function createBrowserStateCollector(
         ...file,
       };
       await workspace.writeArtifact(FRAME_TREE_PATH, `${JSON.stringify(record, null, 2)}\n`);
+    },
+    actionRows() {
+      return actionRows.map(row => ({ ...row }));
     },
   };
 }

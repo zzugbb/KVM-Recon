@@ -11,6 +11,8 @@ import { APP_VERSION } from '../version';
 interface StatusJob {
   jobId: string;
   state: 'capturing' | 'stopped' | 'exported';
+  /** 采集会话派生的工作流状态（观察事实推导，不靠人工判断）。 */
+  workflowStatus: 'TARGET_OPENED' | 'LOGIN_REACHED' | 'KVM_REACHED';
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
@@ -41,6 +43,14 @@ function stateText(job: StatusJob | null) {
   if (job.state === 'exported') return '已导出';
   if (job.state === 'stopped') return '已收尾（可导出）';
   return job.windowsOpen ? '采集中' : '采集窗口已关闭（可停止收尾）';
+}
+
+/** 派生工作流状态（观察事实推导）：KVM_REACHED = 已进入 HTML5 KVM 画面。 */
+function workflowStatusText(status: StatusJob['workflowStatus'] | undefined) {
+  if (status === 'KVM_REACHED') return '已进入 KVM（KVM_REACHED）';
+  if (status === 'LOGIN_REACHED') return '已登录（LOGIN_REACHED）';
+  if (status === 'TARGET_OPENED') return '目标已打开（TARGET_OPENED）';
+  return '';
 }
 
 function gapSummary(job: StatusJob | null) {
@@ -212,6 +222,7 @@ export function App() {
             <p>
               <span className="status-label">{stateText(job)}</span> · <code>{job.jobId}</code>
               {job.windowsLabel ? ` · ${job.windowsLabel}` : ''}
+              {workflowStatusText(job.workflowStatus) ? ` · 派生：${workflowStatusText(job.workflowStatus)}` : ''}
             </p>
             <p>缺口记录：{gapSummary(job)}</p>
             {job.storageLimited ? <p className="error-card">磁盘水位已触发（storageLimited），包完整性不保证 COMPLETE。</p> : null}

@@ -61,6 +61,16 @@ export interface HttpCollector {
   openHop(input: HttpHopInput): void;
   has(id: string): boolean;
   patchHop(id: string, patch: Partial<PackV2HttpTransactionRow>): void;
+  /**
+   * 合并 extraInfo 头（请求 Cookie / 响应 Set-Cookie 等，Chromium 对
+   * fetch/XHR 把这些头放在 requestWillBeSentExtraInfo / responseReceivedExtraInfo）。
+   * 只改未提交 hop；已提交返回 false（journal 只追加，不改写已落盘行），
+   * 由调用方按 droppedEvent 记账。
+   */
+  mergeHopHeaders(
+    id: string,
+    patch: { requestHeaders?: Record<string, string>; responseHeaders?: Record<string, string> },
+  ): boolean;
   storeBody(bytes: Uint8Array): Promise<PackV2BodyRef>;
   /**
    * 提交 hop。outcome='failed' 表示请求以 loadingFailed 终止（无正文是
@@ -70,6 +80,8 @@ export interface HttpCollector {
   commit(id: string, outcome?: 'finished' | 'failed'): Promise<void>;
   /** 收尾时提交尚未 commit 的 hop（失败/未完成请求）。 */
   flush(): Promise<void>;
+  /** 派生引擎只读快照：全部 hop 行浅拷贝（含未 commit 的，stop 序列在 flush 后调用）。 */
+  transactionRows(): PackV2HttpTransactionRow[];
 }
 
 export function createHttpCollector(workspace: JobWorkspace, evidence: CollectorEvidence): HttpCollector {
@@ -107,6 +119,13 @@ export function createHttpCollector(workspace: JobWorkspace, evidence: Collector
     },
     patchHop(id, patch) {
       Object.assign(requireHop(id), patch);
+    },
+    mergeHopHeaders(id, patch) {
+      const hop = requireHop(id);
+      if (committed.has(id)) return false;
+      if (patch.requestHeaders) hop.requestHeaders = { ...hop.requestHeaders, ...patch.requestHeaders };
+      if (patch.responseHeaders) hop.responseHeaders = { ...hop.responseHeaders, ...patch.responseHeaders };
+      return true;
     },
     async storeBody(bytes) {
       const writer = await bodies.openWriter();
@@ -178,6 +197,9 @@ export function createHttpCollector(workspace: JobWorkspace, evidence: Collector
       for (const id of hops.keys()) {
         if (!committed.has(id)) await this.commit(id);
       }
+    },
+    transactionRows() {
+      return [...hops.values()].map(hop => ({ ...hop }));
     },
   };
 }

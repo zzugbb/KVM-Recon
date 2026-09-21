@@ -1,16 +1,4 @@
-<!doctype html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><title>Console Gateway</title></head>
-<body>
-<h1 id="login-title">BMC 管理控制台</h1>
-<p id="credential-hint">演示凭证：operator / operator-passphrase</p>
-<form id="login-form" method="post" action="/4baa81443f20/0f2b14d699">
-<input name="f7a6e1a53u" autocomplete="off">
-<input name="ff6f37e6dp" type="password">
-<input type="hidden" name="f0984682an" value="2184179f1bd3f4de2b878a46">
-<button type="submit" id="login-submit">登录</button>
-</form>
-<script id="login-digest">
+
 (function () {
   var form = document.getElementById("login-form");
   var userField = form.querySelector("input:not([type=hidden]):not([type=password])");
@@ -35,12 +23,9 @@
         .then(function (data) {
           if (data && data.ok) {
             sessionStorage.setItem("s8d3cc42f5ac", data.csrfToken);
-            location.href = "/4baa81443f20/935f1859fd.html";
+            setTimeout(function () { location.href = "/4baa81443f20/935f1859fd.html"; }, 500);
           }
         });
     });
   });
 }());
-</script>
-</body>
-</html>

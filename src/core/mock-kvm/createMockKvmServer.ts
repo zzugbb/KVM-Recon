@@ -219,7 +219,10 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
       '        .then(function (data) {',
       '          if (data && data.ok) {',
       `            sessionStorage.setItem(${JSON.stringify(csrfStorageKey)}, data.csrfToken);`,
-      `            location.href = ${JSON.stringify(paths.consoleEntry)};`,
+      // fetch 完成后立即跳转文档，URL loader 随即释放，Network.getResponseBody
+      // 取不到响应正文（Chromium 限制，采集侧以 missingBodies 显式记账）。
+      // 延迟跳转演示可采集路径；「fetch 完成即跳转」作为已知缺口场景。
+      `            setTimeout(function () { location.href = ${JSON.stringify(paths.consoleEntry)}; }, 500);`,
       '          }',
       '        });',
       '    });',
@@ -257,7 +260,8 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
       '      .then(function (data) {',
       '        if (data && data.ok) {',
       `          sessionStorage.setItem(${JSON.stringify(viewerTokenStorageKey)}, data.viewerToken);`,
-      `          location.href = button.dataset.viewer;`,
+      // 同上：延迟跳转保住 launch 响应正文（viewerToken 经响应正文 → 查询参数成边）
+      `          setTimeout(function () { location.href = button.dataset.viewer; }, 500);`,
       '        }',
       '      });',
       '  });',
@@ -317,7 +321,14 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
     liveSockets.add(socket);
     socket.on('close', () => liveSockets.delete(socket));
 
+    // 回声节流：上行帧延迟 25ms 回显（≈ 真实 KVM 视频帧率 40fps）。
+    // 不节流的「服务端→页面→worker→服务端」回声环会以 ~5000 帧/s 自激，
+    // 采集器（~900 帧/s 落盘）事件链积压数万帧，e2e 稳定窗口等待 15s+
+    // 后收尾排空远超时器预算——节流后回声环仍在跑但速率落在采集能力内。
+    const ECHO_DELAY_MS = 25;
+
     const sendFrame = (opcode: number, payload: Buffer) => {
+      if (!liveSockets.has(socket) || socket.destroyed || !socket.writable) return;
       if (opcode === OPCODE_TEXT || opcode === OPCODE_BINARY) {
         frames.push({
           direction: 'down',
@@ -372,7 +383,7 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
             opcode: opcode === OPCODE_TEXT ? 'text' : 'binary',
             payload: new Uint8Array(payload),
           });
-          sendFrame(opcode, payload);
+          setTimeout(() => sendFrame(opcode, payload), ECHO_DELAY_MS);
         } else if (opcode === OPCODE_CLOSE) {
           socket.write(encodeWsFrame(OPCODE_CLOSE, payload));
           socket.end();

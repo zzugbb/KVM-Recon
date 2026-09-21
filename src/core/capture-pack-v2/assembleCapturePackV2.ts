@@ -6,9 +6,11 @@
  * 摘要、适配档案、值传播、缺失证据）与 replay/*（诚实下限：replayable=false、
  * 空请求与通道），并随包附带 schema/2.0/*.schema.json 副本。
  *
- * 诚实边界：阶段 2 不派生适配候选链与值传播图（candidateChain / nodes /
- * edges 为空）、不产出 Replay 计划——这些由阶段 3 IntegrityEngine 基于同一批
- * 证据重新生成，绝不在装配时编造。captureIntegrity 由 derivePackIntegrity
+ * 诚实边界：阶段 2 不派生适配候选链与 Replay 计划（candidateChain 为空、
+ * replayable=false）——这些由阶段 3 IntegrityEngine 基于同一批证据重新生成，
+ * 绝不在装配时编造。值传播图（ai/value-flow.json）与证据图
+ * （catalog/relations.jsonl）由采集会话收尾派生；装配层对 ai/value-flow.json
+ * 工作区文件优先（缺失才落空兜底）。captureIntegrity 由 derivePackIntegrity
  * 从证据摘要派生；workflowStatus 取证据摘要（单一事实源，不在装配处另设
  * 输入）；classificationStatus 默认 UNKNOWN。
  *
@@ -163,9 +165,10 @@ function buildAssemblySummaryMarkdown(manifest: PackV2Manifest): string {
     `captureIntegrity=${manifest.captureIntegrity}，workflowStatus=${manifest.workflowStatus}，classificationStatus=${manifest.classificationStatus}；`,
     '十项门禁与原因代码见 integrity.json，缺失清单见 ai/missing-evidence.json。',
     '',
-    '阶段 2 装配的诚实边界：ai/adapter-dossier.json 的候选链、ai/value-flow.json 的值传播图',
-    '与 replay/ 的重放计划尚未派生（candidateChain / nodes / edges 为空、replayable=false），',
-    '阶段 3 IntegrityEngine 将基于本包 raw/ 与 catalog/ 证据重新生成这些派生内容。',
+    '值传播图（ai/value-flow.json）与证据图（catalog/relations.jsonl）由采集会话收尾派生',
+    '（只记字节级观察背书的边）；适配候选链（ai/adapter-dossier.json）与 replay/* 的重放',
+    '计划尚未派生（candidateChain 为空、replayable=false），阶段 3 IntegrityEngine 将基于',
+    '本包 raw/ 与 catalog/ 证据重新生成这些派生内容。',
     '',
     '证据入口：请求与正文索引 catalog/resources.jsonl；实时通道 catalog/channels.json；',
     '目标生命周期 catalog/targets.json；证据图 catalog/relations.jsonl。',
@@ -191,6 +194,7 @@ export async function assembleCapturePackV2(
   });
 
   const channels = await readChannelsCatalog(workspace);
+  const workspacePaths = new Set(await workspace.artifactPaths());
   const manifest: PackV2Manifest = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
     tool: { name: 'KVM-Recon', version: input.tool.version, buildId: input.tool.buildId },
@@ -267,11 +271,26 @@ export async function assembleCapturePackV2(
     replayEntryPath: 'replay/manifest.json',
   };
 
-  const valueFlow: PackV2ValueFlow = {
+  // 阶段 3 第 2 刀：ai/value-flow.json 由采集会话收尾派生（字节级观察背书的
+  // 值传播）。装配层工作区文件优先：在场即采用（不在派生清单重复输出，
+  // 避免与工作区同路径工件的 ZIP 重复路径冲突），缺失才落空兜底；
+  // 在场但结构非法时拒绝装配（失败关闭，不静默降级为空图）。
+  let valueFlow: PackV2ValueFlow = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
     nodes: [],
     edges: [],
   };
+  let valueFlowFromWorkspace = false;
+  if (workspacePaths.has('ai/value-flow.json')) {
+    const parsed = JSON.parse(
+      (await workspace.readArtifact('ai/value-flow.json')).toString('utf8'),
+    ) as PackV2ValueFlow;
+    if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      throw new Error('ai/value-flow.json 结构非法（缺少 nodes/edges 数组），拒绝装配');
+    }
+    valueFlow = parsed;
+    valueFlowFromWorkspace = true;
+  }
 
   const missingEvidence: PackV2MissingEvidence = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
@@ -303,7 +322,9 @@ export async function assembleCapturePackV2(
     { path: 'ai/index.json', content: json2(aiIndex) },
     { path: 'ai/summary.md', content: buildAssemblySummaryMarkdown(manifest) },
     { path: 'ai/adapter-dossier.json', content: json2(adapterDossier) },
-    { path: 'ai/value-flow.json', content: json2(valueFlow) },
+    ...(valueFlowFromWorkspace
+      ? []
+      : [{ path: 'ai/value-flow.json', content: json2(valueFlow) }]),
     { path: 'ai/missing-evidence.json', content: json2(missingEvidence) },
     { path: 'replay/manifest.json', content: json2(replayManifest) },
     { path: 'replay/http.jsonl', content: '' },

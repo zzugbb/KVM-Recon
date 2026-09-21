@@ -20,17 +20,40 @@ export type EvidenceGapCategory =
 /** 缺口列表上限：超出后聚合为一条「N more」记录，防止记账自身无界。 */
 const MAX_GAP_ENTRIES = 500;
 
+/** 观察脚本钩子安装失败明细上限：超出后置 * 哨兵（派生按全观察面不可信处理）。 */
+const MAX_HOOK_FAILURE_ENTRIES = 100;
+
+export interface ObserverHookFailure {
+  hook: string;
+  stage: string;
+  detail: string;
+}
+
+/** 观察脚本钩子对应的实时通道观察面（表面条件映射用；action/crypto 不映射通道缺口）。 */
+const OBSERVER_HOOK_SURFACES: Record<string, 'webrtc' | 'webtransport' | 'sse'> = {
+  webrtc: 'webrtc',
+  'webrtc-datachannel': 'webrtc',
+  webtransport: 'webtransport',
+  sse: 'sse',
+};
+
 export interface CollectorEvidence {
   /** 按类别记录一个缺口（附出现次数统计）。 */
   recordGap(category: EvidenceGapCategory, id: string, detail?: string): void;
   /** 事件处理链上的未捕获异常：记录丢弃计数与按方法统计（诊断用，不进包）。 */
   droppedEvent(method: string, error: unknown): void;
+  /**
+   * 观察脚本钩子安装失败：除 droppedEvent 计数外保留有界明细（hook/stage），
+   * 供 workflowStatus 派生折扣与表面条件缺口映射（阶段 3）。
+   */
+  recordObserverHookFailure(hook: string, stage: string, detail: string): void;
   markStorageLimitReached(): void;
   diagnostics(): {
     droppedEvents: number;
     droppedEventByMethod: Readonly<Record<string, number>>;
     gapCounts: Readonly<Record<string, number>>;
     storageLimitReached: boolean;
+    observerHookFailures: ReadonlyArray<ObserverHookFailure>;
   };
   /** 汇总为阶段 3 IntegrityEngine 的证据摘要输入。 */
   summary(input: {
@@ -47,6 +70,8 @@ export function createCollectorEvidence(): CollectorEvidence {
   let droppedEvents = 0;
   const droppedByMethod = new Map<string, number>();
   let storageLimitReached = false;
+  const hookFailures: ObserverHookFailure[] = [];
+  let hookFailureOverflowed = false;
 
   function bucket(category: EvidenceGapCategory) {
     let entry = gaps.get(category);
@@ -86,6 +111,24 @@ export function createCollectorEvidence(): CollectorEvidence {
       droppedEvents += 1;
       droppedByMethod.set(method, (droppedByMethod.get(method) ?? 0) + 1);
     },
+    recordObserverHookFailure(hook, stage, detail) {
+      // 与 droppedEvent('observer-hook-failed') 同一计数通道，另有界保留明细
+      droppedEvents += 1;
+      droppedByMethod.set(
+        'observer-hook-failed',
+        (droppedByMethod.get('observer-hook-failed') ?? 0) + 1,
+      );
+      if (hookFailures.length < MAX_HOOK_FAILURE_ENTRIES) {
+        hookFailures.push({ hook, stage, detail });
+      } else if (!hookFailureOverflowed) {
+        hookFailureOverflowed = true;
+        hookFailures.push({
+          hook: '*',
+          stage: 'overflow',
+          detail: `观察脚本钩子安装失败明细超出 ${MAX_HOOK_FAILURE_ENTRIES} 条上限`,
+        });
+      }
+    },
     markStorageLimitReached() {
       storageLimitReached = true;
     },
@@ -97,6 +140,7 @@ export function createCollectorEvidence(): CollectorEvidence {
           [...gaps.entries()].map(([category, entry]) => [category, entry.count]),
         ),
         storageLimitReached,
+        observerHookFailures: hookFailures.map(failure => ({ ...failure })),
       };
     },
     summary(input) {
@@ -117,4 +161,40 @@ export function createCollectorEvidence(): CollectorEvidence {
       };
     },
   };
+}
+
+/**
+ * 观察脚本钩子失败的表面条件映射（阶段 3 第 1 刀）：只有对应观察面
+ * （webrtc / webtransport / sse 通道）真实在场时，钩子失败才构成
+ * channelGaps 缺口——无使用的面不记缺口，不编造（规范 §3）。
+ */
+export function observerHookFailureChannelGaps(
+  hookFailures: ReadonlyArray<ObserverHookFailure>,
+  channelKinds: ReadonlySet<string>,
+): Array<{ id: string; detail: string }> {
+  const gaps: Array<{ id: string; detail: string }> = [];
+  const seen = new Set<string>();
+  for (const failure of hookFailures) {
+    if (failure.hook === '*') {
+      const surfaces = ['webrtc', 'webtransport', 'sse'].filter(kind => channelKinds.has(kind));
+      if (surfaces.length > 0 && !seen.has('*')) {
+        seen.add('*');
+        gaps.push({
+          id: 'observer-hook:overflow',
+          detail: `${failure.detail}；存在 ${surfaces.join('/')} 通道，其消息采集可能不完整`,
+        });
+      }
+      continue;
+    }
+    const surface = OBSERVER_HOOK_SURFACES[failure.hook];
+    if (!surface || !channelKinds.has(surface)) continue;
+    const key = `${failure.hook}/${failure.stage}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    gaps.push({
+      id: `observer-hook:${key}`,
+      detail: `观察脚本钩子安装失败（${failure.hook}/${failure.stage}）：${failure.detail}；存在 ${surface} 通道，其消息采集可能不完整`,
+    });
+  }
+  return gaps;
 }

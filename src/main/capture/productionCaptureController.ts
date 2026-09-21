@@ -6,7 +6,9 @@
  * - 现场自签证书放行（分区 setCertificateVerifyProc + certificate-error）；
  * - popup 血缘挂载（nativePopupWindowOpenHandler + did-create-window 多根 attach）；
  * - Electron netLog 源（写工作区 .tmp/，收尾时包装入包）；
- * - Probe 补充事实（开始匿名探测、stop 时带会话 Cookie 复验——只记 Cookie 名）。
+ * - Probe 补充事实（开始匿名探测、stop 时带会话 Cookie 复验——只记 Cookie 名）；
+ * - Viewer 自动收尾（规范 §7.4）：检测 Viewer 活动 → 稳定窗口静默 → 只 stop，
+ *   绝不自动导出 / 关窗 / 弹保存框。
  *
  * Electron 行为从 0.2.x 适配器原样移植（采集语义不变），落盘换 2.0 链路。
  * 无人为大小上限：工作区磁盘水位是唯一物理约束。挂载/探测失败显式记账
@@ -37,6 +39,7 @@ import type { ControllerDiagnosticKind } from '../../core/capture-pack-v2/types'
 import { recordCaptureWindowLog, registerCaptureSession } from './captureWindowDiagnostics';
 import { createDiagnosticRecorder } from './controllerDiagnosticRecorder';
 import { createElectronNetlogSource } from './electronNetlogSource';
+import { createViewerAutoStopWatchdog, type ViewerAutoStopWatchdog } from './viewerAutoStopWatchdog';
 import { shouldCommitAboutBlankBeforeCdp } from './cdpRendererReady';
 
 export type ProductionCaptureTarget = CaptureTarget & { originalInput?: string };
@@ -101,6 +104,16 @@ export async function createProductionCapture(
   let probeResult: ProbeBmcTargetResult | null = null;
   let stopped = false;
   let stoppedAt: string | null = null;
+
+  // Viewer 自动收尾看门狗（规范 §7.4）：检测 → 稳定 → 只 stop，
+  // 绝不自动导出 / 关窗 / 弹保存框；识别失败只记诊断，绝不停采集。
+  const viewerWatchdog: ViewerAutoStopWatchdog = createViewerAutoStopWatchdog({
+    getFacts: () => captureSession.workflowFacts(),
+    now: () => Date.now(),
+    recordDiagnostic: (kind, detail) => recordDiagnostic(kind, detail),
+    // 返回 Promise 本体：拒绝由看门狗记 viewer-auto-stop-failed 诊断（P3-R11-2）
+    autoStop: () => stop(),
+  });
 
   async function writeProbeFile() {
     const file = buildProbeFactsFile(probeResult);
@@ -347,9 +360,12 @@ export async function createProductionCapture(
         error instanceof Error ? error.message : String(error),
       );
     }
+    // 导航完成后开始 Viewer 活动轮询（加载失败也轮询：采集仍在继续）
+    viewerWatchdog.start();
   }
 
   async function stop() {
+    viewerWatchdog.stop();
     if (stopped) return;
     await refreshAuthenticatedProbe();
     await writeProbeFile();
@@ -366,7 +382,8 @@ export async function createProductionCapture(
     if (!environment) {
       throw new Error(`页面环境缺失（无根窗口挂载），拒绝装配导出：${init.jobId}`);
     }
-    const evidenceSummary = captureSession.integrityEvidence('TARGET_OPENED');
+    // workflowStatus 由采集会话从观察事实派生（阶段 3），不再硬编码
+    const evidenceSummary = captureSession.integrityEvidence();
     const result = await exportJobWorkspaceZip({
       workspace: captureSession.workspace,
       zipDir,

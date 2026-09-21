@@ -61,6 +61,8 @@ interface CaptureStatusJob {
   jobId: string;
   /** capturing = 采集窗口工作中；stopped = 已收尾可导出；exported = 已导出。 */
   state: 'capturing' | 'stopped' | 'exported';
+  /** 采集会话从观察事实派生的工作流状态（采集中实时派生；收尾后为终态值）。 */
+  workflowStatus: 'TARGET_OPENED' | 'LOGIN_REACHED' | 'KVM_REACHED';
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
@@ -99,6 +101,7 @@ function statusJob(): CaptureStatusJob | null {
   return {
     jobId: activeController.session.workspace.jobId,
     state: lastExport ? 'exported' : stopped ? 'stopped' : 'capturing',
+    workflowStatus: activeController.session.integrityEvidence().workflowStatus,
     windowsOpen: activeController.windowsOpen(),
     storageLimited: activeController.session.workspace.storageLimited,
     windowsLabel: activeController.session.workspace.deviceLabel ?? '',
@@ -366,10 +369,16 @@ if (!gotSingleInstanceLock) {
 app.whenReady().then(async () => {
   if (isE2eCaptureControllerLaunch()) {
     const fieldHar = process.env.KVM_RECON_E2E_FIELD_HAR;
-    if (fieldHar) {
-      await runFieldHarReplayE2e(fieldHar);
-    } else {
-      await runProductionCaptureE2e();
+    try {
+      if (fieldHar) {
+        await runFieldHarReplayE2e(fieldHar);
+      } else {
+        await runProductionCaptureE2e();
+      }
+    } catch (error) {
+      // E2E 未处理异常也必须立刻退出 1，否则进程悬死到外层超时
+      console.error('采集 E2E 未处理异常：', error);
+      app.exit(1);
     }
     return;
   }

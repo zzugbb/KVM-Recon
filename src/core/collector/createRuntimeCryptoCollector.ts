@@ -33,6 +33,8 @@ const KINDS = new Set<PackV2CryptoOperationKind>([
 export interface RuntimeCryptoCollector {
   /** 观察脚本 binding 的 crypto payload（attach 层已解析并按 kind 路由）。 */
   recordBindingPayload(payload: Record<string, unknown>, targetId: string, occurredAt: string): Promise<void>;
+  /** 派生引擎只读快照：全部调用行浅拷贝（value-flow 派生用）。 */
+  rows(): PackV2CryptoCallRow[];
 }
 
 function cryptoFailureDetail(id: string, error: unknown): string {
@@ -55,6 +57,7 @@ export function createRuntimeCryptoCollector(
 ): RuntimeCryptoCollector {
   const bodies = createBodyStore({ workspace, namespace: BODIES_NAMESPACE });
   let seq = 0;
+  const rows: PackV2CryptoCallRow[] = [];
 
   async function store(bytes: Buffer): Promise<PackV2BodyRef> {
     const writer = await bodies.openWriter();
@@ -101,6 +104,7 @@ export function createRuntimeCryptoCollector(
       if (!row.inputRef && !row.outputRef && !row.error) {
         row.error = 'crypto-call-without-payload';
       }
+      rows.push(row);
       try {
         await workspace.appendJsonl(CRYPTO_PATH, row);
       } catch (error) {
@@ -108,6 +112,9 @@ export function createRuntimeCryptoCollector(
         evidence.recordGap('journalWriteFailures', row.id, cryptoFailureDetail(row.id, error));
         throw error;
       }
+    },
+    rows() {
+      return rows.map(row => ({ ...row }));
     },
   };
 }

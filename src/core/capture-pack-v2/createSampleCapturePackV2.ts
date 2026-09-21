@@ -1171,13 +1171,15 @@ export async function createSampleCapturePackV2(
       },
       // 注：页面脚本分别创建 Worker 与 WebSocket，采集事实无法证明二者绑定，
       // 因此不编造 target-worker-0001 → ws-0001 的 attached 关系。
-      {
-        from: 'value-0001',
-        to: 'value-0002',
-        relation: 'value-flow',
-        occurredAt: isoAt(startedAt, 2),
-        evidencePath: 'ai/value-flow.json',
-      },
+      // value-flow 关系行与 ai/value-flow.json 的边一一对应（阶段 3 第 2 刀派生契约），
+      // occurredAt 取传播被观察到的一侧（to 节点证据时间）。
+      { from: 'value-0001', to: 'value-0002', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0002', to: 'value-0003', relation: 'value-flow', occurredAt: isoAt(startedAt, 4), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0002', to: 'value-0004', relation: 'value-flow', occurredAt: isoAt(startedAt, 9), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0005', to: 'value-0012', relation: 'value-flow', occurredAt: isoAt(startedAt, 9), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0007', to: 'value-0008', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0008', to: 'value-0009', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
+      { from: 'value-0010', to: 'value-0011', relation: 'value-flow', occurredAt: isoAt(startedAt, 4), evidencePath: 'ai/value-flow.json' },
     ];
 
     // ---- 阶段 A：内容 artifacts（不含状态文件与 checksums） ----

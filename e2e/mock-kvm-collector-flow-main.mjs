@@ -3,16 +3,24 @@
  * 断言来自工作区文件与 Mock 服务端观察到的请求/帧，不经 0.2.x recorder。
  */
 
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { readdir, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { platform, release, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { app, BrowserWindow } from 'electron';
 
 import { startCaptureSession } from './capture-session.mjs';
 import { createMockKvmServer } from './mock-kvm-server.mjs';
+import { createElectronNetlogSource } from './electron-netlog-source.mjs';
+import { exportJobWorkspaceZip } from './export-job-zip.mjs';
+import {
+  createViewerAutoStopWatchdog,
+  VIEWER_POLL_INTERVAL_MS,
+  VIEWER_STABLE_WINDOW_MS,
+} from './viewer-autostop-watchdog.mjs';
+import { detectViewerActivity } from './viewer-activity.mjs';
 
 const successMarker = 'mock kvm collector e2e passed';
 
@@ -59,6 +67,15 @@ async function run() {
       rootDir: workspaceRoot,
       targetUrl: handle.urls.loginPage,
       safetyMarginBytes: 1,
+      // environment() 要求 mainEnvironment（进程级环境事实）在场；导出断言用
+      mainEnvironment: {
+        chromium: process.versions.chrome ?? '',
+        electron: process.versions.electron ?? '',
+        os: `${platform()} ${release()}`,
+      },
+      // 与生产链路同源的真实 NetLog（include-sensitive）：导出门禁要求
+      // 包内有 HTTP 事务时 netlog journal 非空
+      netlog: createElectronNetlogSource(),
     });
 
     win = new BrowserWindow({
@@ -75,6 +92,21 @@ async function run() {
     const wc = win.webContents;
     await wc.loadURL('about:blank');
     await session.attachCdp(wrapDebugger(wc.debugger), { targetId: 'target-root', windowId: String(wc.id) });
+
+    // 阶段 3 第 3 刀：真实看门狗驱动会话级自动收尾（§7.4：只 stop，不导出）
+    const autoStopState = { stopped: false };
+    const watchdog = createViewerAutoStopWatchdog({
+      getFacts: () => session.workflowFacts(),
+      now: () => Date.now(),
+      recordDiagnostic: (kind, detail) => {
+        console.log(`[mock-kvm-collector-flow] viewer-watchdog ${kind}: ${detail}`);
+      },
+      autoStop: async () => {
+        autoStopState.stopped = true;
+        await session.stop();
+      },
+    });
+    watchdog.start();
 
     const queryScript = (selector, expression) =>
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; ${expression} })()`;
@@ -162,6 +194,31 @@ async function run() {
       'Viewer 页建立 WebSocket 并收到初始下行帧',
       async () => handle.capturedFrames().filter(frame => frame.direction === 'down').length >= 3,
     );
+    // 双向通道事实：页面的 worker 回声链会发出上行帧（服务端观察到的 up），
+    // 派生 KVM_REACHED 需要 WS 双向帧观察
+    await waitFor(
+      'Viewer 页经 worker 回声发出上行帧',
+      async () => handle.capturedFrames().filter(frame => frame.direction === 'up').length >= 1,
+    );
+
+    // 阶段 3 第 3 刀：Viewer 活动信号（§7.3）必须从会话事实识别出来。
+    // 服务端先看到上行帧、会话通道事实稍后落齐，按会话事实等待（不按服务端观察）
+    let signals = [];
+    await waitFor('Viewer 活动信号识别（点击 → 导航/popup → WS 双向帧）', async () => {
+      signals = detectViewerActivity(session.workflowFacts());
+      return signals.length > 0;
+    });
+    if (signals[0].channelKind !== 'websocket') {
+      throw new Error(`Viewer 活动信号通道异常：${JSON.stringify(signals[0])}`);
+    }
+
+    // 稳定窗口静默通过 → 看门狗自动收尾（fingerprint 稳定后 15s + 轮询粒度）
+    await waitFor(
+      'Viewer 稳定窗口静默通过，看门狗自动收尾',
+      () => autoStopState.stopped,
+      VIEWER_STABLE_WINDOW_MS + VIEWER_POLL_INTERVAL_MS * 4 + 5_000,
+    );
+    watchdog.stop();
 
     await session.stop();
     const dir = session.workspace.dir;
@@ -342,15 +399,152 @@ async function run() {
       throw new Error('session.har 缺少登录 POST 正文（互操作副本不完整）');
     }
 
-    // E2E 未接 netlog 源：必须落「not-captured」兜底文件，而不是静默缺失
+    // NetLog 与生产链路同源（include-sensitive）：非空事件流是导出门禁
+    // 的前提（包内有 HTTP 事务时 not-captured 兜底会被 RAW_JOURNAL_EMPTY 拒绝）
     const netlog = JSON.parse(await readFile(join(dir, 'raw/netlog/netlog.json'), 'utf8'));
-    if (netlog?.schemaVersion !== '2.0.0' || netlog?.captureMode !== 'not-captured') {
-      throw new Error('netlog.json 缺少 not-captured 兜底声明');
+    if (netlog?.captureMode !== 'include-sensitive') {
+      throw new Error(`netlog.json captureMode 异常：${netlog?.captureMode ?? '(缺失)'}`);
     }
 
-    const summary = session.integrityEvidence('KVM_REACHED');
+    // 阶段 3：workflowStatus 必须由引擎从观察事实派生出 KVM_REACHED
+    // （点击 → 主框架导航 → WS 双向帧 + Set-Cookie cookie 传播），不得手工指定
+    const summary = session.integrityEvidence();
+    if (summary.workflowStatus !== 'KVM_REACHED') {
+      const facts = session.workflowFacts();
+      console.error('[mock-kvm-collector-flow] 派生诊断：', JSON.stringify({
+        workflowStatus: summary.workflowStatus,
+        actions: facts.actions.map(a => [a.id, a.kind, a.occurredAt, a.elementSummary]),
+        navigations: facts.navigations,
+        channels: facts.channels.map(c => [c.id, c.kind, c.createdAt, c.frameCounts]),
+        setCookieTx: facts.transactions
+          .filter(t => t.method.toUpperCase() === 'POST' && JSON.stringify(t.responseHeaders).toLowerCase().includes('set-cookie'))
+          .map(t => [t.id, t.startedAt, t.status, t.responseHeaders['set-cookie'] ?? t.responseHeaders['Set-Cookie']]),
+        cookieReplay: facts.transactions.filter(t => Object.keys(t.requestHeaders).some(k => k.toLowerCase() === 'cookie')).map(t => [t.id, t.startedAt, t.requestHeaders.cookie ?? t.requestHeaders.Cookie]),
+      }));
+      throw new Error(`workflowStatus 派生异常：${summary.workflowStatus}（期望 KVM_REACHED）`);
+    }
     if (summary.collectorReadyBeforeFirstNavigation !== true) {
       throw new Error('采集器未在首次导航前就绪');
+    }
+
+    // 阶段 3 第 2 刀：证据图必须从真实观察派生——value-flow 节点/边
+    // （Set-Cookie → storage cookie → 后续 Cookie 头；摘要输出 ⊆ 登录正文；
+    // viewerToken 响应 → WS 握手查询参数）与 relations 结构关系行（initiated /
+    // created / opened / value-flow），空图即为派生失败
+    const valueFlow = JSON.parse(await readFile(join(dir, 'ai/value-flow.json'), 'utf8'));
+    const flowNodes = Array.isArray(valueFlow?.nodes) ? valueFlow.nodes : [];
+    const flowEdges = Array.isArray(valueFlow?.edges) ? valueFlow.edges : [];
+    const dumpValueFlowDiagnostics = () => {
+      const storageDiag = JSON.parse(readFileSync(join(dir, 'raw/browser/storage.json'), 'utf8'));
+      const txRows = jsonl(readFileSync(join(dir, 'raw/http/transactions.jsonl'), 'utf8'));
+      console.error('[mock-kvm-collector-flow] value-flow 诊断：', JSON.stringify({
+        nodes: flowNodes,
+        edges: flowEdges,
+        storageCookies: (storageDiag?.cookies || []).map(c => [c.name, c.value]),
+        setCookieTx: txRows
+          .filter(t => Object.keys(t.responseHeaders || {}).some(k => k.toLowerCase() === 'set-cookie'))
+          .map(t => [t.id, t.responseHeaders['set-cookie'] ?? t.responseHeaders['Set-Cookie']]),
+        cookieHeaderTx: txRows
+          .filter(t => Object.keys(t.requestHeaders || {}).some(k => k.toLowerCase() === 'cookie'))
+          .map(t => [t.id, t.requestHeaders.cookie ?? t.requestHeaders.Cookie]),
+        factsSetCookieTx: session.workflowFacts().transactions
+          .filter(t => Object.keys(t.responseHeaders || {}).some(k => k.toLowerCase() === 'set-cookie'))
+          .map(t => [t.id, t.responseHeaders['set-cookie'] ?? t.responseHeaders['Set-Cookie']]),
+        dropped: session.evidence().diagnostics().droppedEventByMethod,
+      }));
+    };
+    if (flowNodes.length === 0 || flowEdges.length === 0) {
+      dumpValueFlowDiagnostics();
+      throw new Error('ai/value-flow.json 缺少派生的值传播节点/边（空图 = 派生失败）');
+    }
+    const nodeById = new Map(flowNodes.map(node => [node.id, node]));
+    if (!flowNodes.some(node => node.kind === 'cookie')) {
+      dumpValueFlowDiagnostics();
+      throw new Error('value-flow 缺少 storage cookie 节点（Set-Cookie → storage 传播未成边）');
+    }
+    const cookieEdges = flowEdges.filter(
+      edge => nodeById.get(edge.to)?.kind === 'header' && nodeById.get(edge.from)?.kind === 'cookie',
+    );
+    if (cookieEdges.length === 0) {
+      dumpValueFlowDiagnostics();
+      throw new Error('value-flow 缺少 cookie → 请求/WS 握手 Cookie 头的传播边');
+    }
+    if (!flowEdges.some(edge => edge.relation === 'used-in' && nodeById.get(edge.from)?.kind === 'crypto-output')) {
+      dumpValueFlowDiagnostics();
+      throw new Error('value-flow 缺少摘要输出 used-in 登录正文的边');
+    }
+    const urlParamEdge = flowEdges.find(
+      edge => nodeById.get(edge.to)?.kind === 'url-param' && nodeById.get(edge.from)?.kind === 'http-response',
+    );
+    if (!urlParamEdge) {
+      dumpValueFlowDiagnostics();
+      throw new Error('value-flow 缺少 viewerToken 响应 → WS 握手查询参数的传播边');
+    }
+    for (const edge of flowEdges) {
+      if (!nodeById.has(edge.from) || !nodeById.has(edge.to)) {
+        throw new Error(`value-flow 边引用未知节点：${edge.from} → ${edge.to}`);
+      }
+    }
+
+    const relations = jsonl(await readFile(join(dir, 'catalog/relations.jsonl'), 'utf8'));
+    if (!relations.some(row => row.relation === 'initiated')) {
+      throw new Error('relations.jsonl 缺少 target → 事务 initiated 行');
+    }
+    if (!relations.some(row => row.relation === 'opened')) {
+      throw new Error('relations.jsonl 缺少 target → 通道 opened 行');
+    }
+    const relationValueFlowRows = relations.filter(row => row.relation === 'value-flow');
+    if (relationValueFlowRows.length !== flowEdges.length) {
+      throw new Error(
+        `relations.jsonl 的 value-flow 行数 ${relationValueFlowRows.length} != value-flow 边数 ${flowEdges.length}`,
+      );
+    }
+
+    // 第 11 轮审核测试缺口：§20 验收场景 1 端到端闭环——完整会话经
+    // exportJobWorkspaceZip（含包一致性门禁与流式校验）导出后，
+    // 必须得到 COMPLETE + KVM_REACHED（样例包的 COMPLETE 是手工装配，
+    // 不构成该场景的证据）
+    const environment = session.environment();
+    if (!environment) {
+      throw new Error('页面环境缺失（无根窗口挂载），拒绝装配导出');
+    }
+    const loginUrl = new URL(handle.urls.loginPage);
+    const zipDir = await mkdtemp(join(tmpdir(), 'kvm-recon-collector-e2e-zip-'));
+    const exportResult = await exportJobWorkspaceZip({
+      workspace: session.workspace,
+      zipDir,
+      assembly: {
+        tool: { version: '0.0.0-e2e', buildId: 'mock-collector-e2e' },
+        environment,
+        evidenceSummary: session.integrityEvidence(),
+        target: {
+          host: loginUrl.hostname,
+          port: loginUrl.port
+            ? Number(loginUrl.port)
+            : loginUrl.protocol === 'https:'
+              ? 443
+              : 80,
+          scheme: loginUrl.protocol === 'https:' ? 'https' : 'http',
+          originalInput: loginUrl.host,
+        },
+        job: { endedAt: new Date().toISOString(), deviceLabel: session.workspace.deviceLabel },
+      },
+    });
+    if (exportResult.status.captureIntegrity !== 'COMPLETE') {
+      console.error('[mock-kvm-collector-flow] 完整度诊断：', JSON.stringify({
+        reasons: exportResult.derived.reasons,
+        gates: (exportResult.derived.gates || []).map(gate => `${gate.id}:${gate.passed ? 'pass' : 'FAIL'}`),
+        workflowStatus: exportResult.status.workflowStatus,
+      }));
+      throw new Error(
+        `导出包完整度 ${exportResult.status.captureIntegrity}（期望 COMPLETE）：${(exportResult.derived.reasons || []).join(', ')}`,
+      );
+    }
+    if (exportResult.status.workflowStatus !== 'KVM_REACHED') {
+      throw new Error(`导出包 workflowStatus ${exportResult.status.workflowStatus}（期望 KVM_REACHED）`);
+    }
+    if (!existsSync(exportResult.export.zipPath)) {
+      throw new Error('导出 ZIP 未落盘：' + exportResult.export.zipPath);
     }
 
     console.log(successMarker);

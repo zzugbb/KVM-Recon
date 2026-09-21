@@ -3,6 +3,8 @@ export {};
 interface CaptureStatusJob {
   jobId: string;
   state: 'capturing' | 'stopped' | 'exported';
+  /** 采集会话派生的工作流状态（观察事实推导）。 */
+  workflowStatus: 'TARGET_OPENED' | 'LOGIN_REACHED' | 'KVM_REACHED';
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;

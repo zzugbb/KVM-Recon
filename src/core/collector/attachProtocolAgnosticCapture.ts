@@ -93,6 +93,8 @@ export interface AttachedCapture {
   collectPageEnvironment(): Promise<PageEnvironment | null>;
   /** catalog/targets.json 与 raw/browser/targets.json 的行。 */
   targets(): PackV2TargetRow[];
+  /** 主框架导航事实（Page.frameNavigated 无 parentId 的帧；派生引擎只读快照）。 */
+  mainFrameNavigations(): Array<{ occurredAt: string; targetId: string; url: string | null }>;
   /** 采集器是否在第一次导航前就绪（规范 §14 条件 1 的事实）。 */
   readyBeforeFirstNavigation(): boolean;
 }
@@ -332,6 +334,8 @@ export async function attachProtocolAgnosticCapture(
 ): Promise<AttachedCapture> {
   const sessionTargets = new Map<string, { targetId: string; type: string }>();
   const targetRows = new Map<string, PackV2TargetRow>();
+  // 主框架导航事实（内存态，数量小；派生引擎与 Viewer 识别只读快照）
+  const mainFrameNavigations: Array<{ occurredAt: string; targetId: string; url: string | null }> = [];
   const requestChains = new Map<string, string[]>();
   const ignored = new Set<string>();
   let eventQueue = Promise.resolve();
@@ -625,15 +629,12 @@ export async function attachProtocolAgnosticCapture(
       return;
     }
     if (kind === 'observer-hook-failed') {
-      // 观察脚本钩子安装失败：观察面缺失必须显式记账（规范 §3），
-      // 走 droppedEvent 诊断通道（与未知 kind 同一落点，错误信息可辨析来源）。
-      input.evidence.droppedEvent(
-        'observer-hook-failed',
-        new Error(
-          `观察脚本钩子安装失败：${stringValue(parsed.hook) || 'unknown'}` +
-            `（${stringValue(parsed.stage) || 'unknown'}）：` +
-            `${stringValue(parsed.detail) || 'no detail'}`,
-        ),
+      // 观察脚本钩子安装失败：观察面缺失必须显式记账（规范 §3）；
+      // 明细（hook/stage）供派生折扣与表面条件缺口映射（阶段 3）。
+      input.evidence.recordObserverHookFailure(
+        stringValue(parsed.hook) || 'unknown',
+        stringValue(parsed.stage) || 'unknown',
+        stringValue(parsed.detail) || 'no detail',
       );
       return;
     }
@@ -821,6 +822,11 @@ export async function attachProtocolAgnosticCapture(
       });
       const isMainFrame = !frame.parentId;
       if (isMainFrame) {
+        mainFrameNavigations.push({
+          occurredAt: input.now(),
+          targetId: targetIdOf(sessionId),
+          url: optionalString(frame.url) ?? null,
+        });
         // 主框架导航点：截图 + DOM 快照（规范 §8.4）
         const label = optionalString(frame.url) || 'navigation';
         await captureScreenshot(sessionId, targetIdOf(sessionId), label);
@@ -937,7 +943,6 @@ export async function attachProtocolAgnosticCapture(
       const timingRaw = isRecord(response.timing) ? response.timing : null;
       input.http.patchHop(id, {
         status: numberValue(response.status),
-        responseHeaders: headers,
         contentEncoding: headerValue(headers, 'content-encoding') ?? null,
         connectionId:
           optionalString(response.connectionId) ??
@@ -952,6 +957,38 @@ export async function attachProtocolAgnosticCapture(
             }
           : undefined,
       });
+      // Chromium 事件序：responseReceivedExtraInfo 先于 responseReceived 到达，
+      // Set-Cookie 只在 extraInfo 里——合并而非整包替换，extraInfo 已有的键不得丢失
+      if (!input.http.mergeHopHeaders(id, { responseHeaders: headers })) {
+        input.evidence.droppedEvent(
+          method,
+          new Error(`responseReceived 晚于 commit，头未合并：${id}`),
+        );
+      }
+      return;
+    }
+
+    if (method === 'Network.requestWillBeSentExtraInfo' || method === 'Network.responseReceivedExtraInfo') {
+      // Chromium 对 fetch/XHR 把 Cookie / Set-Cookie 头放在 extraInfo 事件里
+      // （responseReceived.headers 缺失），必须合并进事务行，登录传播才可观察。
+      const requestId = stringValue(params.requestId);
+      const baseId = scopedId(requestId, sessionId);
+      if (ignored.has(baseId)) return;
+      const id = activeHopId(baseId);
+      if (!input.http.has(id)) {
+        // CDP 不保证 extraInfo 与 requestWillBeSent 的先后；错过的头显式记账
+        input.evidence.droppedEvent(method, new Error(`extraInfo 缺少对应 hop：${id}`));
+        return;
+      }
+      const headers = headersValue(params.headers);
+      const merged = input.http.mergeHopHeaders(
+        id,
+        method === 'Network.requestWillBeSentExtraInfo' ? { requestHeaders: headers } : { responseHeaders: headers },
+      );
+      if (!merged) {
+        // hop 已提交（redirect 链在下一跳前 commit）：journal 只追加，不改写已落盘行
+        input.evidence.droppedEvent(method, new Error(`extraInfo 到达晚于 commit，头未合并：${id}`));
+      }
       return;
     }
 
@@ -1294,6 +1331,9 @@ export async function attachProtocolAgnosticCapture(
     },
     targets() {
       return [...targetRows.values()];
+    },
+    mainFrameNavigations() {
+      return mainFrameNavigations.map(navigation => ({ ...navigation }));
     },
     readyBeforeFirstNavigation() {
       return ready && !navigationSeen;

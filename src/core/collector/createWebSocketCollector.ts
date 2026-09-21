@@ -67,6 +67,14 @@ export interface WebSocketCollector {
   flush(): Promise<void>;
   /** catalog/channels.json 的通道行（kind=websocket）。 */
   channelRows(): PackV2ChannelRow[];
+  /** 派生引擎只读快照：握手 URL / 请求头 / 元数据路径（value-flow 派生用）。 */
+  handshakeFacts(): Array<{
+    channelId: string;
+    url: string;
+    createdAt: string;
+    requestHeaders: Record<string, string>;
+    metadataPath: string;
+  }>;
 }
 
 function metadataPath(dirId: string): string {
@@ -333,6 +341,15 @@ export function createWebSocketCollector(
         closedAt: socket.meta.closedAt,
         frameCounts: socket.failed ? null : { ...socket.meta.frameCounts },
         payloadPath: socket.meta.framesBinPath,
+      }));
+    },
+    handshakeFacts() {
+      return [...sockets.values()].map(socket => ({
+        channelId: socket.meta.channelId,
+        url: socket.meta.url,
+        createdAt: socket.meta.createdAt,
+        requestHeaders: { ...socket.meta.requestHeaders },
+        metadataPath: metadataPath(dirIdFor(socket.meta.channelId)),
       }));
     },
   };

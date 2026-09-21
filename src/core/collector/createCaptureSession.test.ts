@@ -584,7 +584,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     });
     const mainRow = targetsFile.targets.find(row => row.id === 'target-window-1');
     expect(mainRow).toMatchObject({ type: 'page', attached: true });
-    const summary = session.integrityEvidence('KVM_REACHED');
+    const summary = session.integrityEvidence();
     expect(summary.collectorReadyBeforeFirstNavigation).toBe(true);
   });
 
@@ -707,6 +707,13 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
 
     const diagnostics = session.evidence().diagnostics();
     expect(diagnostics.droppedEventByMethod['observer-hook-failed']).toBe(1);
+    // 阶段 3：明细（hook/stage）保留在 diagnostics，供派生折扣与表面条件映射
+    expect(diagnostics.observerHookFailures).toEqual([
+      { hook: 'crypto', stage: 'install', detail: 'subtle is not extensible' },
+    ]);
+    // 反例：crypto 钩子失败无对应实时通道观察面 → 不映射 channelGaps（无使用的面不记缺口）
+    const summary = session.integrityEvidence();
+    expect(summary.channelGaps.some(gap => String(gap.id).startsWith('observer-hook:'))).toBe(false);
     // droppedEvent 记账必须随 capture-facts 落盘进包（进程内计数在导出包里可见）；
     // 快照在收尾序列末尾写入，也包含收尾期的丢带（如 fake CDP 无截图域）
     const facts = JSON.parse(
@@ -714,6 +721,407 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     ) as { stopped: boolean; droppedEventByMethod: Record<string, number> | null };
     expect(facts.stopped).toBe(true);
     expect(facts.droppedEventByMethod?.['observer-hook-failed']).toBe(1);
+  });
+
+  it('观察脚本 webrtc 钩子失败 + webrtc 通道在场 → channelGaps 表面条件缺口', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-hook-surface',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    // webrtc 通道在场（观察面真实存在）
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({ kind: 'webrtc', pcId: 'pc-1', eventKind: 'peer-connection-created' }),
+    });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'observer-hook-failed',
+        hook: 'webrtc',
+        stage: 'install',
+        detail: 'RTCPeerConnection is not extensible',
+      }),
+    });
+    await session.stop();
+
+    // 表面条件映射：webrtc 通道在场 → 钩子失败构成 channelGaps 缺口
+    const summary = session.integrityEvidence();
+    expect(summary.channelGaps.some(gap => gap.id === 'observer-hook:webrtc/install')).toBe(true);
+    // webrtc 钩子失败折扣：webrtc 通道不算双向证据，不派生 KVM_REACHED
+    expect(summary.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('workflowStatus 派生：Set-Cookie 登录传播（POST + 正文 + 复用）→ LOGIN_REACHED', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-login-derive',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp({ postData: { 'req-login': 'user=operator&password=passphrase' } });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        hasPostData: true,
+      },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      response: { status: 200, headers: { 'set-cookie': 'sid=abc123; Path=/' } },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    clockMs += 1000;
+    // 之后的请求逐字节携带 Set-Cookie 签发的 name=value（观察到的传播）
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-next',
+      type: 'Document',
+      request: { method: 'GET', url: 'http://bmc.test/console', headers: { cookie: 'other=1; sid=abc123' } },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-next',
+      response: { status: 200, headers: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-next', encodedDataLength: 4 });
+    await session.stop();
+
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    ) as { workflowStatus: string; evidenceSummary: { workflowStatus: string } };
+    expect(facts.workflowStatus).toBe('LOGIN_REACHED');
+    expect(facts.evidenceSummary.workflowStatus).toBe('LOGIN_REACHED');
+    expect(session.integrityEvidence().workflowStatus).toBe('LOGIN_REACHED');
+  });
+
+  it('workflowStatus 派生：fetch 登录的 Set-Cookie 只在 responseReceivedExtraInfo 可见（合并后 LOGIN_REACHED）', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-login-extra-info',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp({ postData: { 'req-login': 'user=operator&password=passphrase' } });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'Fetch',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: { 'content-type': 'application/json' },
+        hasPostData: true,
+      },
+    });
+    // Chromium 对 fetch/XHR：responseReceived.headers 不带 Set-Cookie
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      hasExtraInfo: true,
+      response: { status: 200, headers: { 'content-type': 'application/json' } },
+    });
+    // Set-Cookie 只在 responseReceivedExtraInfo 里
+    fake.emit('Network.responseReceivedExtraInfo', {
+      requestId: 'req-login',
+      statusCode: 200,
+      headers: { 'set-cookie': 'sid=abc123; Path=/' },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    clockMs += 1000;
+    // 后续导航请求的 Cookie 头也只在 requestWillBeSentExtraInfo 里完整可见
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-next',
+      type: 'Document',
+      request: { method: 'GET', url: 'http://bmc.test/console', headers: {} },
+    });
+    fake.emit('Network.requestWillBeSentExtraInfo', {
+      requestId: 'req-next',
+      headers: { cookie: 'sid=abc123' },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-next',
+      response: { status: 200, headers: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-next', encodedDataLength: 4 });
+    await session.stop();
+
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    ) as { workflowStatus: string };
+    expect(facts.workflowStatus).toBe('LOGIN_REACHED');
+  });
+
+  it('真实 Chromium 事件序：responseReceivedExtraInfo 先于 responseReceived，Set-Cookie 必须存活到提交行', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-real-chromium-order',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    // 真实 Chromium 对 fetch 的真实事件序（e2e journal 实测）：
+    // requestWillBeSent → requestWillBeSentExtraInfo → responseReceivedExtraInfo
+    // → responseReceived → dataReceived → loadingFinished
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'Fetch',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: { 'content-type': 'application/json' },
+      },
+    });
+    fake.emit('Network.requestWillBeSentExtraInfo', {
+      requestId: 'req-login',
+      headers: { 'user-agent': 'UA' },
+    });
+    // Set-Cookie 只在 extraInfo 里；responseReceived.headers 不带
+    fake.emit('Network.responseReceivedExtraInfo', {
+      requestId: 'req-login',
+      statusCode: 200,
+      headers: { 'set-cookie': 'sid=abc123; Path=/', 'content-type': 'application/json' },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      response: { status: 200, headers: { 'content-type': 'application/json' } },
+    });
+    fake.emit('Network.dataReceived', { requestId: 'req-login', dataLength: 4 });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    await session.stop();
+
+    // 提交行（磁盘 transactions.jsonl）必须保留 extraInfo 合并的 Set-Cookie
+    const diskRows = (await session.workspace.readArtifact('raw/http/transactions.jsonl'))
+      .toString('utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line) as { url: string; responseHeaders: Record<string, string> });
+    const diskLogin = diskRows.find(row => row.url.includes('/api/login'));
+    expect(diskLogin?.responseHeaders['set-cookie']).toBe('sid=abc123; Path=/');
+    // 会话事实快照同样可见（value-flow 派生的输入）
+    const factsLogin = session
+      .workflowFacts()
+      .transactions.find(row => row.url.includes('/api/login'));
+    expect(factsLogin?.responseHeaders['set-cookie']).toBe('sid=abc123; Path=/');
+  });
+
+  it('workflowStatus 派生：点击 + 主框架导航 + WS 双向帧 → KVM_REACHED', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-kvm-derive',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'action',
+        actionKind: 'click',
+        elementSummary: 'button#console-open',
+        url: 'http://bmc.test/console',
+      }),
+    });
+    clockMs += 1000;
+    fake.emit('Page.frameNavigated', { frame: { id: 'frame-root', url: 'http://bmc.test/viewer' } });
+    clockMs += 1000;
+    fake.emit('Network.webSocketCreated', { requestId: 'ws-1', url: 'ws://bmc.test/stream' });
+    fake.emit('Network.webSocketFrameSent', {
+      requestId: 'ws-1',
+      response: { opcode: 1, payloadData: 'hello' },
+    });
+    fake.emit('Network.webSocketFrameReceived', {
+      requestId: 'ws-1',
+      response: { opcode: 1, payloadData: 'frame' },
+    });
+    await session.stop();
+
+    const facts = JSON.parse(
+      (await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'),
+    ) as { workflowStatus: string; evidenceSummary: { workflowStatus: string } };
+    expect(facts.workflowStatus).toBe('KVM_REACHED');
+    expect(facts.evidenceSummary.workflowStatus).toBe('KVM_REACHED');
+    expect(session.integrityEvidence().workflowStatus).toBe('KVM_REACHED');
+  });
+
+  it('证据图派生（阶段 3 第 2 刀）：value-flow 边 + relations 结构关系行落盘', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-evidence-graph',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const material = Buffer.from('operator-passphrase:nonce-0123456789');
+    const digest = createHash('sha256').update(material).digest();
+    const fake = createFakeCdp({
+      postData: { 'req-login': `credential=${digest.toString('hex')}` },
+      responseBodies: {
+        'req-launch': { body: '{"token":"viewer-token-0123456789"}', base64Encoded: false },
+      },
+      cookies: [{ name: 'sid', value: 'abc123' }],
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    // 摘要先于登录提交（真实顺序：页面先计算凭据再提交表单）
+    fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver',
+      payload: JSON.stringify({
+        kind: 'crypto',
+        op: 'digest',
+        algorithm: 'SHA-256',
+        algorithmParams: { name: 'SHA-256' },
+        inputB64: material.toString('base64'),
+        outputB64: digest.toString('base64'),
+        scriptUrl: 'http://bmc.test/login:12',
+      }),
+    });
+    clockMs += 1000;
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        hasPostData: true,
+      },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      response: { status: 200, headers: { 'set-cookie': 'sid=abc123; Path=/' } },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    clockMs += 1000;
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-launch',
+      type: 'XHR',
+      request: { method: 'GET', url: 'http://bmc.test/api/launch', headers: { cookie: 'sid=abc123' } },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-launch',
+      response: { status: 200, headers: { 'content-type': 'application/json' } },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-launch', encodedDataLength: 4 });
+    clockMs += 1000;
+    fake.emit('Network.webSocketCreated', {
+      requestId: 'ws-1',
+      url: 'ws://bmc.test/stream?t=viewer-token-0123456789',
+    });
+    fake.emit('Network.webSocketWillSendHandshakeRequest', {
+      requestId: 'ws-1',
+      request: { headers: { cookie: 'sid=abc123' } },
+    });
+    fake.emit('Network.webSocketHandshakeResponseReceived', {
+      requestId: 'ws-1',
+      response: { status: 101, headers: {} },
+    });
+    fake.emit('Network.webSocketFrameSent', {
+      requestId: 'ws-1',
+      response: { opcode: 1, payloadData: 'hello' },
+    });
+    fake.emit('Network.webSocketFrameReceived', {
+      requestId: 'ws-1',
+      response: { opcode: 1, payloadData: 'frame' },
+    });
+    fake.emit('Network.webSocketClosed', { requestId: 'ws-1' });
+    await session.stop();
+
+    const transactions = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(transactions).toHaveLength(2);
+    const loginTxId = String(transactions.find(row => row.method === 'POST')?.id);
+    const launchTxId = String(transactions.find(row => row.url === 'http://bmc.test/api/launch')?.id);
+
+    // value-flow：cookie 链（Set-Cookie → storage → 请求/WS 握手 Cookie 头）、
+    // crypto 链（摘要输出 hex ⊆ 登录正文）、WS 查询参数链全部成边
+    const valueFlow = JSON.parse(
+      (await session.workspace.readArtifact('ai/value-flow.json')).toString('utf8'),
+    ) as {
+      nodes: Array<{ id: string; kind: string; evidenceId?: string }>;
+      edges: Array<{ from: string; to: string; relation: string; replaySubstitution?: boolean }>;
+    };
+    const nodesById = new Map(valueFlow.nodes.map(node => [node.id, node]));
+    const cookieNode = valueFlow.nodes.find(node => node.kind === 'cookie');
+    expect(cookieNode).toBeDefined();
+    const headerNodes = valueFlow.nodes.filter(node => node.kind === 'header');
+    expect(headerNodes).toHaveLength(2);
+    const txHeader = headerNodes.find(node => node.evidenceId === launchTxId);
+    const wsHeader = headerNodes.find(node => node.evidenceId === 'ws-1');
+    expect(txHeader).toBeDefined();
+    expect(wsHeader).toBeDefined();
+    for (const header of [txHeader, wsHeader]) {
+      const edge = valueFlow.edges.find(candidate => candidate.to === header?.id);
+      expect(edge?.relation).toBe('propagated-to');
+      expect(edge?.replaySubstitution).toBe(true);
+      expect(nodesById.get(edge?.from ?? '')?.kind).toBe('cookie');
+    }
+    const setCookieNode = valueFlow.nodes.find(node => node.kind === 'http-response' && node.evidenceId === loginTxId);
+    expect(setCookieNode).toBeDefined();
+    expect(
+      valueFlow.edges.some(
+        edge => edge.from === setCookieNode?.id && edge.to === cookieNode?.id && edge.relation === 'propagated-to',
+      ),
+    ).toBe(true);
+    const cryptoNode = valueFlow.nodes.find(node => node.kind === 'crypto-output');
+    const requestBodyNode = valueFlow.nodes.find(node => node.kind === 'http-request-body' && node.evidenceId === loginTxId);
+    expect(cryptoNode).toBeDefined();
+    expect(requestBodyNode).toBeDefined();
+    expect(
+      valueFlow.edges.some(
+        edge => edge.from === cryptoNode?.id && edge.to === requestBodyNode?.id && edge.relation === 'used-in',
+      ),
+    ).toBe(true);
+    expect(
+      valueFlow.edges.some(
+        edge => edge.from === requestBodyNode?.id && edge.to === cryptoNode?.id && edge.relation === 'derived-from',
+      ),
+    ).toBe(true);
+    const urlParamNode = valueFlow.nodes.find(node => node.kind === 'url-param');
+    const responseNode = valueFlow.nodes.find(node => node.kind === 'http-response' && node.evidenceId === launchTxId);
+    expect(urlParamNode).toBeDefined();
+    expect(responseNode).toBeDefined();
+    expect(
+      valueFlow.edges.some(
+        edge => edge.from === responseNode?.id && edge.to === urlParamNode?.id && edge.relation === 'propagated-to',
+      ),
+    ).toBe(true);
+
+    // relations：initiated（target → 事务）/ opened（target → 通道）/
+    // value-flow（与 ai/value-flow.json 的边平行）
+    const relations = jsonl(await session.workspace.readArtifact('catalog/relations.jsonl'));
+    const initiated = relations.filter(row => row.relation === 'initiated');
+    expect(initiated).toHaveLength(2);
+    for (const row of initiated) {
+      expect(row.from).toBe('target-root');
+      expect([loginTxId, launchTxId]).toContain(row.to);
+    }
+    const opened = relations.filter(row => row.relation === 'opened');
+    expect(opened).toEqual([
+      { from: 'target-root', to: 'ws-1', relation: 'opened', occurredAt: relations.find(r => r.relation === 'opened')?.occurredAt, evidencePath: 'catalog/channels.json' },
+    ]);
+    const valueFlowRows = relations.filter(row => row.relation === 'value-flow');
+    expect(valueFlowRows).toHaveLength(valueFlow.edges.length);
+    for (const row of valueFlowRows) {
+      expect(valueFlow.nodes.some(node => node.id === row.from)).toBe(true);
+      expect(valueFlow.nodes.some(node => node.id === row.to)).toBe(true);
+    }
   });
 
   it('WS FIN 后视推导（不伪造）：continuation 首帧 fin=false；close 后到达帧记缺口', async () => {
@@ -752,7 +1160,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(indexRows.map(row => row.fin)).toEqual([false, true, true]);
     const framesBin = await session.workspace.readArtifact('raw/websocket/ws-fin/frames.bin');
     expect(framesBin.equals(Buffer.concat([Buffer.from('hello'), Buffer.from('-fragment'), Buffer.from('next-message')]))).toBe(true);
-    const summary = session.integrityEvidence('KVM_REACHED');
+    const summary = session.integrityEvidence();
     expect(summary.channelGaps.some(gap => gap.id === 'ws-fin')).toBe(true);
   });
 
@@ -848,7 +1256,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(byId.get('dl-1')).toMatchObject({ kind: 'download' });
 
     // 反例：不可观测通道必须显式记账，不能假装已采集
-    const summary = session.integrityEvidence('KVM_REACHED');
+    const summary = session.integrityEvidence();
     expect(summary.unsupportedChannels.some(gap => gap.id === 'wt-1')).toBe(true);
     expect(summary.unsupportedChannels.some(gap => gap.id === 'dl-1')).toBe(true);
   });
@@ -1232,6 +1640,76 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(calls).toContain('off');
     expect(calls).toContain('detach');
     expect(listeners).toHaveLength(0);
+  });
+
+  it('挂载中途失败：已记录事务的根 target 必须补 attached=false 行，relations 不得引用未知 ID', async () => {
+    // 反例（e2e close-before-assert 实测）：弹窗 attach 的 enable 序列中途失败，
+    // 但 message 监听在序列前已注册，POST 事务已进共享 collector 且
+    // targetId=target-window-3；target 行只在序列末尾 upsert——失败即丢弃，
+    // catalog/targets.json 缺行 → relations.jsonl 引用未知 ID → 导出被拒。
+    const rootDir = await newRootDir();
+    const session = await startSession({
+      jobId: 'job-attach-midfail-salvage',
+      rootDir,
+      safetyMarginBytes: 1,
+    });
+    const listeners: Array<(event: unknown, method: string, params: Record<string, unknown>) => void> = [];
+    const cdp: CdpSession = {
+      async attach() {},
+      sendCommand(command: string) {
+        // Network.enable 成功（事务能记录），后续 enable 中途失败
+        if (command === 'Page.enable') {
+          return Promise.reject(new Error('Page.enable timed out'));
+        }
+        return {};
+      },
+      on(event, listener) {
+        if (event === 'message') listeners.push(listener as typeof listeners[number]);
+      },
+      off() {},
+      async detach() {},
+    };
+    const pending = session.attachCdp(cdp, {
+      targetId: 'target-window-3',
+      windowId: '3',
+      windowRole: 'popup',
+      openerTargetId: 'target-root',
+    });
+    // 监听在 attach 序列前已注册：事件在序列失败前即可进入共享 collector
+    for (const listener of [...listeners]) {
+      listener({}, 'Network.requestWillBeSent', {
+        requestId: 'r1',
+        request: { method: 'POST', url: 'https://bmc.test/form-target', headers: {} },
+      });
+    }
+    await expect(pending).rejects.toThrow('Page.enable');
+    // 失败附件不在 attachments 里，事件链自行落盘：等事务行出现
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+        if (rows.some(row => row.targetId === 'target-window-3')) break;
+      } catch {
+        // 尚未落盘
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    await session.stop();
+
+    const targets = JSON.parse(
+      (await session.workspace.readArtifact('catalog/targets.json')).toString('utf8'),
+    ) as { targets: Array<{ id: string; attached: boolean; detachReason?: string }> };
+    const salvaged = targets.targets.find(row => row.id === 'target-window-3');
+    expect(salvaged).toMatchObject({
+      attached: false,
+      detachReason: 'attach-failed',
+    });
+    // relations 的 from 必须全部落在已知 target 上（UNKNOWN_EVIDENCE_ID 门禁的会话内等价断言）
+    const relations = jsonl(await session.workspace.readArtifact('catalog/relations.jsonl'));
+    const initiated = relations.filter(row => row.relation === 'initiated');
+    expect(initiated.some(row => row.from === 'target-window-3')).toBe(true);
+    for (const row of initiated) {
+      expect(targets.targets.some(target => target.id === row.from)).toBe(true);
+    }
   });
 
   it('HAR 构建失败：落显式兜底 HAR（空 entries + 失败注释）并记账，后续收尾不中止', async () => {

@@ -14,7 +14,11 @@ import { startJobWorkspace, type JobWorkspace, type JobWorkspaceInit } from '../
 import { attachProtocolAgnosticCapture, type AttachedCapture, type PageEnvironment } from './attachProtocolAgnosticCapture';
 import { CAPTURE_FACTS_PATH, parseCaptureTarget, type CaptureFacts } from './captureFacts';
 import { createCdpJournal } from './createCdpJournal';
-import { createCollectorEvidence, type CollectorEvidence } from './collectorEvidence';
+import {
+  createCollectorEvidence,
+  observerHookFailureChannelGaps,
+  type CollectorEvidence,
+} from './collectorEvidence';
 import { createHttpCollector } from './createHttpCollector';
 import { createWebSocketCollector } from './createWebSocketCollector';
 import { createRuntimeCryptoCollector } from './createRuntimeCryptoCollector';
@@ -24,14 +28,16 @@ import { createRealtimeCollector } from './createRealtimeCollector';
 import { buildHarIntoWorkspace, HAR_CREATOR, HAR_PATH } from './harBuilder';
 import { wrapNetlogIntoWorkspace } from './netlogTransform';
 import type { CdpSession } from './cdpSession';
+import { deriveWorkflowStatus, workflowFactsSignature, type WorkflowFacts } from './workflowStatusEngine';
+import { deriveRelations, deriveValueFlow } from './valueFlowEngine';
 import {
   PACK_V2_SCHEMA_VERSION,
   type PackIntegrityEvidenceSummary,
+  type PackV2BodyRef,
   type PackV2ChannelsFile,
   type PackV2Environment,
   type PackV2TargetRow,
   type PackV2TargetsFile,
-  type WorkflowStatus,
 } from '../capture-pack-v2/types';
 
 export type { CdpSession } from './cdpSession';
@@ -97,8 +103,10 @@ export interface CaptureSession {
   environment(): PackV2Environment | null;
   /** 采集失败记账（缺口分类计数与丢弃事件诊断）。 */
   evidence(): CollectorEvidence;
-  /** 阶段 3 IntegrityEngine 的证据摘要输入（stop 之后调用才有完整事实）。 */
-  integrityEvidence(workflowStatus: WorkflowStatus): PackIntegrityEvidenceSummary;
+  /** 派生引擎只读事实快照（阶段 3；采集期随时可调，stop 后为终态事实）。 */
+  workflowFacts(): WorkflowFacts;
+  /** 阶段 3 派生的证据摘要（workflowStatus 由引擎从观察事实派生，不再由调用方指定）。 */
+  integrityEvidence(): PackIntegrityEvidenceSummary;
 }
 
 function json2(value: unknown): string {
@@ -117,6 +125,10 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   const browser = createBrowserStateCollector(workspace, evidence);
   const realtime = createRealtimeCollector(workspace, evidence);
   let attachments: AttachedCapture[] = [];
+  // 挂载中途失败的根 target 补行（attached=false）：事件监听在 enable 序列
+  // 前已注册，事务可能已进共享 collector 且 targetId 指向该根 target；
+  // 不补行则 catalog/targets.json 缺行，relations 引用未知 ID，导出被拒。
+  const salvagedTargets: PackV2TargetRow[] = [];
   let primary: AttachedCapture | null = null;
   let primaryTargetId: string | null = null;
   let collectorReady = false;
@@ -140,7 +152,40 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   // 挂载后即采集一次——硬崩溃后恢复导出仍能装配出带真实环境的 manifest。
   const targetFacts = parseCaptureTarget(init.targetUrl ?? null);
   let pageEnvironment: PageEnvironment | null = null;
+  // 派生引擎只读事实快照与派生入口（阶段 3 第 1 刀）：
+  // 派生失败绝不阻断收尾——退回诚实下限 TARGET_OPENED 并显式记账。
+  const collectWorkflowFacts = (): WorkflowFacts => ({
+    transactions: http.transactionRows(),
+    actions: browser.actionRows(),
+    targets: attachments.flatMap(attached => attached.targets()),
+    channels: [...webSockets.channelRows(), ...realtime.channelRows()],
+    navigations: attachments.flatMap(attached => attached.mainFrameNavigations()),
+    hookFailures: [...evidence.diagnostics().observerHookFailures],
+  });
+  // 派生结果签名缓存（P3-R11-4）：renderer 2s 轮询 / 看门狗轮询在事实
+  // 未变化时直接复用，不重跑 O(actions×navigations) 派生配对；签名由
+  // workflowFactsSignature 投影派生引擎读取的全部字段（含原位变更），
+  // 事实一变即失效——不会给出过期状态。
+  let workflowStatusCache: { signature: string; value: CaptureFacts['workflowStatus'] } | null = null;
+  const currentWorkflowStatus = (): CaptureFacts['workflowStatus'] => {
+    const facts = collectWorkflowFacts();
+    const signature = workflowFactsSignature(facts);
+    if (workflowStatusCache && workflowStatusCache.signature === signature) {
+      return workflowStatusCache.value;
+    }
+    try {
+      const value = deriveWorkflowStatus(facts).workflowStatus;
+      workflowStatusCache = { signature, value };
+      return value;
+    } catch (error) {
+      evidence.droppedEvent('workflow-status-derive', error);
+      return 'TARGET_OPENED';
+    }
+  };
   const writeCaptureFacts = async (stopped: boolean) => {
+    // 终态 workflowStatus 由派生引擎从观察事实推导；挂载中间态（v1）保持
+    // 诚实下限 TARGET_OPENED（未收尾不主张更高状态）。
+    const workflowStatus = stopped ? currentWorkflowStatus() : 'TARGET_OPENED';
     const facts: CaptureFacts = {
       schemaVersion: '1.0.0',
       jobId: workspace.jobId,
@@ -162,7 +207,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
               screen: pageEnvironment.screen,
             }
           : null,
-      workflowStatus: 'TARGET_OPENED',
+      workflowStatus,
       stopped,
       evidenceSummary: stopped
         ? evidence.summary({
@@ -170,7 +215,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
             rawJournalsClosed,
             browserStateWritten,
             evidenceReferencesClosed: referencesClosed,
-            workflowStatus: 'TARGET_OPENED',
+            workflowStatus,
           })
         : null,
       // droppedEvent 诊断的包内落盘形态（规范 §3）：stop 收尾时快照一次，
@@ -285,6 +330,10 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     }
 
     const targetRowsById = new Map<string, PackV2TargetRow>();
+    // 挂载失败补行先入表（诚实下限），成功附件的完整行随后覆盖同名 id
+    for (const row of salvagedTargets) {
+      if (!targetRowsById.has(row.id)) targetRowsById.set(row.id, row);
+    }
     for (const attached of attachments) {
       for (const row of attached.targets()) {
         const known = targetRowsById.get(row.id);
@@ -306,6 +355,71 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     await safeStep('channels-catalog', () =>
       workspace.writeArtifact('catalog/channels.json', json2(channelsFile)),
     );
+    // 观察脚本钩子失败的表面条件映射（阶段 3 第 1 刀）：只有对应观察面
+    // 真实在场（webrtc/webtransport/sse 通道行存在）才构成 channelGaps
+    // 缺口；必须在终态 facts 写入前记账，才能进证据摘要。
+    const hookFailures = evidence.diagnostics().observerHookFailures;
+    if (hookFailures.length > 0) {
+      const channelKinds = new Set(channelsFile.channels.map(row => row.kind));
+      for (const gap of observerHookFailureChannelGaps(hookFailures, channelKinds)) {
+        evidence.recordGap('channelGaps', gap.id, gap.detail);
+      }
+    }
+
+    // 证据图（阶段 3 第 2 刀）：从观察事实派生 ai/value-flow.json 与
+    // catalog/relations.jsonl。只记字节级观察背书的边；storage 快照读取
+    // 失败只丢 cookie 链（显式记账），crypto / WS 参数链继续派生。
+    await safeStep('evidence-graph', async () => {
+      let storageCookies: Array<{ name: string; value: string }> = [];
+      let storageCapturedAt = now();
+      try {
+        const raw = JSON.parse(
+          (await workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
+        ) as { capturedAt?: unknown; cookies?: unknown };
+        if (typeof raw.capturedAt === 'string') storageCapturedAt = raw.capturedAt;
+        if (Array.isArray(raw.cookies)) {
+          storageCookies = raw.cookies.filter(
+            (cookie): cookie is { name: string; value: string } =>
+              !!cookie &&
+              typeof (cookie as { name?: unknown }).name === 'string' &&
+              typeof (cookie as { value?: unknown }).value === 'string',
+          );
+        }
+      } catch (error) {
+        // storage.json 是快照步产物；读取失败不牵连其余派生链
+        evidence.droppedEvent('value-flow-storage-read', error);
+      }
+      const readBody = async (ref: PackV2BodyRef): Promise<Buffer | null> => {
+        try {
+          return await workspace.readArtifact(ref.path);
+        } catch {
+          return null;
+        }
+      };
+      const derived = await deriveValueFlow(
+        {
+          transactions: http.transactionRows(),
+          cryptoRows: crypto.rows(),
+          wsChannels: webSockets.handshakeFacts(),
+          storageCookies,
+          storageCapturedAt,
+        },
+        { readBody },
+      );
+      await workspace.writeArtifact('ai/value-flow.json', json2(derived.valueFlow));
+      const relations = deriveRelations(
+        {
+          transactions: http.transactionRows(),
+          targets: [...targetRowsById.values()],
+          channels: channelsFile.channels,
+        },
+        derived.relations,
+      );
+      await workspace.writeArtifact(
+        'catalog/relations.jsonl',
+        relations.length === 0 ? '' : `${relations.map(row => JSON.stringify(row)).join('\n')}\n`,
+      );
+    });
 
     await safeStep('workspace-flush', async () => {
       await workspace.flush();
@@ -322,22 +436,38 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     workspace,
     async attachCdp(cdp, context) {
       if (stopped) throw new Error('采集会话已停止，不能再挂载 CDP');
-      const attached = await attachProtocolAgnosticCapture({
-        cdp,
-        journal,
-        http,
-        webSockets,
-        crypto,
-        scripts,
-        browser,
-        realtime,
-        evidence,
-        now,
-        rootTargetId: context?.targetId ?? 'target-root',
-        windowId: context?.windowId,
-        rootWindowRole: context?.windowRole,
-        rootOpenerTargetId: context?.openerTargetId,
-      });
+      let attached: AttachedCapture;
+      try {
+        attached = await attachProtocolAgnosticCapture({
+          cdp,
+          journal,
+          http,
+          webSockets,
+          crypto,
+          scripts,
+          browser,
+          realtime,
+          evidence,
+          now,
+          rootTargetId: context?.targetId ?? 'target-root',
+          windowId: context?.windowId,
+          rootWindowRole: context?.windowRole,
+          rootOpenerTargetId: context?.openerTargetId,
+        });
+      } catch (error) {
+        // 挂载中途失败（enable 序列某步抛出）：附件被丢弃，但已进共享
+        // collector 的事务仍在——补 attached=false 行保住 target 身份，
+        // 识别失败绝不牵连导出（UNKNOWN_EVIDENCE_ID 门禁不再触发）。
+        salvagedTargets.push({
+          id: context?.targetId ?? 'target-root',
+          type: context?.windowRole === 'popup' ? 'popup' : 'page',
+          attached: false,
+          url: null,
+          ...(context?.openerTargetId ? { openerTargetId: context.openerTargetId } : {}),
+          detachReason: 'attach-failed',
+        });
+        throw error;
+      }
       if (!primary) {
         primary = attached;
         primaryTargetId = context?.targetId ?? 'target-root';
@@ -385,13 +515,16 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     evidence() {
       return evidence;
     },
-    integrityEvidence(workflowStatus) {
+    workflowFacts() {
+      return collectWorkflowFacts();
+    },
+    integrityEvidence() {
       return evidence.summary({
         collectorReadyBeforeFirstNavigation: collectorReady,
         rawJournalsClosed,
         browserStateWritten,
         evidenceReferencesClosed: referencesClosed,
-        workflowStatus,
+        workflowStatus: currentWorkflowStatus(),
       });
     },
   };

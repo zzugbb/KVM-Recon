@@ -332,9 +332,6 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
           Array.prototype.slice.call(arguments)
         )))();
         var pcId = 'pc-' + (pcSeq += 1);
-          try {
-            Object.defineProperty(instance, '__kvmReconPcId', { value: pcId, enumerable: false });
-          } catch (_error) {}
           report({
             kind: 'webrtc',
             pcId: pcId,
@@ -471,9 +468,6 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
         )))();
         var wtId = 'wt-' + (wtSeq += 1);
         var closedReported = false;
-          try {
-            Object.defineProperty(instance, '__kvmReconWtId', { value: wtId, enumerable: false });
-          } catch (_error) {}
           report({ kind: 'webtransport', wtId: wtId, eventKind: 'created', url: String(url) });
           try {
             instance.closed.then(function () {
@@ -564,9 +558,6 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
           Array.prototype.slice.call(arguments)
         )))();
         var sseId = 'sse-' + (sseSeq += 1);
-          try {
-            Object.defineProperty(source, '__kvmReconSseId', { value: sseId, enumerable: false });
-          } catch (_error) {}
           try {
             source.addEventListener('open', function () {
               emit(source, sseId, 'connected');

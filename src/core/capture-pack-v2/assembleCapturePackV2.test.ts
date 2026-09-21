@@ -154,6 +154,64 @@ describe('assembleCapturePackV2（阶段 2 包装配）', () => {
     await workspace.close();
   });
 
+  it('工作区 ai/value-flow.json 在场时优先采用：不再重复输出派生文件（无 ZIP 重复路径）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-asm-valueflow', rootDir });
+    await workspace.writeArtifact('catalog/channels.json', '{"schemaVersion":"2.0.0","channels":[]}\n');
+    await workspace.writeArtifact(
+      'ai/value-flow.json',
+      JSON.stringify({
+        schemaVersion: '2.0.0',
+        nodes: [
+          {
+            id: 'value-0001',
+            kind: 'cookie',
+            name: 'sid',
+            evidencePath: 'raw/browser/storage.json',
+          },
+        ],
+        edges: [
+          {
+            from: 'value-0001',
+            to: 'value-0001',
+            relation: 'propagated-to',
+            evidencePath: 'raw/browser/storage.json',
+          },
+        ],
+      }),
+    );
+
+    const result = await assembleCapturePackV2({
+      workspace,
+      tool: { version: '0.3.0-dev', buildId: 'test-build' },
+      environment: { ...ENVIRONMENT },
+      evidenceSummary: evidence('TARGET_OPENED'),
+      target: { host: '10.10.8.111', port: 443, scheme: 'https' },
+    });
+
+    // 工作区版本直接进包（导出器逐文件带出），派生清单不得重复输出同路径
+    expect(result.files.some(file => file.path === 'ai/value-flow.json')).toBe(false);
+    await workspace.close();
+  });
+
+  it('反例：工作区 ai/value-flow.json 结构非法（缺 nodes/edges 数组）时拒绝装配', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-asm-valueflow-bad', rootDir });
+    await workspace.writeArtifact('catalog/channels.json', '{"schemaVersion":"2.0.0","channels":[]}\n');
+    await workspace.writeArtifact('ai/value-flow.json', '{"schemaVersion":"2.0.0"}\n');
+
+    await expect(
+      assembleCapturePackV2({
+        workspace,
+        tool: { version: '0.3.0-dev', buildId: 'test-build' },
+        environment: { ...ENVIRONMENT },
+        evidenceSummary: evidence('TARGET_OPENED'),
+        target: { host: '10.10.8.111', port: 443, scheme: 'https' },
+      }),
+    ).rejects.toThrow('ai/value-flow.json 结构非法');
+    await workspace.close();
+  });
+
   it('反例：environment 为 null 拒绝装配（manifest 不得携带编造环境）', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({ jobId: 'job-asm-noenv', rootDir });
