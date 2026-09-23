@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- 修复 Linux CI 的提前关窗导出：截图与 DOM 快照均未落盘时，只有明确报告 `INCOMPLETE_BROWSER_STATE` 且 `browser-state-written` 门禁失败的包可作为 `INCOMPLETE` 导出；未报告缺口或声明 `COMPLETE` 的包仍被拒绝。
 - 0.3.0 阶段 0（契约先行）：`src/core/capture-pack-v2/` 三正交状态、11 个 `INCOMPLETE` 稳定原因与十项完整度门禁映射、`derivePackIntegrity`；`schema/2.0/`（当前 33 个 Schema 与类型同步，导出按包内 Schema 副本自校验）；Capture Pack 1.x 导入固定 `LEGACY_UNVERIFIED`。
 - 新增随机 URL Mock KVM（对现有厂商签名零命中）：SHA-256 摘要凭据登录链、CSRF 校验的 KVM 启动、严格会话校验；真实浏览器可走通登录 → 控制台 → Viewer → WebSocket 全链（`e2e/mock-kvm-browser-flow.mjs`）。
 - 新增完整度失败 Fixture（每个 `INCOMPLETE` 原因一个）、样例包一致性验证器（负向 36 项）与 `examples/capture-pack-v2/` 样例包（完整度从观察事实派生，无编造关系）。

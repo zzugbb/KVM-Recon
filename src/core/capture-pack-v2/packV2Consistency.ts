@@ -543,13 +543,30 @@ export function validatePackV2Consistency(
   const screenshotPaths = artifacts
     .map(artifact => artifact.path)
     .filter(path => path.startsWith('raw/browser/screenshots/'));
-  if (screenshotPaths.length === 0) {
+  const browserStateManifest = jsonOf('manifest.json') as PackV2Manifest | undefined;
+  const browserStateIntegrity = jsonOf('integrity.json') as
+    | {
+        captureIntegrity?: string;
+        reasons?: string[];
+        gates?: Array<{ id: string; passed: boolean }>;
+      }
+    | undefined;
+  // 窗口在收尾前已销毁时无法补拍；只有明确记下浏览器状态缺口的
+  // INCOMPLETE 包可缺少表面工件。无状态的预验证及 COMPLETE 仍严格检查。
+  const browserSurfacesUnavailable =
+    browserStateManifest?.captureIntegrity === 'INCOMPLETE' &&
+    browserStateIntegrity?.captureIntegrity === 'INCOMPLETE' &&
+    browserStateIntegrity.reasons?.includes('INCOMPLETE_BROWSER_STATE') === true &&
+    browserStateIntegrity.gates?.some(
+      gate => gate.id === 'browser-state-written' && gate.passed === false,
+    ) === true;
+  if (screenshotPaths.length === 0 && !browserSurfacesUnavailable) {
     add('MISSING_SCREENSHOT', '包内没有任何截图（规范 §14 条件 8）');
   }
   const hasDomSnapshot = artifacts.some(artifact =>
     artifact.path.startsWith('raw/browser/dom-snapshots/'),
   );
-  if (!hasDomSnapshot) {
+  if (!hasDomSnapshot && !browserSurfacesUnavailable) {
     add('MISSING_DOM_SNAPSHOT', '包内没有任何 DOM 快照');
   }
 

@@ -59,7 +59,11 @@ function evidenceSummary(workflowStatus: PackIntegrityEvidenceSummary['workflowS
 }
 
 /** 最小合法 workspace 工件集（PACK_V2_REQUIRED_FILES 中由采集链路落盘的部分）。 */
-async function writeMinimalWorkspaceArtifacts(workspace: JobWorkspace, skip?: string) {
+async function writeMinimalWorkspaceArtifacts(
+  workspace: JobWorkspace,
+  skip?: string,
+  includeBrowserSurfaces = true,
+) {
   const write = async (path: string, content: string | Uint8Array) => {
     if (path === skip) return;
     await workspace.writeArtifact(path, content);
@@ -93,8 +97,10 @@ async function writeMinimalWorkspaceArtifacts(workspace: JobWorkspace, skip?: st
   );
   await write('raw/browser/console.jsonl', '');
   await write('raw/scripts/index.json', '{"schemaVersion":"2.0.0","scripts":[]}\n');
-  await write('raw/browser/screenshots/0001.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  await write('raw/browser/dom-snapshots/0001.html', '<!doctype html><p>target</p>');
+  if (includeBrowserSurfaces) {
+    await write('raw/browser/screenshots/0001.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await write('raw/browser/dom-snapshots/0001.html', '<!doctype html><p>target</p>');
+  }
 }
 
 function assemblyInput() {
@@ -158,6 +164,41 @@ describe('exportJobWorkspaceZip（阶段 2 完整包装配导出）', () => {
     expect(result.export.entryCount).toBe(22 + 1 + 12 + 33 + 1);
     expect(parseChecksumsManifest(result.export.checksums).has('raw/browser/dom-snapshots/0002-viewer.html')).toBe(true);
     await verifyPackV2Zip(zipPath, expectedEntries(result.export.checksums));
+    await workspace.close();
+  });
+
+  it('窗口提前销毁且截图/DOM 均未落盘：显式浏览器状态缺口仍可导出 INCOMPLETE', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-export-closed-window', rootDir });
+    await writeMinimalWorkspaceArtifacts(workspace, undefined, false);
+    const assembly = assemblyInput();
+    assembly.evidenceSummary.browserStateWritten = false;
+    assembly.evidenceSummary.browserStateGaps.push({
+      id: 'closed-before-snapshot',
+      detail: '窗口已关闭，无法补采截图和 DOM 快照',
+    });
+
+    const zipPath = join(rootDir, 'closed-window.zip');
+    const result = await exportJobWorkspaceZip({ workspace, zipPath, assembly });
+    expect(result.status.captureIntegrity).toBe('INCOMPLETE');
+    expect(result.derived.reasons).toContain('INCOMPLETE_BROWSER_STATE');
+    const entries = parseChecksumsManifest(result.export.checksums);
+    expect([...entries.keys()].some(path => path.startsWith('raw/browser/screenshots/'))).toBe(false);
+    expect([...entries.keys()].some(path => path.startsWith('raw/browser/dom-snapshots/'))).toBe(false);
+    await verifyPackV2Zip(zipPath, expectedEntries(result.export.checksums));
+    await workspace.close();
+  });
+
+  it('截图/DOM 缺失但未报告浏览器状态缺口：即使因流程未达成而 INCOMPLETE 也拒绝导出', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-export-unreported-surfaces', rootDir });
+    await writeMinimalWorkspaceArtifacts(workspace, undefined, false);
+
+    const zipPath = join(rootDir, 'unreported-surfaces.zip');
+    await expect(
+      exportJobWorkspaceZip({ workspace, zipPath, assembly: assemblyInput() }),
+    ).rejects.toThrow(/MISSING_SCREENSHOT.*MISSING_DOM_SNAPSHOT/);
+    await expect(stat(zipPath)).rejects.toMatchObject({ code: 'ENOENT' });
     await workspace.close();
   });
 
