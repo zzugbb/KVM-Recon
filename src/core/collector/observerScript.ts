@@ -1,7 +1,9 @@
 /**
  * 页面世界观察脚本（规范 §7.2 / §8.4 / §8.5 / §8.6）。
  * 单一 binding 上报，payload 以 `kind` 字段路由：
- *   crypto（WebCrypto 调用）/ action（点击·表单提交）/ webrtc / webtransport / sse
+ *   crypto（WebCrypto 调用）/ action（点击·表单提交）/ render-surface
+ *   （新建 Canvas/Video/OffscreenCanvas/Worker/持续渲染，§7.3 第 2 组事实）
+ *   / webrtc / webtransport / sse
  *   / observer-hook-failed（钩子安装失败记账：缺失必须显式，安装 catch 不静默）。
  * 必须在导航前用 Page.addScriptToEvaluateOnNewDocument 注入，Worker 会话
  * 用 Runtime.evaluate 注入；全程 try/catch，只观察不改值：
@@ -16,6 +18,7 @@ export const OBSERVER_BINDING_NAME = '__kvmReconObserver';
 export type ObserverPayloadKind =
   | 'crypto'
   | 'action'
+  | 'render-surface'
   | 'webrtc'
   | 'webtransport'
   | 'sse'
@@ -751,8 +754,204 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
     }
   }
 
+  // ---------- 渲染/执行表面（规范 §7.3 第 2 组事实，五轮 G1） ----------
+  // 新建 Canvas / Video / OffscreenCanvas / Worker / 持续渲染（rAF）的事实
+  // 组合（§7.3 KVM 判定合取的第 2 组事实）。CDP worker target 行不带 opener
+  // 血缘归属，页面侧构造事实补上这一面。
+  // rAF 稀疏上报（第 1、30 次回调，其后每 600 次）：持续渲染事实在场而
+  // 不过量刷行——密集上报会让活动指纹永不稳定，自动收尾永不触发（§7.4）。
+
+  function installRenderSurfaceHook() {
+    function reportSurface(surface, detail) {
+      report({
+        kind: 'render-surface',
+        surface: surface,
+        detail: detail == null ? null : String(detail)
+      });
+    }
+
+    // document.createElement('canvas' / 'video')
+    try {
+      var doc = root.document;
+      var nativeCreate = doc && typeof doc.createElement === 'function' ? doc.createElement : null;
+      if (nativeCreate && !doc.__kvmReconCreateElementHooked) {
+        try {
+          Object.defineProperty(doc, '__kvmReconCreateElementHooked', { value: true, enumerable: false });
+        } catch (_error) {
+          reportHookFailure('render-surface', 'create-element-flag', _error);
+          nativeCreate = null;
+        }
+        if (nativeCreate) {
+          Object.defineProperty(doc, 'createElement', {
+            value: function (tagName) {
+              var element = nativeCreate.apply(doc, arguments);
+              try {
+                var tag = String(tagName == null ? '' : tagName).toLowerCase();
+                if (tag === 'canvas' || tag === 'video') reportSurface(tag, null);
+              } catch (_error) {}
+              return element;
+            },
+            writable: true,
+            enumerable: false,
+            configurable: true
+          });
+        }
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'create-element', _error);
+    }
+
+    // HTMLCanvasElement.prototype.getContext（静态 HTML 里的 canvas 也在此
+    // 观测）；每元素只上报一次——逐帧 getContext 不刷行。取到 null（不支持的
+    // contextType）不算新建表面。
+    try {
+      var CanvasProto = root.HTMLCanvasElement && root.HTMLCanvasElement.prototype;
+      var nativeGetContext =
+        CanvasProto && typeof CanvasProto.getContext === 'function' ? CanvasProto.getContext : null;
+      if (nativeGetContext && !CanvasProto.__kvmReconGetContextHooked) {
+        try {
+          Object.defineProperty(CanvasProto, '__kvmReconGetContextHooked', { value: true, enumerable: false });
+        } catch (_error) {
+          reportHookFailure('render-surface', 'canvas-context-flag', _error);
+          nativeGetContext = null;
+        }
+        if (nativeGetContext) {
+          Object.defineProperty(CanvasProto, 'getContext', {
+            value: function () {
+              var result = nativeGetContext.apply(this, arguments);
+              try {
+                if (result && this && !this.__kvmReconContextReported) {
+                  try {
+                    Object.defineProperty(this, '__kvmReconContextReported', { value: true, enumerable: false });
+                  } catch (_flagError) {}
+                  reportSurface('canvas-context', arguments[0]);
+                }
+              } catch (_error) {}
+              return result;
+            },
+            writable: true,
+            enumerable: false,
+            configurable: true
+          });
+        }
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'canvas-context', _error);
+    }
+
+    // OffscreenCanvas 构造
+    try {
+      var NativeOSC = root.OffscreenCanvas;
+      if (typeof NativeOSC === 'function' && !NativeOSC.__kvmReconHooked) {
+        var WrappedOSC = function OffscreenCanvas(width, height) {
+          if (!(this instanceof WrappedOSC)) {
+            // WebIDL：构造器无 new 调用按原生语义抛 TypeError
+            throw new TypeError("Constructor OffscreenCanvas requires 'new'");
+          }
+          var instance = new (Function.prototype.bind.apply(NativeOSC, [null].concat(
+            Array.prototype.slice.call(arguments)
+          )))();
+          reportSurface('offscreencanvas', String(width) + 'x' + String(height));
+          return instance;
+        };
+        // prototype 指回原生：instanceof / 原型方法访问与未包装时一致
+        try { WrappedOSC.prototype = NativeOSC.prototype; } catch (_error) {}
+        Object.defineProperty(root, 'OffscreenCanvas', {
+          value: WrappedOSC,
+          writable: true,
+          enumerable: false,
+          configurable: true
+        });
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'offscreencanvas', _error);
+    }
+
+    // Worker / SharedWorker 构造（页面侧构造事实带血缘归属）
+    try {
+      var NativeWorker = root.Worker;
+      if (typeof NativeWorker === 'function' && !NativeWorker.__kvmReconHooked) {
+        var WrappedWorker = function Worker(scriptUrl) {
+          if (!(this instanceof WrappedWorker)) {
+            // WebIDL：构造器无 new 调用按原生语义抛 TypeError
+            throw new TypeError("Constructor Worker requires 'new'");
+          }
+          var instance = new (Function.prototype.bind.apply(NativeWorker, [null].concat(
+            Array.prototype.slice.call(arguments)
+          )))();
+          reportSurface('worker', scriptUrl == null ? null : String(scriptUrl));
+          return instance;
+        };
+        // prototype 指回原生：instanceof / 原型方法访问与未包装时一致
+        try { WrappedWorker.prototype = NativeWorker.prototype; } catch (_error) {}
+        Object.defineProperty(root, 'Worker', {
+          value: WrappedWorker,
+          writable: true,
+          enumerable: false,
+          configurable: true
+        });
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'worker', _error);
+    }
+    try {
+      var NativeSharedWorker = root.SharedWorker;
+      if (typeof NativeSharedWorker === 'function' && !NativeSharedWorker.__kvmReconHooked) {
+        var WrappedSharedWorker = function SharedWorker(scriptUrl) {
+          if (!(this instanceof WrappedSharedWorker)) {
+            // WebIDL：构造器无 new 调用按原生语义抛 TypeError
+            throw new TypeError("Constructor SharedWorker requires 'new'");
+          }
+          var instance = new (Function.prototype.bind.apply(NativeSharedWorker, [null].concat(
+            Array.prototype.slice.call(arguments)
+          )))();
+          reportSurface('shared-worker', scriptUrl == null ? null : String(scriptUrl));
+          return instance;
+        };
+        // prototype 指回原生：instanceof / 原型方法访问与未包装时一致
+        try { WrappedSharedWorker.prototype = NativeSharedWorker.prototype; } catch (_error) {}
+        Object.defineProperty(root, 'SharedWorker', {
+          value: WrappedSharedWorker,
+          writable: true,
+          enumerable: false,
+          configurable: true
+        });
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'shared-worker', _error);
+    }
+
+    // requestAnimationFrame（持续渲染）
+    try {
+      var nativeRaf = root.requestAnimationFrame;
+      if (typeof nativeRaf === 'function' && !root.__kvmReconRafHooked) {
+        Object.defineProperty(root, '__kvmReconRafHooked', { value: true, enumerable: false });
+        var rafCount = 0;
+        Object.defineProperty(root, 'requestAnimationFrame', {
+          value: function (callback) {
+            return nativeRaf.call(root, function (timestamp) {
+              rafCount += 1;
+              try {
+                if (rafCount === 1 || rafCount === 30 || (rafCount > 30 && (rafCount - 30) % 600 === 0)) {
+                  reportSurface('request-animation-frame', rafCount);
+                }
+              } catch (_error) {}
+              return callback.call(root, timestamp);
+            });
+          },
+          writable: true,
+          enumerable: false,
+          configurable: true
+        });
+      }
+    } catch (_error) {
+      reportHookFailure('render-surface', 'request-animation-frame', _error);
+    }
+  }
+
   installCryptoHook();
   installActionListeners();
+  installRenderSurfaceHook();
   installWebRtcHook();
   installWebTransportHook();
   installSseHook();

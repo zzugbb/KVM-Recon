@@ -41,8 +41,17 @@ function timingOf(transaction: PackV2HttpTransactionRow): { send: number; wait: 
   return {
     send: timing?.sendMs ?? -1,
     wait: timing?.waitMs ?? -1,
-    receive: timing?.receiveMs ?? -1,
+    // receiveMs 是 requestTime→响应头的累计偏移，不是正文时长（第 12 轮）：
+    // 正文时长不可知，按 HAR 语义记 -1，不得把累计偏移伪装成正文段时长
+    receive: -1,
   };
+}
+
+/** 到响应头的时间（第 12 轮）：max(receiveMs, sendMs+waitMs)，不做双重计数。 */
+function timeToHeadersOf(transaction: PackV2HttpTransactionRow): number {
+  const timing = transaction.timing;
+  if (!timing) return -1;
+  return Math.max(timing.receiveMs || 0, (timing.sendMs || 0) + (timing.waitMs || 0));
 }
 
 async function readBody(workspace: JobWorkspace, ref: PackV2BodyRef | undefined): Promise<Buffer | null> {
@@ -134,10 +143,7 @@ export function harEntry(
 ): Record<string, unknown> {
   return {
     startedDateTime: transaction.startedAt,
-    time:
-      transaction.timing == null
-        ? -1
-        : transaction.timing.sendMs + transaction.timing.waitMs + transaction.timing.receiveMs,
+    time: timeToHeadersOf(transaction),
     request: {
       method: transaction.method,
       url: transaction.url,

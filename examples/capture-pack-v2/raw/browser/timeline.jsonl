@@ -6,5 +6,5 @@
 {"occurredAt":"2026-09-18T14:35:33+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0001-login.html"}
 {"occurredAt":"2026-09-18T14:35:34+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0002-console-entry.html"}
 {"occurredAt":"2026-09-18T14:35:35+08:00","kind":"dom-snapshot-saved","targetId":"target-page-0001","detail":"raw/browser/dom-snapshots/0003-viewer.html"}
-{"occurredAt":"2026-09-18T14:35:36+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/viewer-initial.png"}
-{"occurredAt":"2026-09-18T14:35:37+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/viewer-stable.png"}
+{"occurredAt":"2026-09-18T14:35:36+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/0001-viewer-initial.png"}
+{"occurredAt":"2026-09-18T14:35:37+08:00","kind":"screenshot-saved","targetId":"target-page-0001","detail":"raw/browser/screenshots/0002-stop.png"}

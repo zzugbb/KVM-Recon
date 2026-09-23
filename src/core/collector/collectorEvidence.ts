@@ -15,7 +15,9 @@ export type EvidenceGapCategory =
   | 'missingWorkerSources'
   | 'channelGaps'
   | 'unsupportedChannels'
-  | 'journalWriteFailures';
+  | 'journalWriteFailures'
+  | 'browserState'
+  | 'evidenceGraph';
 
 /** 缺口列表上限：超出后聚合为一条「N more」记录，防止记账自身无界。 */
 const MAX_GAP_ENTRIES = 500;
@@ -156,6 +158,8 @@ export function createCollectorEvidence(): CollectorEvidence {
         channelGaps: trimmed('channelGaps'),
         unsupportedChannels: trimmed('unsupportedChannels'),
         journalWriteFailures: trimmed('journalWriteFailures'),
+        browserStateGaps: trimmed('browserState'),
+        evidenceGraphFailures: trimmed('evidenceGraph'),
         exportValidationFailures: [],
         workflowStatus: input.workflowStatus,
       };

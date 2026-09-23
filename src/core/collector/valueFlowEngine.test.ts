@@ -348,9 +348,9 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
   });
 
   // 第 11 轮审核 P3-R11-1：crypto 调用发生在请求开始与响应到达之间
-  // （timing.sendMs + waitMs 窗口内）时，页面尚不可能读到该响应正文，
-  // 字节包含不构成「响应 → crypto 输入」的时间证据，不得成边。
-  it('crypto 输入 ⊆ 响应正文但调用早于响应到达（startedAt + sendMs + waitMs）→ 零边（P3-R11-1）', async () => {
+  // （startedAt + max(receiveMs, sendMs + waitMs) 窗口内）时，页面尚不可能
+  // 读到该响应正文，字节包含不构成「响应 → crypto 输入」的时间证据，不得成边。
+  it('crypto 输入 ⊆ 响应正文但调用早于响应到达 → 零边（P3-R11-1）', async () => {
     const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
     const mkFacts = (cryptoAt: string) =>
       factsOf({
@@ -359,8 +359,9 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
             id: 'http-0001',
             startedAt: T0,
             responseBody: bodyRef('raw/http/bodies/0001', 64),
-            // sendMs + waitMs = 2500ms：响应最早 T0+2.5s 到达
-            timing: { sendMs: 500, waitMs: 2000, receiveMs: 100 },
+            // CDP 真实形状：receiveMs 是 requestTime→响应头到达的累计偏移
+            // （2600ms ≥ sendMs+waitMs=2500ms），响应头最早 T0+2.6s 到达
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
           }),
         ],
         cryptoRows: [
@@ -378,13 +379,91 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
       'raw/runtime/bodies/0002': Buffer.alloc(32, 7),
     });
 
-    // T1 晚于请求开始但早于响应到达（T0+2.5s）：不是值传播证据
+    // T1 晚于请求开始但早于响应到达（T0+2.6s）：不是值传播证据
     const before = await deriveValueFlow(mkFacts(T1), reader);
     expect(before.valueFlow.edges).toHaveLength(0);
     expect(before.valueFlow.nodes).toHaveLength(0);
 
     // T3（T0+3s）晚于响应到达：边成立
     const after = await deriveValueFlow(mkFacts(T3), reader);
+    expect(after.valueFlow.edges.some(edge => edge.relation === 'derived-from')).toBe(true);
+  });
+
+  // 第五轮 G4：响应正文的存在时刻是响应到达时刻（startedAt +
+  // max(receiveMs, sendMs+waitMs)），不是请求开始时刻——关系行的
+  // occurredAt 不得把「响应正文 → 消费者」边记成在请求开始时就已发生。
+  it('响应正文 → crypto 输入的 derived-from 边：关系行 occurredAt 是响应到达时刻，不是请求开始（第五轮 G4）', async () => {
+    const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
+          }),
+        ],
+        cryptoRows: [
+          cryptoCall({
+            id: 'crypto-0001',
+            occurredAt: T3,
+            inputRef: bodyRef('raw/runtime/bodies/0001', nonce.byteLength),
+            outputRef: bodyRef('raw/runtime/bodies/0002', 32),
+          }),
+        ],
+      }),
+      readerOf({
+        'raw/http/bodies/0001': Buffer.from(`<input value="${nonce.toString('utf8')}">`, 'utf8'),
+        'raw/runtime/bodies/0001': nonce,
+        'raw/runtime/bodies/0002': Buffer.alloc(32, 7),
+      }),
+    );
+
+    const derivedFromEdge = result.valueFlow.edges.find(edge => edge.relation === 'derived-from');
+    expect(derivedFromEdge).toBeDefined();
+    const relationRow = result.relations.find(row => row.from === derivedFromEdge?.from);
+    // 响应头最早 T0+2.6s 到达：边的发生时刻是到达时刻，不是请求开始 T0
+    expect(relationRow?.occurredAt).toBe('2026-09-21T02:00:02.600Z');
+  });
+
+  // 第 12 轮附加项：sendMs+waitMs 漏掉建连段（sendEnd 前的连接建立），
+  // 只有 receiveMs（累计偏移）覆盖完整 requestTime→响应头窗口。
+  // 消费发生在 sendMs+waitMs 之后、receiveMs 之前时，页面仍不可能读到正文。
+  it('crypto 调用晚于 startedAt+sendMs+waitMs 但早于 startedAt+receiveMs → 零边（第 12 轮）', async () => {
+    const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
+    const mkFacts = (cryptoAt: string) =>
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
+          }),
+        ],
+        cryptoRows: [
+          cryptoCall({
+            id: 'crypto-0001',
+            occurredAt: cryptoAt,
+            inputRef: bodyRef('raw/runtime/bodies/0001', nonce.byteLength),
+            outputRef: bodyRef('raw/runtime/bodies/0002', 32),
+          }),
+        ],
+      });
+    const reader = readerOf({
+      'raw/http/bodies/0001': Buffer.from(`<input value="${nonce.toString('utf8')}">`, 'utf8'),
+      'raw/runtime/bodies/0001': nonce,
+      'raw/runtime/bodies/0002': Buffer.alloc(32, 7),
+    });
+
+    // T0+2550ms：晚于 sendMs+waitMs（2500ms）但早于响应头到达（2600ms）
+    const before = await deriveValueFlow(mkFacts('2026-09-21T02:00:02.550Z'), reader);
+    expect(before.valueFlow.edges).toHaveLength(0);
+    expect(before.valueFlow.nodes).toHaveLength(0);
+
+    // T0+2700ms：晚于响应头到达：边成立
+    const after = await deriveValueFlow(mkFacts('2026-09-21T02:00:02.700Z'), reader);
     expect(after.valueFlow.edges.some(edge => edge.relation === 'derived-from')).toBe(true);
   });
 
@@ -399,7 +478,7 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
             id: 'http-0001',
             startedAt: T0,
             responseBody: bodyRef('raw/http/bodies/0001', 64),
-            timing: { sendMs: 500, waitMs: 2000, receiveMs: 100 },
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
           }),
         ],
         wsChannels: [
@@ -435,7 +514,7 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
             method: 'POST',
             requestBody: bodyRef('raw/http/bodies/0001', 24),
             responseHeaders: { 'set-cookie': 'session=abc123' },
-            timing: { sendMs: 500, waitMs: 2000, receiveMs: 100 },
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
           }),
           tx({
             id: 'http-0002',

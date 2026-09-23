@@ -70,6 +70,21 @@ export function parseCaptureTarget(
   return { host, port, scheme };
 }
 
+/**
+ * 读取侧摘要归一化：旧格式（browserStateGaps/evidenceGraphFailures 落盘前）
+ * 的两个新字段补缺省空数组。仅补缺省，不改写其余字段（真实摘要原样透传）。
+ */
+function normalizeEvidenceSummary(
+  summary: PackIntegrityEvidenceSummary | null | undefined,
+): PackIntegrityEvidenceSummary | null {
+  if (!summary) return null;
+  return {
+    ...summary,
+    browserStateGaps: summary.browserStateGaps ?? [],
+    evidenceGraphFailures: summary.evidenceGraphFailures ?? [],
+  };
+}
+
 export function readCaptureFactsFromBuffer(buffer: Buffer): CaptureFacts {
   const parsed = JSON.parse(buffer.toString('utf8')) as Partial<CaptureFacts>;
   const problems: string[] = [];
@@ -97,7 +112,9 @@ export function readCaptureFactsFromBuffer(buffer: Buffer): CaptureFacts {
     workflowStatus: parsed.workflowStatus!,
     stopped: parsed.stopped!,
     recovered: parsed?.recovered === true,
-    evidenceSummary: parsed?.evidenceSummary ?? null,
+    // 旧格式摘要缺 browserStateGaps/evidenceGraphFailures（第 12 轮新增字段）：
+    // 读取侧补缺省空数组——缺口判定退回布尔通道，恢复导出不因缺字段崩溃
+    evidenceSummary: normalizeEvidenceSummary(parsed?.evidenceSummary),
     droppedEventByMethod:
       parsed?.droppedEventByMethod && typeof parsed.droppedEventByMethod === 'object'
         ? Object.fromEntries(
@@ -148,6 +165,8 @@ export function conservativeRecoveredEvidenceSummary(
     channelGaps: [],
     unsupportedChannels: [],
     journalWriteFailures: [],
+    browserStateGaps: [],
+    evidenceGraphFailures: [],
     exportValidationFailures: [],
     workflowStatus: options.workflowStatus,
   };

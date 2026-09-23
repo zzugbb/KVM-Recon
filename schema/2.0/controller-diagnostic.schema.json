@@ -21,7 +21,9 @@
         "viewer-activity-detected",
         "viewer-activity-error",
         "viewer-auto-stop",
-        "viewer-auto-stop-failed"
+        "viewer-auto-stop-deferred",
+        "viewer-auto-stop-failed",
+        "viewer-initial-screenshot-failed"
       ]
     },
     "detail": { "type": "string", "minLength": 1 }

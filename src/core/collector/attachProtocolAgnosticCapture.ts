@@ -34,17 +34,35 @@ import type {
   PackV2BrowserActionRow,
   PackV2CacheStorageEntry,
   PackV2IndexedDbEntry,
+  PackV2RenderSurfaceRow,
   PackV2TargetRow,
   PackV2TargetType,
   PackV2HttpInitiator,
+  RenderSurfaceKind,
   WsFrameOpcode,
 } from '../capture-pack-v2/types';
 
 const DEFAULT_NETWORK_ENABLE_TIMEOUT_MS = 5000;
 const OPTIONAL_CDP_TIMEOUT_MS = 3000;
 const SCRIPT_SOURCE_TIMEOUT_MS = 5000;
+const INTERNAL_SCRIPT_URL_PREFIX = 'kvm-recon-internal://';
 
-/** drain 阶段仍要落盘的事件（target 生命周期 / 脚本 / binding / 下载收尾）。 */
+/**
+ * 给采集器自身执行的脚本附加可识别 URL。
+ * Debugger.scriptParsed 同样会观察 Runtime.evaluate / 新文档注入；不标记会把
+ * 采集器探针误当成目标脚本，导航销毁探针时还会错误降低包完整度。
+ */
+function internalScriptSource(name: string, source: string): string {
+  return `${source}\n//# sourceURL=${INTERNAL_SCRIPT_URL_PREFIX}${name}`;
+}
+
+/**
+ * drain 阶段仍要落盘的事件：target 生命周期 / 脚本 / binding / 下载收尾，
+ * 以及在途 HTTP 请求的完成事件（responseReceived / loadingFinished /
+ * loadingFailed / extraInfo）——收尾截断在途请求的完成事实等于把未完成
+ * 请求伪装成「无正文语义」（规范 §14 条 3，第 12 轮阻断 3）。
+ * requestWillBeSent 不放开：drain 期不追踪新请求。
+ */
 const DRAIN_METHODS = new Set([
   'Target.attachedToTarget',
   'Target.detachedFromTarget',
@@ -54,7 +72,31 @@ const DRAIN_METHODS = new Set([
   'Runtime.bindingCalled',
   'Browser.downloadWillBegin',
   'Browser.downloadProgress',
+  'Network.responseReceived',
+  'Network.loadingFinished',
+  'Network.loadingFailed',
+  'Network.requestWillBeSentExtraInfo',
+  'Network.responseReceivedExtraInfo',
 ]);
+
+/** 观察脚本上报的 render-surface 种类全集（§7.3 第 2 组事实，五轮 G1）。 */
+const RENDER_SURFACE_KINDS = new Set<RenderSurfaceKind>([
+  'canvas',
+  'video',
+  'offscreencanvas',
+  'canvas-context',
+  'worker',
+  'shared-worker',
+  'request-animation-frame',
+]);
+
+/** 观察脚本上报的 surface 值校验：未知值不落行（schema enum 拒绝），显式丢弃。 */
+function renderSurfaceKindOf(value: unknown): RenderSurfaceKind | null {
+  const surface = optionalString(value);
+  return surface !== null && RENDER_SURFACE_KINDS.has(surface as RenderSurfaceKind)
+    ? (surface as RenderSurfaceKind)
+    : null;
+}
 
 export interface PageEnvironment {
   userAgent: string;
@@ -83,12 +125,37 @@ export interface AttachProtocolAgnosticCaptureInput {
   networkEnableTimeoutMs?: number;
 }
 
+/**
+ * 浏览器状态快照的步骤明细（第 12 轮阻断 4）：各步失败已内部记账并
+ * 继续收尾，但不得伪装成「已写入」——由 createCaptureSession 汇总为
+ * browserStateGaps 缺口，完整度门禁如实失败。
+ */
+export interface BrowserStateStepOutcome {
+  cookies: boolean;
+  storage: boolean;
+  indexedDb: boolean;
+  cacheStorage: boolean;
+  frameTree: boolean;
+  stopScreenshot: boolean;
+  domSnapshot: boolean;
+}
+
 export interface AttachedCapture {
   drain(): Promise<void>;
   /** 之后到达的 CDP 事件不再写入工作区。 */
   stopAccepting(): void;
-  /** Cookie / Storage / IndexedDB / CacheStorage 快照 + 收尾截图与 DOM 快照；stopAccepting 之后、finalize 之前调用。 */
-  snapshotBrowserState(): Promise<void>;
+  /** Cookie / Storage / IndexedDB / CacheStorage 快照 + 收尾截图与 DOM 快照；stopAccepting 之后、finalize 之前调用。返回各步骤成败明细。 */
+  snapshotBrowserState(): Promise<BrowserStateStepOutcome>;
+  /** popup/独立窗口自己的 Storage 上下文；sessionStorage 不能用主窗口代替。 */
+  snapshotAdditionalStorage(): Promise<{
+    storage: boolean;
+    indexedDb: boolean;
+    cacheStorage: boolean;
+  }>;
+  /** 阶段截图（§7.4：viewer-initial = 检测到 Viewer 活动时；stop = 收尾时）；失败内部已记 droppedEvent，成败返回调用方。 */
+  capturePhaseScreenshot(label: string): Promise<boolean>;
+  /** 非主根收尾画面：stop 截图 + DOM 快照（popup Viewer 最终状态，五轮 G3）；失败内部已记 droppedEvent，成败返回调用方。 */
+  snapshotFinalSurfaces(): Promise<{ stopScreenshot: boolean; domSnapshot: boolean }>;
   /** 页面侧运行环境（UA / 语言 / 时区 / 屏幕）。 */
   collectPageEnvironment(): Promise<PageEnvironment | null>;
   /** catalog/targets.json 与 raw/browser/targets.json 的行。 */
@@ -312,6 +379,31 @@ const ENVIRONMENT_EXPRESSION = `(() => {
   } catch (_error) { return null; }
 })()`;
 
+const OBSERVER_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'observer.js',
+  OBSERVER_SCRIPT_SOURCE,
+);
+const STORAGE_DUMP_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'storage-dump.js',
+  STORAGE_DUMP_EXPRESSION,
+);
+const INDEXEDDB_DUMP_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'indexeddb-dump.js',
+  INDEXEDDB_DUMP_EXPRESSION,
+);
+const CACHE_STORAGE_DUMP_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'cache-storage-dump.js',
+  CACHE_STORAGE_DUMP_EXPRESSION,
+);
+const ENVIRONMENT_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'environment.js',
+  ENVIRONMENT_EXPRESSION,
+);
+const DOM_SNAPSHOT_INSTRUMENTATION_SOURCE = internalScriptSource(
+  'dom-snapshot.js',
+  'document.documentElement ? document.documentElement.outerHTML : ""',
+);
+
 async function awaitWithTimeout<T>(value: Promise<T> | T, timeoutMs: number, message: string): Promise<T> {
   if (value == null || typeof (value as Promise<T>).then !== 'function') {
     return value as T;
@@ -338,6 +430,20 @@ export async function attachProtocolAgnosticCapture(
   const mainFrameNavigations: Array<{ occurredAt: string; targetId: string; url: string | null }> = [];
   const requestChains = new Map<string, string[]>();
   const ignored = new Set<string>();
+  // Worker 跨 session 事务关联（0.2.10 唯一匹配别名机制的 0.3 重建，第 12 轮
+  // 阻断 2）：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
+  // target 建立后其完成事件改在 Worker session 上报——按 scopedId 严格查找必然
+  // miss。仅当 Worker target URL 与恰好一个在途父请求 URL 匹配时建立
+  // `workerSession::requestId → 父 baseId` 别名；非唯一匹配不建（宁可漏不可错）。
+  const workerSessions = new Map<string, { url: string }>();
+  const workerRequestAliases = new Map<string, string>();
+  const workerSessionBaseIds = new Map<string, Set<string>>();
+  // baseId → 原始 CDP requestId（入口脚本补读要在 Worker session 上用父请求的
+  // 原始 requestId 调 Network.getResponseBody）
+  const hopRequestIds = new Map<string, string>();
+  // URL 为空期间已有完成事件按未命中显式丢弃的 Worker session（五轮 G5）：
+  // URL 经 targetInfoChanged 补齐后对这些 session 触发入口脚本补读
+  const salvagePendingWorkerSessions = new Set<string>();
   let eventQueue = Promise.resolve();
   let sourceQueue = Promise.resolve();
   let phase: 'live' | 'drain' | 'closed' = 'live';
@@ -438,7 +544,11 @@ export async function attachProtocolAgnosticCapture(
     try {
       await awaitWithTimeout(loggedSend('Page.enable', {}, sessionId), OPTIONAL_CDP_TIMEOUT_MS, 'Page.enable timed out');
       await awaitWithTimeout(
-        loggedSend('Page.addScriptToEvaluateOnNewDocument', { source: OBSERVER_SCRIPT_SOURCE }, sessionId),
+        loggedSend(
+          'Page.addScriptToEvaluateOnNewDocument',
+          { source: OBSERVER_INSTRUMENTATION_SOURCE },
+          sessionId,
+        ),
         OPTIONAL_CDP_TIMEOUT_MS,
         'Page.addScriptToEvaluateOnNewDocument timed out',
       );
@@ -450,7 +560,11 @@ export async function attachProtocolAgnosticCapture(
   /** 向当前文档 / Worker 注入观察脚本（Worker 也注入，修复 Worker 无观察器）。 */
   async function installObserver(sessionId?: string): Promise<void> {
     await awaitWithTimeout(
-      loggedSend('Runtime.evaluate', { expression: OBSERVER_SCRIPT_SOURCE, returnByValue: true }, sessionId),
+      loggedSend(
+        'Runtime.evaluate',
+        { expression: OBSERVER_INSTRUMENTATION_SOURCE, returnByValue: true },
+        sessionId,
+      ),
       OPTIONAL_CDP_TIMEOUT_MS,
       '观察脚本注入 timed out',
     );
@@ -501,19 +615,136 @@ export async function attachProtocolAgnosticCapture(
     return ids[ids.length - 1] || baseId;
   }
 
+  function isWorkerTargetType(type: string): boolean {
+    return scriptKindHint(type) !== undefined;
+  }
+
+  /** Worker 入口脚本 URL 匹配：全等，或 origin+pathname 相等（query 差异不参与匹配；多候选由调用方按「不建别名」兜底）。 */
+  function workerScriptUrlsMatch(left: string, right: string): boolean {
+    if (!left || !right) return false;
+    if (left === right) return true;
+    let leftIdentity: string | null = null;
+    let rightIdentity: string | null = null;
+    try {
+      leftIdentity = `${new URL(left).origin}${new URL(left).pathname}`;
+      rightIdentity = `${new URL(right).origin}${new URL(right).pathname}`;
+    } catch {
+      return false;
+    }
+    return leftIdentity === rightIdentity;
+  }
+
+  /** hop id → 链首 baseId（剥掉 `::redirect-N` 后缀；sessionId 自身的 `::` 不受影响）。 */
+  function baseIdOfHopId(hopId: string): string {
+    return hopId.replace(/::redirect-\d+$/, '');
+  }
+
+  /** Worker target URL 唯一匹配的在途父请求 baseId；无匹配或多匹配返回 null（不建别名）。 */
+  function uniqueParentBaseIdForWorkerUrl(targetUrl: string): string | null {
+    if (!targetUrl) return null;
+    const matches = input.http
+      .inFlightHops()
+      .filter(hop => workerScriptUrlsMatch(hop.url, targetUrl));
+    if (matches.length !== 1) return null;
+    return baseIdOfHopId(matches[0].id);
+  }
+
+  /**
+   * Worker 入口脚本正文补读（五轮 G5，0.2.10 salvageWorkerMainScript 的 0.3 重建）。
+   * 入口脚本由页面 loader 发起（requestWillBeSent 落父会话），完成事件改在
+   * Worker session 上报；Worker URL 迟到期间到达的完成事件已按未命中显式
+   * 丢弃（不可重放）——URL 补齐后经 Worker session 主动补读正文
+   * （getResponseBody 只在加载该脚本的 Worker session 上可见），成功即收尾
+   * 事务。无候选/多候选/行已 commit 时放弃补读（宁可漏不可错），缺正文由
+   * flush 按未完成显式记账。
+   */
+  async function salvageWorkerEntryScript(workerSessionId: string, targetUrl: string): Promise<void> {
+    const parentBaseId = uniqueParentBaseIdForWorkerUrl(targetUrl);
+    if (!parentBaseId) return;
+    const requestId = hopRequestIds.get(parentBaseId);
+    if (!requestId) return;
+    // 别名同步登记：补读后仍在途的行可继续吃后续 Worker session 完成事件
+    // （extraInfo 等），detach 强制收尾也能经 workerSessionBaseIds 命中
+    workerRequestAliases.set(scopedId(requestId, workerSessionId), parentBaseId);
+    const known = workerSessionBaseIds.get(workerSessionId) ?? new Set<string>();
+    known.add(parentBaseId);
+    workerSessionBaseIds.set(workerSessionId, known);
+    const id = activeHopId(parentBaseId);
+    if (!input.http.has(id)) return;
+    try {
+      const stored = await storeResponseBody(id, requestId, workerSessionId);
+      if (!stored) {
+        // 行已 commit（跨附件交错收尾窗口）：正文已取出但无法再关联——显式记账
+        input.evidence.recordGap('missingBodies', id, 'Worker 入口脚本正文晚于 commit 到达，未落进行（行已落盘）');
+        return;
+      }
+      await input.http.commit(id);
+    } catch (error) {
+      // Worker session 正文不可读（未就绪/生命周期限制）：不重试不伪造，
+      // 行保持未完成，缺正文由 flush 按未完成显式记账（0.2.10 markFailure=false 语义）
+      void error;
+    }
+  }
+
+  /**
+   * Network 事件的事务 baseId 解析：scopedId 命中即用；Worker session 事件未
+   * 命中时按唯一 URL 匹配回退到父会话 baseId（第 12 轮阻断 2）。drain 期
+   * requestWillBeSent 已被丢弃，未观测过的新请求不得凭 URL 唯一性建别名
+   * （宁漏不错）——drain 期只对父会话已跟踪的 requestId（完成事件改在
+   * Worker session 上报的分裂形态）回退关联，新事件按未命中显式记账。
+   */
+  function resolveNetworkBaseId(requestId: string, eventSessionId?: string): string {
+    const scoped = scopedId(requestId, eventSessionId);
+    if (requestChains.has(scoped) || ignored.has(scoped)) return scoped;
+    if (eventSessionId && workerSessions.has(eventSessionId)) {
+      const aliased = workerRequestAliases.get(scoped);
+      if (aliased && requestChains.has(aliased)) return aliased;
+      // drain 期 requestWillBeSent 已被丢弃：未观测过的新请求不得凭 URL 唯一性
+      // 建别名（宁漏不错）——只有父会话观测到 requestWillBeSent 的 requestId
+      // （链非空；完成事件先到只会建出空链，不构成已跟踪证据）才允许 URL 回退关联
+      const parentChain = requestChains.get(requestId);
+      const drainTrusted = phase !== 'drain' || (parentChain !== undefined && parentChain.length > 0);
+      if (drainTrusted) {
+        const parentBaseId = uniqueParentBaseIdForWorkerUrl(workerSessions.get(eventSessionId)!.url);
+        if (parentBaseId && requestChains.has(parentBaseId)) {
+          workerRequestAliases.set(scoped, parentBaseId);
+          const known = workerSessionBaseIds.get(eventSessionId) ?? new Set<string>();
+          known.add(parentBaseId);
+          workerSessionBaseIds.set(eventSessionId, known);
+          return parentBaseId;
+        }
+      }
+      if (!workerSessions.get(eventSessionId)!.url) {
+        // Worker URL 迟到（五轮 G5）：URL 为空时无法按 URL 建别名，本事件将按
+        // 未命中由调用方显式丢弃——记下该 session 有不可重放的丢弃，URL 经
+        // targetInfoChanged 补齐后触发入口脚本补读挽回正文
+        salvagePendingWorkerSessions.add(eventSessionId);
+      }
+    }
+    return scoped;
+  }
+
   async function storeRequestBody(hopId: string, requestId: string, sessionId?: string): Promise<void> {
     const result = await loggedSend('Network.getRequestPostData', { requestId }, sessionId);
     const postData = isRecord(result) ? stringValue(result.postData) : '';
     if (!postData) return;
     const ref = await input.http.storeBody(Buffer.from(postData, 'utf8'));
-    input.http.patchHop(hopId, { requestBody: ref });
+    if (!input.http.patchHop(hopId, { requestBody: ref })) {
+      // 行已 commit（跨附件 detach 强制收尾的交错窗口）：正文已取出但无法再
+      // 关联——显式记账，不得无痕丢弃
+      input.evidence.recordGap('missingBodies', hopId, '请求正文晚于 commit 到达，未落进行（行已落盘）');
+    }
   }
 
-  async function storeResponseBody(hopId: string, requestId: string, sessionId?: string): Promise<void> {
+  /**
+   * 取响应正文并挂到事务行。false = 行已 commit（detach 强制收尾 / flush 等），
+   * 正文已取出但无法再关联——由调用方显式记账，不得无痕丢弃。
+   */
+  async function storeResponseBody(hopId: string, requestId: string, sessionId?: string): Promise<boolean> {
     const result = await loggedSend('Network.getResponseBody', { requestId }, sessionId);
     const bytes = decodeCdpBody(result);
     const ref = await input.http.storeBody(bytes);
-    input.http.patchHop(hopId, { responseBody: ref });
+    return input.http.patchHop(hopId, { responseBody: ref });
   }
 
   async function enableAttachedTarget(attachedSessionId: string, targetType: string): Promise<void> {
@@ -545,7 +776,11 @@ export async function attachProtocolAgnosticCapture(
     }
   }
 
-  async function captureScreenshot(sessionId: string | undefined, targetId: string, label: string): Promise<void> {
+  async function captureScreenshot(
+    sessionId: string | undefined,
+    targetId: string,
+    label: string,
+  ): Promise<boolean> {
     try {
       const result = await awaitWithTimeout(
         loggedSend('Page.captureScreenshot', { format: 'png' }, sessionId),
@@ -558,20 +793,26 @@ export async function attachProtocolAgnosticCapture(
         targetId,
         occurredAt: input.now(),
       });
+      return true;
     } catch (error) {
       // 捕获截图失败：窗口隐藏 / GPU 不可用 / 目标无 Page 域
-      // 策略：丢弃计数显式记账，不阻断导航事件链
+      // 策略：丢弃计数显式记账，不阻断导航事件链；成败返回给调用方进步骤明细
       input.evidence.droppedEvent('Page.captureScreenshot', error);
+      return false;
     }
   }
 
-  async function captureDomSnapshot(sessionId: string | undefined, targetId: string, label: string): Promise<void> {
+  async function captureDomSnapshot(
+    sessionId: string | undefined,
+    targetId: string,
+    label: string,
+  ): Promise<boolean> {
     try {
       const result = await awaitWithTimeout(
         loggedSend(
           'Runtime.evaluate',
           {
-            expression: 'document.documentElement ? document.documentElement.outerHTML : ""',
+            expression: DOM_SNAPSHOT_INSTRUMENTATION_SOURCE,
             returnByValue: true,
           },
           sessionId,
@@ -582,10 +823,12 @@ export async function attachProtocolAgnosticCapture(
       const value =
         isRecord(result) && isRecord(result.result) ? stringValue(result.result.value) : '';
       await input.browser.addDomSnapshot(label, value, { targetId, occurredAt: input.now() });
+      return true;
     } catch (error) {
       // 捕获 DOM 快照失败：文档不可访问或目标已导航离开
-      // 策略：丢弃计数显式记账，不阻断导航事件链
+      // 策略：丢弃计数显式记账，不阻断导航事件链；成败返回给调用方进步骤明细
       input.evidence.droppedEvent('dom-snapshot', error);
+      return false;
     }
   }
 
@@ -622,6 +865,25 @@ export async function attachProtocolAgnosticCapture(
         url: optionalString(parsed.url),
       };
       await input.browser.addAction(row);
+      return;
+    }
+    if (kind === 'render-surface') {
+      // §7.3 第 2 组事实（五轮 G1）：页面观察脚本上报的新建渲染/执行表面
+      const surface = renderSurfaceKindOf(parsed.surface);
+      if (!surface) {
+        input.evidence.droppedEvent(
+          'Runtime.bindingCalled',
+          new Error(`观察脚本 payload surface 未知：${stringValue(parsed.surface) || '(empty)'}`),
+        );
+        return;
+      }
+      const row: Omit<PackV2RenderSurfaceRow, 'id'> = {
+        occurredAt,
+        targetId,
+        surface,
+        detail: optionalString(parsed.detail) ?? null,
+      };
+      await input.browser.addRenderSurface(row);
       return;
     }
     if (kind === 'webrtc' || kind === 'webtransport' || kind === 'sse') {
@@ -664,13 +926,23 @@ export async function attachProtocolAgnosticCapture(
       const attachedType = stringValue(targetInfo.type) || 'other';
       if (attachedSessionId) {
         sessionTargets.set(attachedSessionId, { targetId: attachedTargetId, type: attachedType });
+        if (isWorkerTargetType(attachedType)) {
+          workerSessions.set(attachedSessionId, { url: optionalString(targetInfo.url) ?? '' });
+        }
         const openerId = optionalString(targetInfo.openerId);
+        // flatten=true 时直接子 target 的 attachedToTarget 从根会话上报，
+        // Electron message 回调没有第四个 sessionId。这时父节点就是本附件的
+        // root target；嵌套子会话则以事件所在 session 为父节点。
+        const eventParentTargetId = sessionId ? targetIdOf(sessionId) : input.rootTargetId;
+        const parentTargetId =
+          eventParentTargetId !== attachedTargetId ? eventParentTargetId : undefined;
         upsertTargetRow({
           id: attachedTargetId,
           type: mapTargetType(attachedType, openerId),
           attached: true,
           url: optionalString(targetInfo.url) ?? null,
           ...(openerId ? { openerTargetId: openerId } : {}),
+          ...(parentTargetId ? { parentTargetId } : {}),
           attachedAt: input.now(),
         });
         await enableAttachedTarget(attachedSessionId, attachedType);
@@ -681,6 +953,40 @@ export async function attachProtocolAgnosticCapture(
     if (method === 'Target.detachedFromTarget') {
       const detachedSessionId = stringValue(params.sessionId);
       const detachedTargetId = stringValue(params.targetId);
+      // Worker 会话消失：别名关联的未完成请求正文不可再读（getResponseBody 需要
+      // 该会话），强制收尾在途 hop——不是观察到的失败（loadingFailed 语义），
+      // 按未完成收尾：缺正文的 hop 由 commit 记 missingBodies 缺口（204/205/304
+      // /redirect 等明确无正文语义除外），逐条显式记账 detach 原因
+      const aliasedBaseIds = detachedSessionId ? workerSessionBaseIds.get(detachedSessionId) : undefined;
+      if (aliasedBaseIds) {
+        const inFlightIds = new Set(input.http.inFlightHops().map(hop => hop.id));
+        for (const baseId of aliasedBaseIds) {
+          const id = activeHopId(baseId);
+          if (!inFlightIds.has(id)) continue;
+          input.evidence.droppedEvent(
+            'Target.detachedFromTarget',
+            new Error(`Worker session detach，别名在途请求强制收尾：${id}`),
+          );
+          try {
+            await input.http.commit(id);
+          } catch (error) {
+            // commit 写盘失败已由 commit 记 journalWriteFailures 并 rethrow；
+            // 此处按 hop 隔离：单个失败不得中断其余 hop 收尾，也不得跳过
+            // 下方的别名/会话清理（残留别名会让死会话继续命中）
+            input.evidence.droppedEvent(
+              'Target.detachedFromTarget',
+              new Error(`detach 强制收尾 commit 失败：${id}：${errorMessage(error)}`),
+            );
+          }
+        }
+      }
+      if (detachedSessionId) {
+        workerSessions.delete(detachedSessionId);
+        workerSessionBaseIds.delete(detachedSessionId);
+        for (const scoped of [...workerRequestAliases.keys()]) {
+          if (scoped.startsWith(`${detachedSessionId}::`)) workerRequestAliases.delete(scoped);
+        }
+      }
       if (detachedSessionId && sessionTargets.has(detachedSessionId)) {
         sessionTargets.delete(detachedSessionId);
       }
@@ -697,15 +1003,32 @@ export async function attachProtocolAgnosticCapture(
       if (targetId) {
         const openerId = optionalString(targetInfo.openerId);
         const known = targetRows.get(targetId);
+        const targetUrl = optionalString(targetInfo.url) ?? null;
         upsertTargetRow({
           id: targetId,
           type: mapTargetType(stringValue(targetInfo.type) || 'other', openerId),
           attached: known?.attached ?? targetInfo.attached === true,
-          url: optionalString(targetInfo.url) ?? null,
+          url: targetUrl,
           ...(openerId ? { openerTargetId: openerId } : {}),
+          ...(known?.parentTargetId ? { parentTargetId: known.parentTargetId } : {}),
           ...(known?.attachedAt ? { attachedAt: known.attachedAt } : {}),
           ...(known?.detachReason ? { detachReason: known.detachReason } : {}),
         });
+        if (targetUrl) {
+          // Worker URL 迟到补齐（五轮 G5）：attach 时 targetInfo.url 可能为空，
+          // workerSessions 里记的还是空 URL——URL 到达时补写；若该 session 在
+          // URL 为空期间已有完成事件按未命中显式丢弃，立即补读入口脚本正文
+          for (const [workerSessionId, session] of sessionTargets) {
+            if (session.targetId !== targetId || !isWorkerTargetType(session.type)) continue;
+            const workerSession = workerSessions.get(workerSessionId);
+            if (!workerSession || workerSession.url) continue;
+            workerSessions.set(workerSessionId, { url: targetUrl });
+            if (salvagePendingWorkerSessions.has(workerSessionId)) {
+              salvagePendingWorkerSessions.delete(workerSessionId);
+              await salvageWorkerEntryScript(workerSessionId, targetUrl);
+            }
+          }
+        }
       }
       return;
     }
@@ -737,15 +1060,22 @@ export async function attachProtocolAgnosticCapture(
       const scriptId = stringValue(params.scriptId);
       if (!scriptId) return;
       const url = stringValue(params.url);
+      // 采集器通过 Runtime.evaluate / Page.addScriptToEvaluateOnNewDocument
+      // 执行的探针不是目标站点证据，不进入 scripts 索引与完整度门禁。
+      // 原始 scriptParsed 事件仍已写入 CDP journal，可离线审计。
+      if (url.startsWith(INTERNAL_SCRIPT_URL_PREFIX)) return;
       const targetId = targetIdOf(sessionId);
       const kindHint = scriptKindHint(targetTypeOf(sessionId));
       const sourceMapURL = optionalString(params.sourceMapURL);
       const scriptLanguage = stringValue(params.scriptLanguage);
+      const lengthBytes = optionalNumber(params.length);
+      const contentHash = optionalString(params.hash);
       const fetchSessionId = sessionId;
       // getScriptSource 走独立队列，避免挡住 Target.attachedToTarget / Network.enable
       enqueueSourceFetch(async () => {
         let source = '';
         let sourceBytes: Buffer | undefined;
+        let fetchFailed = false;
         try {
           const result = await awaitWithTimeout(
             loggedSend('Debugger.getScriptSource', { scriptId }, fetchSessionId),
@@ -758,9 +1088,13 @@ export async function attachProtocolAgnosticCapture(
             if (!source && bytecode) sourceBytes = Buffer.from(bytecode, 'base64');
           }
         } catch (error) {
-          // 捕获 getScriptSource 失败：WASM、已回收脚本或子会话未 enable Debugger
-          // 策略：仍登记索引，无正文（缺口由 ScriptCollector 记账）
-          void error;
+          // 捕获 getScriptSource 失败：WASM、已回收脚本（导航/文档销毁竞态，
+          // Chromium 侧丢弃，不可重读）或子会话未 enable Debugger
+          // 策略：观察尝试失败按 §3 显式记账；ScriptCollector 只有在
+          // 另一文档已成功留存完全相同的 CDP hash 正文时才补全，否则任意
+          // kind 都形成源码完整度缺口，不用 0 字节 BodyRef 冒充。
+          fetchFailed = true;
+          input.evidence.droppedEvent('Debugger.getScriptSource', error);
         }
         await input.scripts.addParsed({
           scriptId,
@@ -774,6 +1108,9 @@ export async function attachProtocolAgnosticCapture(
             Boolean(sourceBytes) ||
             /\.wasm(?:[?#]|$)/i.test(url),
           kindHint,
+          ...(fetchFailed ? { fetchFailed } : {}),
+          ...(lengthBytes !== undefined ? { lengthBytes } : {}),
+          ...(contentHash ? { contentHash } : {}),
         });
       });
       return;
@@ -888,15 +1225,27 @@ export async function attachProtocolAgnosticCapture(
         return;
       }
       const chain = hopIds(baseId);
+      // 原始 requestId 留存（五轮 G5）：Worker 入口脚本补读要在 Worker session
+      // 上用父请求的原始 requestId 调 Network.getResponseBody
+      hopRequestIds.set(baseId, requestId);
       const redirectResponse = isRecord(params.redirectResponse) ? params.redirectResponse : null;
       const redirectedFromId = redirectResponse ? chain[chain.length - 1] : undefined;
       if (redirectResponse && redirectedFromId) {
         const nextId = `${baseId}::redirect-${chain.length}`;
-        input.http.patchHop(redirectedFromId, {
+        const patched = input.http.patchHop(redirectedFromId, {
           status: numberValue(redirectResponse.status),
           responseHeaders: headersValue(redirectResponse.headers),
           redirectToId: nextId,
         });
+        if (!patched) {
+          // 前跳已 commit（detach 强制收尾 / loadingFailed 等）：302 状态/头/
+          // redirectToId 无法落盘，显式记账（无记账的静默丢弃等于编造「没有
+          // 发生过」，规范 §3）
+          input.evidence.droppedEvent(
+            method,
+            new Error(`redirectResponse 晚于 commit，状态/头/redirectToId 未落盘：${redirectedFromId}`),
+          );
+        }
         await input.http.commit(redirectedFromId);
       }
       const id = chain.length === 0 ? baseId : `${baseId}::redirect-${chain.length}`;
@@ -919,7 +1268,11 @@ export async function attachProtocolAgnosticCapture(
       const inlinePostData = stringValue(request.postData);
       if (inlinePostData) {
         const ref = await input.http.storeBody(Buffer.from(inlinePostData, 'utf8'));
-        input.http.patchHop(id, { requestBody: ref });
+        if (!input.http.patchHop(id, { requestBody: ref })) {
+          // 行已 commit（storeBody 落盘期间跨附件交错收尾）：正文已取出但无法
+          // 再关联——显式记账，不得无痕丢弃
+          input.evidence.recordGap('missingBodies', id, '请求正文晚于 commit 到达，未落进行（行已落盘）');
+        }
       } else if (request.hasPostData === true) {
         try {
           await storeRequestBody(id, requestId, sessionId);
@@ -934,14 +1287,18 @@ export async function attachProtocolAgnosticCapture(
 
     if (method === 'Network.responseReceived') {
       const requestId = stringValue(params.requestId);
-      const baseId = scopedId(requestId, sessionId);
+      const baseId = resolveNetworkBaseId(requestId, sessionId);
       if (ignored.has(baseId)) return;
       const id = activeHopId(baseId);
-      if (!input.http.has(id)) return;
+      if (!input.http.has(id)) {
+        // 未命中必须显式记账（无记账的静默丢弃等于编造「没有发生过」，规范 §3）
+        input.evidence.droppedEvent(method, new Error(`responseReceived 缺少对应 hop：${id}`));
+        return;
+      }
       const response = isRecord(params.response) ? params.response : {};
       const headers = headersValue(response.headers);
       const timingRaw = isRecord(response.timing) ? response.timing : null;
-      input.http.patchHop(id, {
+      const patched = input.http.patchHop(id, {
         status: numberValue(response.status),
         contentEncoding: headerValue(headers, 'content-encoding') ?? null,
         connectionId:
@@ -957,6 +1314,12 @@ export async function attachProtocolAgnosticCapture(
             }
           : undefined,
       });
+      if (!patched) {
+        // hop 已提交（redirect 链 / detach 强制收尾）：状态与头都无法再落盘，
+        // 显式记账（无记账的静默丢弃等于编造「没有发生过」，规范 §3）
+        input.evidence.droppedEvent(method, new Error(`responseReceived 晚于 commit，状态/头未落盘：${id}`));
+        return;
+      }
       // Chromium 事件序：responseReceivedExtraInfo 先于 responseReceived 到达，
       // Set-Cookie 只在 extraInfo 里——合并而非整包替换，extraInfo 已有的键不得丢失
       if (!input.http.mergeHopHeaders(id, { responseHeaders: headers })) {
@@ -972,7 +1335,7 @@ export async function attachProtocolAgnosticCapture(
       // Chromium 对 fetch/XHR 把 Cookie / Set-Cookie 头放在 extraInfo 事件里
       // （responseReceived.headers 缺失），必须合并进事务行，登录传播才可观察。
       const requestId = stringValue(params.requestId);
-      const baseId = scopedId(requestId, sessionId);
+      const baseId = resolveNetworkBaseId(requestId, sessionId);
       if (ignored.has(baseId)) return;
       const id = activeHopId(baseId);
       if (!input.http.has(id)) {
@@ -994,26 +1357,43 @@ export async function attachProtocolAgnosticCapture(
 
     if (method === 'Network.loadingFinished') {
       const requestId = stringValue(params.requestId);
-      const baseId = scopedId(requestId, sessionId);
+      const baseId = resolveNetworkBaseId(requestId, sessionId);
       if (ignored.has(baseId)) return;
       const id = activeHopId(baseId);
-      if (!input.http.has(id)) return;
+      if (!input.http.has(id)) {
+        input.evidence.droppedEvent(method, new Error(`loadingFinished 缺少对应 hop：${id}`));
+        return;
+      }
+      let stored = true;
       try {
-        await storeResponseBody(id, requestId, sessionId);
+        stored = await storeResponseBody(id, requestId, sessionId);
       } catch (error) {
         // 捕获响应体不可读取：缓存命中、重定向、流式资源或 CDP 生命周期限制
-        // 策略：仍提交事务行，缺 responseBody 由 commit 记 missingBodies 缺口
-        input.evidence.recordGap('missingBodies', id, `响应正文不可读取：${errorMessage(error)}`);
+        // 读失败的事实按 droppedEvent 显式记账；缺正文是否构成缺口由 commit
+        // 单点判定（204/205/304/redirect 是明确无正文语义，不作证缺失，
+        // 不在 commit 之外重复记 missingBodies）
+        input.evidence.droppedEvent(
+          'Network.getResponseBody',
+          new Error(`响应正文不可读取：${errorMessage(error)}（${id}）`),
+        );
+      }
+      if (!stored) {
+        // 正文已取出，但事务行在取正文期间已 commit（detach 强制收尾 / flush）：
+        // 字节在 BodyStore 里但行已落盘、无法再关联——显式记账，不得无痕丢弃
+        input.evidence.recordGap('missingBodies', id, '响应正文晚于 commit 到达，未落进行（行已落盘）');
       }
       await input.http.commit(id);
       return;
     }
 
     if (method === 'Network.loadingFailed') {
-      const baseId = scopedId(stringValue(params.requestId), sessionId);
+      const baseId = resolveNetworkBaseId(stringValue(params.requestId), sessionId);
       if (ignored.has(baseId)) return;
       const id = activeHopId(baseId);
-      if (!input.http.has(id)) return;
+      if (!input.http.has(id)) {
+        input.evidence.droppedEvent(method, new Error(`loadingFailed 缺少对应 hop：${id}`));
+        return;
+      }
       await input.http.commit(id, 'failed');
       return;
     }
@@ -1122,7 +1502,9 @@ export async function attachProtocolAgnosticCapture(
     await loggedSend('Debugger.enable', {});
     await loggedSend('Runtime.addBinding', { name: OBSERVER_BINDING_NAME });
     await loggedSend('Page.enable', {});
-    await loggedSend('Page.addScriptToEvaluateOnNewDocument', { source: OBSERVER_SCRIPT_SOURCE });
+    await loggedSend('Page.addScriptToEvaluateOnNewDocument', {
+      source: OBSERVER_INSTRUMENTATION_SOURCE,
+    });
     try {
       await loggedSend('Log.enable', {});
     } catch (error) {
@@ -1185,7 +1567,8 @@ export async function attachProtocolAgnosticCapture(
       }
       phase = 'closed';
     },
-    async snapshotBrowserState() {
+    async snapshotBrowserState(): Promise<BrowserStateStepOutcome> {
+      let cookiesOk = false;
       let cookies: Array<Record<string, unknown>> = [];
       try {
         // 可选 CDP 命令一律有界：渲染进程挂死时超时返回，不挂起收尾
@@ -1196,18 +1579,23 @@ export async function attachProtocolAgnosticCapture(
         );
         if (isRecord(result) && Array.isArray(result.cookies)) {
           cookies = result.cookies.filter(isRecord);
+          cookiesOk = true;
+        } else {
+          // 返回形状不符（无 cookies 数组）＝ 该步失败：记账后按空数据继续
+          input.evidence.droppedEvent('Network.getCookies', new Error('返回缺少 cookies 数组'));
         }
       } catch (error) {
         // 捕获 Cookie 快照失败：Network 域未就绪或浏览器拒绝
-        // 策略：写入空 cookies，不阻断收尾
+        // 策略：写入空 cookies，不阻断收尾；失败经步骤明细如实上报
         input.evidence.droppedEvent('Network.getCookies', error);
       }
+      let storageOk = false;
       let localStorage: Record<string, string> = {};
       let sessionStorage: Record<string, string> = {};
       try {
         const result = await awaitWithTimeout(
           loggedSend('Runtime.evaluate', {
-            expression: STORAGE_DUMP_EXPRESSION,
+            expression: STORAGE_DUMP_INSTRUMENTATION_SOURCE,
             returnByValue: true,
           }),
           OPTIONAL_CDP_TIMEOUT_MS * 10,
@@ -1217,17 +1605,21 @@ export async function attachProtocolAgnosticCapture(
         if (isRecord(remote)) {
           localStorage = stringMap(remote.localStorage);
           sessionStorage = stringMap(remote.sessionStorage);
+          storageOk = true;
+        } else {
+          input.evidence.droppedEvent('storage-dump', new Error('返回缺少 storage 映射'));
         }
       } catch (error) {
         // 捕获 Storage 快照失败：当前文档可能无法访问 storage
-        // 策略：写入空 map，不阻断收尾
+        // 策略：写入空 map，不阻断收尾；失败经步骤明细如实上报
         input.evidence.droppedEvent('storage-dump', error);
       }
+      let indexedDbOk = false;
       let indexedDb: PackV2IndexedDbEntry[] = [];
       try {
         const result = await awaitWithTimeout(
           loggedSend('Runtime.evaluate', {
-            expression: INDEXEDDB_DUMP_EXPRESSION,
+            expression: INDEXEDDB_DUMP_INSTRUMENTATION_SOURCE,
             returnByValue: true,
             awaitPromise: true,
           }),
@@ -1241,15 +1633,19 @@ export async function attachProtocolAgnosticCapture(
             objectStore: stringValue(entry.objectStore),
             record: entry.record ?? null,
           }));
+          indexedDbOk = true;
+        } else {
+          input.evidence.droppedEvent('indexeddb-dump', new Error('返回缺少 IndexedDB 条目数组'));
         }
       } catch (error) {
         input.evidence.droppedEvent('indexeddb-dump', error);
       }
+      let cacheStorageOk = false;
       let cacheStorage: PackV2CacheStorageEntry[] = [];
       try {
         const result = await awaitWithTimeout(
           loggedSend('Runtime.evaluate', {
-            expression: CACHE_STORAGE_DUMP_EXPRESSION,
+            expression: CACHE_STORAGE_DUMP_INSTRUMENTATION_SOURCE,
             returnByValue: true,
             awaitPromise: true,
           }),
@@ -1258,6 +1654,7 @@ export async function attachProtocolAgnosticCapture(
         );
         const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
         if (Array.isArray(remote)) {
+          cacheStorageOk = true;
           for (const entry of remote.filter(isRecord)) {
             const row: PackV2CacheStorageEntry = {
               origin: stringValue(entry.origin),
@@ -1269,11 +1666,16 @@ export async function attachProtocolAgnosticCapture(
               try {
                 row.responseRef = await input.browser.storeCacheBody(Buffer.from(responseB64, 'base64'));
               } catch (error) {
+                // 第五轮 G7：正文取出但落盘失败 = 步骤失败，不得伪装成
+                // 「已写入」——droppedEvent 已记账，步骤明细同步翻 false
                 input.evidence.droppedEvent('cache-body', error);
+                cacheStorageOk = false;
               }
             }
             cacheStorage.push(row);
           }
+        } else {
+          input.evidence.droppedEvent('cachestorage-dump', new Error('返回缺少 CacheStorage 条目数组'));
         }
       } catch (error) {
         input.evidence.droppedEvent('cachestorage-dump', error);
@@ -1288,32 +1690,160 @@ export async function attachProtocolAgnosticCapture(
         cacheStorage,
       });
       // Frame Tree 快照（规范 §8.4）：可选 CDP 命令一律有界，失败记账后继续
+      let frameTreeOk = false;
       try {
         const frameTreeResult = await awaitWithTimeout(
           loggedSend('Page.getFrameTree', {}),
           OPTIONAL_CDP_TIMEOUT_MS,
           'Page.getFrameTree timed out',
         );
-        const frameTree =
-          isRecord(frameTreeResult) && isRecord(frameTreeResult.frameTree)
-            ? frameTreeResult.frameTree
-            : {};
-        await input.browser.writeFrameTree({
-          targetId: input.rootTargetId,
-          capturedAt: input.now(),
-          frameTree,
-        });
+        if (isRecord(frameTreeResult) && isRecord(frameTreeResult.frameTree)) {
+          await input.browser.writeFrameTree({
+            targetId: input.rootTargetId,
+            capturedAt: input.now(),
+            frameTree: frameTreeResult.frameTree,
+          });
+          frameTreeOk = true;
+        } else {
+          // 形状不符：写空结构（诚实下限），失败经步骤明细如实上报
+          await input.browser.writeFrameTree({
+            targetId: input.rootTargetId,
+            capturedAt: input.now(),
+            frameTree: {},
+          });
+          input.evidence.droppedEvent('Page.getFrameTree', new Error('返回缺少 frameTree 结构'));
+        }
       } catch (error) {
         input.evidence.droppedEvent('Page.getFrameTree', error);
       }
-      // 收尾截图 + DOM 快照（规范 §7.4 Viewer 稳定画面）
-      await captureScreenshot(undefined, input.rootTargetId, 'stop');
-      await captureDomSnapshot(undefined, input.rootTargetId, 'stop');
+      // 收尾截图 + DOM 快照（规范 §7.4 Viewer 稳定画面）；失败不是静默步骤
+      const stopScreenshotOk = await captureScreenshot(undefined, input.rootTargetId, 'stop');
+      const domSnapshotOk = await captureDomSnapshot(undefined, input.rootTargetId, 'stop');
+      return {
+        cookies: cookiesOk,
+        storage: storageOk,
+        indexedDb: indexedDbOk,
+        cacheStorage: cacheStorageOk,
+        frameTree: frameTreeOk,
+        stopScreenshot: stopScreenshotOk,
+        domSnapshot: domSnapshotOk,
+      };
+    },
+    async snapshotAdditionalStorage() {
+      let storageOk = false;
+      let localStorage: Record<string, string> = {};
+      let sessionStorage: Record<string, string> = {};
+      try {
+        const result = await awaitWithTimeout(
+          loggedSend('Runtime.evaluate', {
+            expression: STORAGE_DUMP_INSTRUMENTATION_SOURCE,
+            returnByValue: true,
+          }),
+          OPTIONAL_CDP_TIMEOUT_MS * 10,
+          'popup Storage 快照 timed out',
+        );
+        const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
+        if (isRecord(remote)) {
+          localStorage = stringMap(remote.localStorage);
+          sessionStorage = stringMap(remote.sessionStorage);
+          storageOk = true;
+        } else {
+          input.evidence.droppedEvent('popup-storage-dump', new Error('返回缺少 storage 映射'));
+        }
+      } catch (error) {
+        input.evidence.droppedEvent('popup-storage-dump', error);
+      }
+
+      let indexedDbOk = false;
+      let indexedDb: PackV2IndexedDbEntry[] = [];
+      try {
+        const result = await awaitWithTimeout(
+          loggedSend('Runtime.evaluate', {
+            expression: INDEXEDDB_DUMP_INSTRUMENTATION_SOURCE,
+            returnByValue: true,
+            awaitPromise: true,
+          }),
+          OPTIONAL_CDP_TIMEOUT_MS * 10,
+          'popup IndexedDB 枚举 timed out',
+        );
+        const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
+        if (Array.isArray(remote)) {
+          indexedDb = remote.filter(isRecord).map(entry => ({
+            database: stringValue(entry.database),
+            objectStore: stringValue(entry.objectStore),
+            record: entry.record ?? null,
+          }));
+          indexedDbOk = true;
+        } else {
+          input.evidence.droppedEvent('popup-indexeddb-dump', new Error('返回缺少 IndexedDB 条目数组'));
+        }
+      } catch (error) {
+        input.evidence.droppedEvent('popup-indexeddb-dump', error);
+      }
+
+      let cacheStorageOk = false;
+      const cacheStorage: PackV2CacheStorageEntry[] = [];
+      try {
+        const result = await awaitWithTimeout(
+          loggedSend('Runtime.evaluate', {
+            expression: CACHE_STORAGE_DUMP_INSTRUMENTATION_SOURCE,
+            returnByValue: true,
+            awaitPromise: true,
+          }),
+          OPTIONAL_CDP_TIMEOUT_MS * 10,
+          'popup CacheStorage 枚举 timed out',
+        );
+        const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
+        if (Array.isArray(remote)) {
+          cacheStorageOk = true;
+          for (const entry of remote.filter(isRecord)) {
+            const row: PackV2CacheStorageEntry = {
+              origin: stringValue(entry.origin),
+              cacheName: stringValue(entry.cacheName),
+              requestUrl: stringValue(entry.requestUrl),
+            };
+            const responseB64 = stringValue(entry.responseB64);
+            if (responseB64) {
+              try {
+                row.responseRef = await input.browser.storeCacheBody(Buffer.from(responseB64, 'base64'));
+              } catch (error) {
+                input.evidence.droppedEvent('popup-cache-body', error);
+                cacheStorageOk = false;
+              }
+            }
+            cacheStorage.push(row);
+          }
+        } else {
+          input.evidence.droppedEvent(
+            'popup-cachestorage-dump',
+            new Error('返回缺少 CacheStorage 条目数组'),
+          );
+        }
+      } catch (error) {
+        input.evidence.droppedEvent('popup-cachestorage-dump', error);
+      }
+
+      try {
+        await input.browser.addStorageContext({
+          targetId: input.rootTargetId,
+          capturedAt: input.now(),
+          localStorage,
+          sessionStorage,
+          indexedDb,
+          cacheStorage,
+        });
+      } catch (error) {
+        input.evidence.droppedEvent('popup-storage-write', error);
+        storageOk = false;
+        indexedDbOk = false;
+        cacheStorageOk = false;
+      }
+      return { storage: storageOk, indexedDb: indexedDbOk, cacheStorage: cacheStorageOk };
     },
     async collectPageEnvironment() {
       try {
         const result = await loggedSend('Runtime.evaluate', {
-          expression: ENVIRONMENT_EXPRESSION,
+          expression: ENVIRONMENT_INSTRUMENTATION_SOURCE,
           returnByValue: true,
         });
         const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
@@ -1328,6 +1858,14 @@ export async function attachProtocolAgnosticCapture(
         input.evidence.droppedEvent('page-environment', error);
         return null;
       }
+    },
+    async capturePhaseScreenshot(label) {
+      return captureScreenshot(undefined, input.rootTargetId, label);
+    },
+    async snapshotFinalSurfaces() {
+      const stopScreenshot = await captureScreenshot(undefined, input.rootTargetId, 'stop');
+      const domSnapshot = await captureDomSnapshot(undefined, input.rootTargetId, 'stop');
+      return { stopScreenshot, domSnapshot };
     },
     targets() {
       return [...targetRows.values()];

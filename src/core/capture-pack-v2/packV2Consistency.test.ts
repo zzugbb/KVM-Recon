@@ -135,6 +135,23 @@ describe('validatePackV2Consistency（独立一致性验证器）', () => {
     expect(codesOf(mutated)).toContain('GATE_FAILED_WITH_COMPLETE');
   }, 30000);
 
+  it('COMPLETE 包的脚本索引缺 bodyRef → STATUS_MISMATCH', async () => {
+    const sample = await createSampleCapturePackV2();
+    const scripts = JSON.parse(
+      String(sample.artifacts.find(artifact => artifact.path === 'raw/scripts/index.json')!.content),
+    ) as { scripts: Array<Record<string, unknown>> };
+    expect(scripts.scripts.length).toBeGreaterThan(0);
+    delete scripts.scripts[0].bodyRef;
+    const mutated = withRecomputedChecksums(
+      withArtifact(
+        sample.artifacts,
+        'raw/scripts/index.json',
+        `${JSON.stringify(scripts, null, 2)}\n`,
+      ),
+    );
+    expect(codesOf(mutated)).toContain('STATUS_MISMATCH');
+  }, 30000);
+
   it('门禁数量不是 10 → GATE_COUNT_INVALID', async () => {
     const sample = await createSampleCapturePackV2();
     const integrity = JSON.parse(
@@ -235,9 +252,36 @@ describe('validatePackV2Consistency（独立一致性验证器）', () => {
   it('COMPLETE 包只有一张截图 → MISSING_VIEWER_SCREENSHOTS', async () => {
     const sample = await createSampleCapturePackV2();
     const mutated = withRecomputedChecksums(
-      sample.artifacts.filter(artifact => artifact.path !== 'raw/browser/screenshots/viewer-stable.png'),
+      sample.artifacts.filter(artifact => artifact.path !== 'raw/browser/screenshots/0002-stop.png'),
     );
     expect(codesOf(mutated)).toContain('MISSING_VIEWER_SCREENSHOTS');
+  }, 30000);
+
+  // 第五轮 G3 反例：登录 / 导航点截图不得冒充 Viewer 阶段截图——只有
+  // viewer-initial（检测到 Viewer 活动时）与 stop（收尾时）标签算阶段截图。
+  it('COMPLETE 包两张截图都是导航点截图（无 viewer-initial / stop 标签）→ MISSING_VIEWER_SCREENSHOTS', async () => {
+    const sample = await createSampleCapturePackV2();
+    const mutated = withRecomputedChecksums(
+      sample.artifacts.map(artifact => {
+        if (artifact.path === 'raw/browser/screenshots/0001-viewer-initial.png') {
+          return { ...artifact, path: 'raw/browser/screenshots/0001-http-bmc-test-login.png' };
+        }
+        if (artifact.path === 'raw/browser/screenshots/0002-stop.png') {
+          return { ...artifact, path: 'raw/browser/screenshots/0002-http-bmc-test-console.png' };
+        }
+        return artifact;
+      }),
+    );
+    // 时间行的 detail 同步改成导航点路径（截图与时间线一致，只差阶段标签）
+    const timelineText = String(
+      mutated.find(artifact => artifact.path === 'raw/browser/timeline.jsonl')!.content,
+    )
+      .replace(/raw\/browser\/screenshots\/0001-viewer-initial\.png/g, 'raw/browser/screenshots/0001-http-bmc-test-login.png')
+      .replace(/raw\/browser\/screenshots\/0002-stop\.png/g, 'raw/browser/screenshots/0002-http-bmc-test-console.png');
+    const withTimeline = withRecomputedChecksums(
+      withArtifact(mutated, 'raw/browser/timeline.jsonl', timelineText),
+    );
+    expect(codesOf(withTimeline)).toContain('MISSING_VIEWER_SCREENSHOTS');
   }, 30000);
 
   it('WebSocket 通道缺 payloadPath → CHANNEL_FILE_MISSING', async () => {

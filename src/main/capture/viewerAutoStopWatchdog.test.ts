@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   PackV2BrowserActionRow,
   PackV2ChannelRow,
+  PackV2RenderSurfaceRow,
   PackV2TargetRow,
 } from '../../core/capture-pack-v2/types';
 import type { WorkflowFacts, WorkflowNavigationFact } from '../../core/collector/workflowStatusEngine';
@@ -61,6 +62,17 @@ function nav(overrides: Partial<WorkflowNavigationFact> = {}): WorkflowNavigatio
   return { occurredAt: at(2_000), targetId: 'target-root', url: 'http://bmc.test/viewer', ...overrides };
 }
 
+function renderSurface(overrides: Partial<PackV2RenderSurfaceRow> = {}): PackV2RenderSurfaceRow {
+  return {
+    id: 'render-0001',
+    occurredAt: at(2_500),
+    targetId: 'target-root',
+    surface: 'canvas-context',
+    detail: '2d',
+    ...overrides,
+  };
+}
+
 function viewerFacts(overrides: Partial<WorkflowFacts> = {}): WorkflowFacts {
   return {
     transactions: [],
@@ -68,6 +80,7 @@ function viewerFacts(overrides: Partial<WorkflowFacts> = {}): WorkflowFacts {
     targets: [],
     channels: [channel({ id: 'ws-1' })],
     navigations: [nav()],
+    renderSurfaces: [renderSurface()],
     hookFailures: [],
     ...overrides,
   };
@@ -75,20 +88,30 @@ function viewerFacts(overrides: Partial<WorkflowFacts> = {}): WorkflowFacts {
 
 function setupDeps(initial: WorkflowFacts) {
   let current = initial;
+  let pending: Array<{ id: string; url: string }> = [];
   const getFacts = vi.fn(() => current);
   const recordDiagnostic = vi.fn();
   const autoStop = vi.fn();
+  const captureViewerInitialState = vi.fn<
+    (targetId: string) => boolean | Promise<boolean>
+  >((_targetId: string) => true);
   return {
     getFacts,
     recordDiagnostic,
     autoStop,
+    captureViewerInitialState,
     setFacts(next: WorkflowFacts) {
       current = next;
+    },
+    setPending(next: Array<{ id: string; url: string }>) {
+      pending = next;
     },
     deps: {
       getFacts: () => getFacts(),
       now: () => Date.now(),
       recordDiagnostic: (kind: string, detail: string) => recordDiagnostic(kind, detail),
+      pendingNonStreamingRequests: () => pending,
+      captureViewerInitialState: (targetId: string) => captureViewerInitialState(targetId),
       autoStop: () => autoStop(),
     },
   };
@@ -158,6 +181,7 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
       targets: [target({ id: 'target-root' })],
       channels: [],
       navigations: [nav()],
+      renderSurfaces: [],
       hookFailures: [],
     });
     const watchdog = createViewerAutoStopWatchdog(harness.deps);
@@ -245,6 +269,126 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     expect(harness.recordDiagnostic).toHaveBeenCalledWith(
       'viewer-auto-stop-failed',
       expect.stringContaining('同步抛错'),
+    );
+  });
+
+  // 第五轮 G2（规范 §7.4「非持续响应正文全部落盘」）：稳定窗口静默通过但
+  // 仍有在途非持续 HTTP 请求时不得自动收尾——stop 会把未完成请求按
+  // 'unfinished' 提交并记 missingBodies 缺口，等于把「还在落盘」错记成
+  // 「应有而未有」；必须推迟到在途请求完成。
+  it('稳定窗口通过但在途非持续 HTTP 未完成：推迟自动收尾，落盘后立即收尾', () => {
+    const harness = setupDeps(viewerFacts());
+    harness.setPending([{ id: 'req-1', url: 'http://bmc.test/api/session' }]);
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+
+    vi.advanceTimersByTime(
+      VIEWER_POLL_INTERVAL_MS + VIEWER_STABLE_WINDOW_MS + VIEWER_POLL_INTERVAL_MS,
+    );
+    expect(harness.autoStop).not.toHaveBeenCalled();
+    expect(harness.recordDiagnostic).toHaveBeenCalledWith(
+      'viewer-auto-stop-deferred',
+      expect.stringContaining('http://bmc.test/api/session'),
+    );
+
+    // 在途请求完成（pending 清空）→ 下一轮轮询立即收尾，无需重新等待稳定窗口
+    harness.setPending([]);
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.autoStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('推迟诊断有界：pending 计数不变不重复记，计数变化再记一次', () => {
+    const harness = setupDeps(viewerFacts());
+    harness.setPending([{ id: 'req-1', url: 'http://bmc.test/api/session' }]);
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+
+    vi.advanceTimersByTime(
+      VIEWER_POLL_INTERVAL_MS + VIEWER_STABLE_WINDOW_MS + VIEWER_POLL_INTERVAL_MS * 3,
+    );
+    const deferredCalls = harness.recordDiagnostic.mock.calls.filter(
+      call => call[0] === 'viewer-auto-stop-deferred',
+    );
+    expect(deferredCalls).toHaveLength(1);
+
+    // 计数变化（第二个在途请求）→ 再记一次
+    harness.setPending([
+      { id: 'req-1', url: 'http://bmc.test/api/session' },
+      { id: 'req-2', url: 'http://bmc.test/api/status' },
+    ]);
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    const deferredCallsAfter = harness.recordDiagnostic.mock.calls.filter(
+      call => call[0] === 'viewer-auto-stop-deferred',
+    );
+    expect(deferredCallsAfter).toHaveLength(2);
+    expect(harness.autoStop).not.toHaveBeenCalled();
+  });
+
+  // 第五轮 G3（规范 §7.4「至少完成 Viewer 初始与稳定阶段截图」）：检测到
+  // Viewer 活动时对 viewer target 补 viewer-initial 阶段截图；同一 target
+  // 只截一次（每轮轮询重复检测不得重复截图）。
+  it('检出 Viewer 活动 → 对 viewer target 补 viewer-initial 阶段截图，同 target 只截一次', () => {
+    const harness = setupDeps(viewerFacts());
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.captureViewerInitialState).toHaveBeenCalledTimes(1);
+    expect(harness.captureViewerInitialState).toHaveBeenCalledWith('target-root');
+
+    // 后续轮询重复检出同一 viewer target：不重复截图
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS * 3);
+    expect(harness.captureViewerInitialState).toHaveBeenCalledTimes(1);
+  });
+
+  it('viewer-initial 截图失败：只记诊断，不中断检测与后续自动收尾', async () => {
+    const harness = setupDeps(viewerFacts());
+    harness.captureViewerInitialState.mockImplementation(() =>
+      Promise.reject(new Error('截图超时（模拟）')),
+    );
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+
+    await vi.advanceTimersByTimeAsync(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.recordDiagnostic).toHaveBeenCalledWith(
+      'viewer-initial-screenshot-failed',
+      expect.stringContaining('截图超时'),
+    );
+    // 识别 / 收尾照常：稳定窗口静默通过后仍自动收尾
+    await vi.advanceTimersByTimeAsync(VIEWER_STABLE_WINDOW_MS + VIEWER_POLL_INTERVAL_MS);
+    expect(harness.autoStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('viewer-initial 截图仍在执行时不先 stop；落盘完成后下一轮才收尾', async () => {
+    const harness = setupDeps(viewerFacts());
+    let release!: (captured: boolean) => void;
+    harness.captureViewerInitialState.mockImplementation(
+      () => new Promise<boolean>(resolve => {
+        release = resolve;
+      }),
+    );
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+
+    await vi.advanceTimersByTimeAsync(
+      VIEWER_STABLE_WINDOW_MS + VIEWER_POLL_INTERVAL_MS * 2,
+    );
+    expect(harness.autoStop).not.toHaveBeenCalled();
+    release(true);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.autoStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('viewer-initial 同步返回 false 时显式记失败诊断', async () => {
+    const harness = setupDeps(viewerFacts());
+    harness.captureViewerInitialState.mockImplementation(() => false);
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+    await vi.advanceTimersByTimeAsync(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.recordDiagnostic).toHaveBeenCalledWith(
+      'viewer-initial-screenshot-failed',
+      expect.stringContaining('返回失败'),
     );
   });
 });

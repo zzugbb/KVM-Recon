@@ -7,7 +7,7 @@
 > 上级 `schema/` 目录中的 1.x Schema 保持不动，用于校验旧现场包与已发布格式；
 > 不要在本目录原地改写 1.x 文件。
 
-本目录是 Capture Pack 2.0 的独立 JSON Schema（30 个），方便出机房后用任意校验器核对 zip 内文件。
+本目录是 Capture Pack 2.0 的独立 JSON Schema（33 个），方便出机房后用任意校验器核对 zip 内文件。
 权威规范是 `docs/v0.3-development-spec.md`；类型契约是 `src/core/capture-pack-v2/types.ts`。
 Schema 与类型冲突时，以规范与类型为准，并立即回改本目录。`packV2Consistency.ts`
 导出时会按包内 `schema/` 副本对全部结构化文件执行 Schema 自校验（规范 §14 条件 10），
@@ -45,8 +45,11 @@ Schema 与类型冲突时，以规范与类型为准，并立即回改本目录�
 | `runtime-crypto.schema.json` | `raw/runtime/crypto.jsonl` 的每一行 |
 | `browser-timeline-event.schema.json` | `raw/browser/timeline.jsonl` 的每一行 |
 | `browser-action.schema.json` | `raw/browser/actions.jsonl` 的每一行 |
+| `browser-render-surface.schema.json` | `raw/browser/render-surfaces.jsonl` 的每一行 |
 | `browser-storage.schema.json` | `raw/browser/storage.json` |
+| `browser-frame-tree.schema.json` | `raw/browser/frame-tree.json` |
 | `browser-console-entry.schema.json` | `raw/browser/console.jsonl` 的每一行 |
+| `controller-diagnostic.schema.json` | `raw/controller/diagnostics.jsonl` 的每一行 |
 | `scripts-index.schema.json` | `raw/scripts/index.json` |
 | `replay-manifest.schema.json` | `replay/manifest.json` |
 | `replay-request.schema.json` | `replay/http.jsonl` 的每一行 |

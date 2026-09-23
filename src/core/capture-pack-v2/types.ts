@@ -170,6 +170,10 @@ export interface PackIntegrityEvidenceSummary {
   unsupportedChannels: IntegrityEvidenceGap[];
   /** journal 行（事务 / 资源索引）写入磁盘失败的证据（缺口持久记账，§3）。 */
   journalWriteFailures: IntegrityEvidenceGap[];
+  /** 浏览器状态快照失败步骤（第 12 轮阻断 4：失败不得伪装成已写入）。 */
+  browserStateGaps: IntegrityEvidenceGap[];
+  /** 证据图派生 / 写盘失败步骤（第 12 轮阻断 5：失败不得伪装成已闭环）。 */
+  evidenceGraphFailures: IntegrityEvidenceGap[];
   /** ZIP 重开校验失败项（条件 10）。 */
   exportValidationFailures: IntegrityEvidenceGap[];
   workflowStatus: WorkflowStatus;
@@ -714,6 +718,28 @@ export interface PackV2BrowserActionRow {
   url?: string;
 }
 
+/** 新建渲染/执行表面种类（§7.3 第 2 组事实；页面观察脚本上报）。 */
+export type RenderSurfaceKind =
+  | 'canvas'
+  | 'video'
+  | 'offscreencanvas'
+  | 'canvas-context'
+  | 'worker'
+  | 'shared-worker'
+  | 'request-animation-frame';
+
+/** raw/browser/render-surfaces.jsonl 每行：动作后血缘内新建的 Canvas / Video /
+ * Worker / 持续渲染表面（§7.3 KVM 判定的第 2 组事实，第五轮 G1）。 */
+export interface PackV2RenderSurfaceRow {
+  /** 稳定表面事件 ID（render-0001…）。 */
+  id: string;
+  occurredAt: string;
+  targetId: string;
+  surface: RenderSurfaceKind;
+  /** 表面细节（contextType / Worker 脚本 URL / rAF 回调序号等）。 */
+  detail: string | null;
+}
+
 /** IndexedDB 适配相关记录（规范 §8.4）。 */
 export interface PackV2IndexedDbEntry {
   database: string;
@@ -729,6 +755,18 @@ export interface PackV2CacheStorageEntry {
   responseRef?: PackV2BodyRef;
 }
 
+/** 单个页面根上下文的 Storage 快照。sessionStorage 按 browsing context 隔离，
+ * popup 不能由主窗口快照代替；localStorage/IndexedDB/CacheStorage 即使同源
+ * 重复也保留各根实际观察结果。 */
+export interface PackV2BrowserStorageContext {
+  targetId: string;
+  capturedAt: string;
+  localStorage: Record<string, string>;
+  sessionStorage: Record<string, string>;
+  indexedDb: PackV2IndexedDbEntry[];
+  cacheStorage: PackV2CacheStorageEntry[];
+}
+
 export interface PackV2BrowserStorageFile {
   schemaVersion: typeof PACK_V2_SCHEMA_VERSION;
   targetId: string;
@@ -738,6 +776,8 @@ export interface PackV2BrowserStorageFile {
   sessionStorage: Record<string, string>;
   indexedDb: PackV2IndexedDbEntry[];
   cacheStorage: PackV2CacheStorageEntry[];
+  /** 主根之外的 popup/独立窗口上下文；旧 2.0 包可不含此字段。 */
+  additionalContexts?: PackV2BrowserStorageContext[];
 }
 
 /** raw/browser/frame-tree.json：收尾时 Page.getFrameTree 的原始 Frame Tree（规范 §8.4）。 */
@@ -761,7 +801,9 @@ export type ControllerDiagnosticKind =
   | 'viewer-activity-detected'
   | 'viewer-activity-error'
   | 'viewer-auto-stop'
-  | 'viewer-auto-stop-failed';
+  | 'viewer-auto-stop-deferred'
+  | 'viewer-auto-stop-failed'
+  | 'viewer-initial-screenshot-failed';
 
 /** raw/controller/diagnostics.jsonl 每行：Controller 层采集过程事实（规范 §8.4，含证书错误）。 */
 export interface PackV2ControllerDiagnosticRow {
@@ -802,6 +844,10 @@ export interface PackV2ScriptEntry {
   /** 创建者（父 target 或引者请求）。 */
   createdBy?: string;
   bodyRef?: PackV2BodyRef;
+  /** CDP Debugger.scriptParsed.hash；用于跨文档相同源码的严格去重补全。 */
+  contentHash?: string;
+  /** CDP Debugger.scriptParsed.length（字符长度，0 表示真实空脚本）。 */
+  sourceLength?: number;
   sourceMapPath?: string;
 }
 

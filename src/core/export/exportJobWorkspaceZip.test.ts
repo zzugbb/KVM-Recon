@@ -51,6 +51,8 @@ function evidenceSummary(workflowStatus: PackIntegrityEvidenceSummary['workflowS
     channelGaps: [],
     unsupportedChannels: [],
     journalWriteFailures: [],
+    browserStateGaps: [],
+    evidenceGraphFailures: [],
     exportValidationFailures: [],
     workflowStatus,
   };
@@ -132,8 +134,8 @@ describe('exportJobWorkspaceZip（阶段 2 完整包装配导出）', () => {
     });
 
     expect(result.export.zipBytes).toBeGreaterThan(0);
-    // 22 个 workspace 工件 + 12 个派生文件 + 32 个 schema 副本 + checksums.sha256
-    expect(result.export.entryCount).toBe(22 + 12 + 32 + 1);
+    // 22 个 workspace 工件 + 12 个派生文件 + 33 个 schema 副本 + checksums.sha256
+    expect(result.export.entryCount).toBe(22 + 12 + 33 + 1);
     expect(result.status.captureIntegrity).toBe('INCOMPLETE');
     expect(result.derived.reasons).toContain('INCOMPLETE_WORKFLOW_NOT_REACHED');
     expect(result.fileName).toMatch(/^KVM-Recon_\d{8}-\d{6}_127-0-0-1_TARGET-OPENED_INCOMPLETE_[0-9a-f]{6}\.zip$/);
@@ -153,7 +155,7 @@ describe('exportJobWorkspaceZip（阶段 2 完整包装配导出）', () => {
       zipPath,
       assembly: assemblyInput(),
     });
-    expect(result.export.entryCount).toBe(22 + 1 + 12 + 32 + 1);
+    expect(result.export.entryCount).toBe(22 + 1 + 12 + 33 + 1);
     expect(parseChecksumsManifest(result.export.checksums).has('raw/browser/dom-snapshots/0002-viewer.html')).toBe(true);
     await verifyPackV2Zip(zipPath, expectedEntries(result.export.checksums));
     await workspace.close();

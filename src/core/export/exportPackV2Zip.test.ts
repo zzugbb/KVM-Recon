@@ -137,7 +137,7 @@ describe('compressionForZipPath', () => {
     expect(compressionForZipPath('manifest.json')).toBe('deflate');
     expect(compressionForZipPath('raw/http/transactions.jsonl')).toBe('deflate');
     expect(compressionForZipPath('report.html')).toBe('deflate');
-    expect(compressionForZipPath('raw/browser/screenshots/viewer-initial.png')).toBe('store');
+    expect(compressionForZipPath('raw/browser/screenshots/0001-viewer-initial.png')).toBe('store');
     expect(compressionForZipPath('raw/http/bodies/abc123')).toBe('store');
     expect(compressionForZipPath('raw/websocket/ws-0001/frames.bin')).toBe('store');
     expect(compressionForZipPath('dir.d/edge')).toBe('store');
@@ -180,7 +180,7 @@ describe('exportPackV2Zip（流式导出）', () => {
     await exportPackV2Zip({ zipPath, artifacts: await sampleBytesArtifacts() });
     const methods = await zipCompressionMethods(zipPath);
     expect(methods.get('ai/index.json')).toBe(8);
-    expect(methods.get('raw/browser/screenshots/viewer-stable.png')).toBe(0);
+    expect(methods.get('raw/browser/screenshots/0002-stop.png')).toBe(0);
     const bodyPath = [...methods.keys()].find(path =>
       /^raw\/http\/bodies\/[0-9a-f]{64}$/.test(path),
     );

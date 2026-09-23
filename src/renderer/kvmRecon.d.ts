@@ -27,12 +27,18 @@ interface CaptureExportInfo {
 }
 
 interface RecoveryNotice {
-  kind: 'exported' | 'refused' | 'failed';
+  kind: 'recovered' | 'exported' | 'refused' | 'failed';
   jobId?: string;
   zipPath?: string;
   reason?: string;
   error?: string;
   conservative?: boolean;
+  /** 待导出恢复作业的信息（kind=recovered）：导出由用户在恢复卡上手动触发。 */
+  workflowStatus?: string;
+  targetUrl?: string;
+  deviceLabel?: string;
+  /** 本次导出的实际完整度（kind=exported）：照实显示，不得硬编码 INCOMPLETE。 */
+  captureIntegrity?: string;
 }
 
 type IpcError = { ok: false; error: string };
@@ -61,6 +67,7 @@ declare global {
       getCaptureStatus(): Promise<StatusResult>;
       stopCapture(): Promise<StatusResult>;
       exportCapture(zipDir?: string): Promise<StatusResult>;
+      exportRecoveredCapture(zipDir?: string): Promise<StatusResult>;
       discardCapture(): Promise<StatusResult>;
     };
   }

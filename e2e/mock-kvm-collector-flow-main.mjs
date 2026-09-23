@@ -98,6 +98,8 @@ async function run() {
     const watchdog = createViewerAutoStopWatchdog({
       getFacts: () => session.workflowFacts(),
       now: () => Date.now(),
+      pendingNonStreamingRequests: () => session.pendingNonStreamingRequests(),
+      captureViewerInitialState: targetId => session.captureViewerInitialScreenshot(targetId),
       recordDiagnostic: (kind, detail) => {
         console.log(`[mock-kvm-collector-flow] viewer-watchdog ${kind}: ${detail}`);
       },
@@ -531,10 +533,23 @@ async function run() {
       },
     });
     if (exportResult.status.captureIntegrity !== 'COMPLETE') {
+      const scriptIndexForDiagnostics = JSON.parse(
+        await readFile(join(dir, 'raw/scripts/index.json'), 'utf8'),
+      );
       console.error('[mock-kvm-collector-flow] 完整度诊断：', JSON.stringify({
         reasons: exportResult.derived.reasons,
         gates: (exportResult.derived.gates || []).map(gate => `${gate.id}:${gate.passed ? 'pass' : 'FAIL'}`),
         workflowStatus: exportResult.status.workflowStatus,
+        missingScripts: (scriptIndexForDiagnostics.scripts || [])
+          .filter(script => !script.bodyRef)
+          .map(script => ({
+            id: script.id,
+            kind: script.kind,
+            url: script.url,
+            contentHash: script.contentHash,
+            sourceLength: script.sourceLength,
+          })),
+        missingWorkerSources: session.integrityEvidence().missingWorkerSources,
       }));
       throw new Error(
         `导出包完整度 ${exportResult.status.captureIntegrity}（期望 COMPLETE）：${(exportResult.derived.reasons || []).join(', ')}`,

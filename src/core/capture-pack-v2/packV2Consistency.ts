@@ -127,6 +127,16 @@ const STATUS_FILES = [
   'ai/missing-evidence.json',
 ];
 const CHECKSUM_FILE = 'checksums.sha256';
+
+/**
+ * 截图阶段标签（第五轮 G3）：截图文件名 = raw/browser/screenshots/<seq>-<label>.png，
+ * 标签 = 文件名去掉 .png 后再去掉前导序号前缀；viewer-initial 与 stop 是仅有的
+ * 阶段截图标签（登录 / 导航等过程截图不得计入 §7.4 阶段截图条件）。
+ */
+function screenshotLabelOf(path: string): string {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  return base.replace(/\.png$/, '').replace(/^\d+-/, '');
+}
 /** 包内 Schema 副本必须使用的 $id 前缀；$id 与文件名一一对应，否则视为 Schema 被篡改。 */
 export const SCHEMA_ID_PREFIX = 'https://kvm-recon.local/schema/2.0';
 
@@ -159,6 +169,7 @@ const SCHEMA_TARGETS: ReadonlyArray<{
   { path: 'raw/runtime/crypto.jsonl', schema: 'runtime-crypto.schema.json', jsonl: true },
   { path: 'raw/browser/timeline.jsonl', schema: 'browser-timeline-event.schema.json', jsonl: true },
   { path: 'raw/browser/actions.jsonl', schema: 'browser-action.schema.json', jsonl: true },
+  { path: 'raw/browser/render-surfaces.jsonl', schema: 'browser-render-surface.schema.json', jsonl: true },
   { path: 'raw/browser/targets.json', schema: 'targets.schema.json', jsonl: false },
   { path: 'raw/browser/storage.json', schema: 'browser-storage.schema.json', jsonl: false },
   { path: 'raw/browser/console.jsonl', schema: 'browser-console-entry.schema.json', jsonl: true },
@@ -336,10 +347,25 @@ export function validatePackV2Consistency(
     checkBodyRef(script.bodyRef, `脚本 ${script.id}`, 'DANGLING_SCRIPT_REF');
   }
   const storage = jsonOf('raw/browser/storage.json') as
-    | { cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }> }
+    | {
+        cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+        additionalContexts?: Array<{
+          targetId: string;
+          cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+        }>;
+      }
     | undefined;
   for (const [index, entry] of (storage?.cacheStorage || []).entries()) {
     checkBodyRef(entry.responseRef, `CacheStorage[${index}] ${entry.requestUrl}`, 'DANGLING_BODY_REF');
+  }
+  for (const context of storage?.additionalContexts || []) {
+    for (const [index, entry] of (context.cacheStorage || []).entries()) {
+      checkBodyRef(
+        entry.responseRef,
+        `Storage 上下文 ${context.targetId} CacheStorage[${index}] ${entry.requestUrl}`,
+        'DANGLING_BODY_REF',
+      );
+    }
   }
   // 运行时 crypto 调用的输入输出（规范 §8.6）。
   const cryptoRows = jsonlOf('raw/runtime/crypto.jsonl') as Array<{
@@ -976,11 +1002,29 @@ export function validatePackV2Consistency(
             'integrity.json',
           );
         }
-        // COMPLETE 必须有 Viewer 初始 + 稳定双截图（规范 §7.4 / §14 条件 8）。
-        if (screenshotPaths.length < 2) {
+        const scriptsWithoutBodies = (scriptIndex?.scripts || []).filter(script => !script.bodyRef);
+        if (scriptsWithoutBodies.length > 0) {
+          add(
+            'STATUS_MISMATCH',
+            `COMPLETE 包存在未留存源码的脚本：${scriptsWithoutBodies
+              .slice(0, 10)
+              .map(script => script.id)
+              .join(', ')}`,
+            'raw/scripts/index.json',
+          );
+        }
+        // COMPLETE 必须有 Viewer 初始 + 稳定双截图（规范 §7.4 / §14 条件 8；
+        // 第五轮 G3：按阶段标签判定，登录 / 导航等过程截图不再误计为阶段
+        // 截图——文件名 = <seq>-<label>.png，viewer-initial 与 stop 是仅有的
+        // 阶段截图标签）。
+        const viewerInitialShots = screenshotPaths.filter(
+          path => screenshotLabelOf(path) === 'viewer-initial',
+        );
+        const stopShots = screenshotPaths.filter(path => screenshotLabelOf(path) === 'stop');
+        if (viewerInitialShots.length === 0 || stopShots.length === 0) {
           add(
             'MISSING_VIEWER_SCREENSHOTS',
-            `COMPLETE 包需要 Viewer 初始与稳定阶段截图（至少 2 张），实际 ${screenshotPaths.length} 张`,
+            `COMPLETE 包需要带 viewer-initial 与 stop 阶段标签的截图各至少 1 张，实际 viewer-initial ${viewerInitialShots.length} 张 / stop ${stopShots.length} 张`,
           );
         }
       } else if (integrity.captureIntegrity === 'INCOMPLETE') {

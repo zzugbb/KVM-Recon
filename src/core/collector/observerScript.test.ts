@@ -261,6 +261,71 @@ function installObserver(
   return { sandbox, reports };
 }
 
+/**
+ * render-surface 钩子（五轮 G1）沙箱假件：document.createElement /
+ * HTMLCanvasElement.prototype.getContext / Worker / SharedWorker /
+ * requestAnimationFrame 均为最小假件，验证包装中立性与上报。
+ * 假件类每次调用新建（prototype 独立）：观察脚本会 defineProperty 到
+ * Host prototype 上，跨测试共享类会把上一个沙箱的包装闭包漏进来。
+ */
+function installRenderSurfaceObserver() {
+  const reports: Array<Record<string, unknown>> = [];
+  class FakeHTMLCanvasElement {
+    private reportedContexts = new Set<string>();
+    getContext(contextId: string): unknown {
+      // 模拟 DOM：同一 canvas 上再取相同 context 的典型结果是 null
+      if (this.reportedContexts.has(contextId)) return null;
+      this.reportedContexts.add(contextId);
+      return { contextId };
+    }
+  }
+  class FakeVideoElement {
+    tagName = 'VIDEO';
+  }
+  class FakeDivElement {
+    tagName = 'DIV';
+  }
+  class FakeWorker {
+    constructor(public scriptUrl: string) {}
+    postMessage(): void {}
+  }
+  class FakeSharedWorker {
+    port = {};
+    constructor(public scriptUrl: string) {}
+  }
+  let rafHandle = 0;
+  const sandbox: Record<string, unknown> = {
+    btoa: (text: string) => Buffer.from(text, 'binary').toString('base64'),
+    unescape,
+    location: { href: 'https://bmc.test/viewer' },
+    document: {
+      addEventListener(): void {},
+      createElement(tagName: string) {
+        const tag = String(tagName).toLowerCase();
+        if (tag === 'canvas') return new FakeHTMLCanvasElement();
+        if (tag === 'video') return new FakeVideoElement();
+        return new FakeDivElement();
+      },
+    },
+    HTMLCanvasElement: FakeHTMLCanvasElement,
+    Worker: FakeWorker,
+    SharedWorker: FakeSharedWorker,
+    crypto: { subtle: {} },
+    requestAnimationFrame(callback: (timestamp: number) => unknown): number {
+      rafHandle += 1;
+      // 同步触发回调（vm 沙箱内无法 await 宿主微任务队列，假件直接调用）
+      callback(16.7);
+      return rafHandle;
+    },
+    [OBSERVER_BINDING_NAME]: (payload: string) => {
+      reports.push(JSON.parse(payload) as Record<string, unknown>);
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(OBSERVER_SCRIPT_SOURCE, sandbox);
+  return { sandbox, reports, FakeWorker, FakeSharedWorker };
+}
+
 describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () => {
   it('SSE onmessage 赋值后页面回调仍被调用，且证据照常上报', () => {
     const { sandbox } = installObserver();
@@ -597,5 +662,102 @@ describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () 
       report => report.kind === 'sse' && report.eventKind === 'closed',
     );
     expect(closedReports).toHaveLength(1);
+  });
+
+  it('render-surface：new Worker 原生实例保真（instanceof）+ 构造事实上报（五轮 G1）', () => {
+    const { sandbox, reports, FakeWorker } = installRenderSurfaceObserver();
+    const Worker = sandbox.Worker as typeof FakeWorker;
+    const worker = new Worker('http://bmc.test/viewer-worker.js');
+    expect(worker instanceof Worker).toBe(true);
+    expect(worker.scriptUrl).toBe('http://bmc.test/viewer-worker.js');
+    const surfaceReports = reports.filter(report => report.kind === 'render-surface');
+    expect(surfaceReports).toHaveLength(1);
+    expect(surfaceReports[0]).toMatchObject({
+      surface: 'worker',
+      detail: 'http://bmc.test/viewer-worker.js',
+    });
+  });
+
+  it('render-surface：Worker 无 new 调用按原生语义抛 TypeError', () => {
+    const { sandbox } = installRenderSurfaceObserver();
+    expect(() => {
+      (sandbox.Worker as unknown as (url: string) => unknown)('http://bmc.test/w.js');
+    }).toThrow("Constructor Worker requires 'new'");
+  });
+
+  it('render-surface：createElement canvas/video 上报，其他标签不上报且元素原样返回', () => {
+    const { sandbox, reports } = installRenderSurfaceObserver();
+    const document = sandbox.document as {
+      createElement(tagName: string): { tagName?: string };
+    };
+    const canvas = document.createElement('canvas');
+    expect(canvas).toBeInstanceOf(Object);
+    const video = document.createElement('video');
+    expect((video as { tagName: string }).tagName).toBe('VIDEO');
+    const div = document.createElement('div');
+    expect((div as { tagName: string }).tagName).toBe('DIV');
+    const surfaces = reports
+      .filter(report => report.kind === 'render-surface')
+      .map(report => report.surface);
+    expect(surfaces).toEqual(['canvas', 'video']);
+  });
+
+  it('render-surface：getContext 取到 context 上报一次；同元素重复调用不刷行；取 null 不算新建表面', () => {
+    const { sandbox, reports } = installRenderSurfaceObserver();
+    const document = sandbox.document as { createElement(tagName: string): { getContext(contextId: string): unknown } };
+    const canvas = document.createElement('canvas');
+    expect(canvas.getContext('2d')).toBeTypeOf('object');
+    // 同一元素第二次 getContext（假件返回 null）：不重复上报
+    expect(canvas.getContext('2d')).toBeNull();
+    const contextReports = reports.filter(
+      report => report.kind === 'render-surface' && report.surface === 'canvas-context',
+    );
+    expect(contextReports).toHaveLength(1);
+    expect(contextReports[0]).toMatchObject({ detail: '2d' });
+    // 另一个元素再取 context → 各自上报
+    const second = document.createElement('canvas');
+    expect(second.getContext('webgl')).toBeTypeOf('object');
+    const afterSecond = reports.filter(
+      report => report.kind === 'render-surface' && report.surface === 'canvas-context',
+    );
+    expect(afterSecond).toHaveLength(2);
+    expect(afterSecond[1]).toMatchObject({ detail: 'webgl' });
+  });
+
+  it('render-surface：rAF 回调原样触发（时间戳透传）且稀疏上报（第 1、30 次，其后每 600 次）', () => {
+    const { sandbox, reports } = installRenderSurfaceObserver();
+    const raf = sandbox.requestAnimationFrame as (callback: (timestamp: number) => unknown) => number;
+    const received: number[] = [];
+    const handle = raf(timestamp => {
+      received.push(timestamp);
+    });
+    expect(handle).toBeTypeOf('number');
+    expect(received).toEqual([16.7]);
+    const surface = reports.filter(report => report.kind === 'render-surface');
+    expect(surface).toHaveLength(1);
+    expect(surface[0]).toMatchObject({ surface: 'request-animation-frame', detail: '1' });
+
+    // 连续驱动 40 次回调：第 2..29 次不上报，第 30 次上报
+    for (let i = 0; i < 40; i += 1) {
+      raf(() => {});
+    }
+    const rafReports = reports
+      .filter(report => report.kind === 'render-surface' && report.surface === 'request-animation-frame')
+      .map(report => report.detail);
+    expect(rafReports).toEqual(['1', '30']);
+  });
+
+  it('render-surface：new SharedWorker 上报 shared-worker + 脚本 URL', () => {
+    const { sandbox, reports, FakeSharedWorker } = installRenderSurfaceObserver();
+    const SharedWorker = sandbox.SharedWorker as typeof FakeSharedWorker;
+    const shared = new SharedWorker('http://bmc.test/shared-worker.js');
+    expect(shared instanceof SharedWorker).toBe(true);
+    expect(shared.port).toBeTypeOf('object');
+    const surfaces = reports.filter(report => report.kind === 'render-surface');
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0]).toMatchObject({
+      surface: 'shared-worker',
+      detail: 'http://bmc.test/shared-worker.js',
+    });
   });
 });

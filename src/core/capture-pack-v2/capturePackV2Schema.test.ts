@@ -107,6 +107,11 @@ describe('Capture Pack 2.0 JSON Schema（规范 §22：Schema 与类型同步）
         values: jsonLines(String(artifacts.get('raw/browser/actions.jsonl'))),
       },
       {
+        schema: 'browser-render-surface.schema.json',
+        path: 'raw/browser/render-surfaces.jsonl',
+        values: jsonLines(String(artifacts.get('raw/browser/render-surfaces.jsonl'))),
+      },
+      {
         schema: 'browser-storage.schema.json',
         path: 'raw/browser/storage.json',
         values: [jsonOf('raw/browser/storage.json')],

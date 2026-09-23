@@ -4,8 +4,9 @@
  * 通用规则（规范 §6 / §7.3，不依赖厂商 URL / 页面语义）：
  * - LOGIN_REACHED：POST + 请求正文 + 2xx/3xx + 响应 Set-Cookie，且之后的
  *   请求逐字节携带该 name=value（观察到的 cookie 传播）；
- * - KVM_REACHED：用户动作之后出现主框架导航或 popup target，且之后建立
- *   持续双向通道（WS 双向帧、WebRTC 双向消息、WebTransport 存在即通道事实）；
+ * - KVM_REACHED：用户动作之后，在同一 target 血缘内严格按“导航/popup →
+ *   新渲染/执行表面 → 持续双向通道”出现事实（WS 双向帧、WebRTC 双向消息、
+ *   WebTransport 存在即通道事实）；
  * - 观察脚本钩子失败 = 对应观察面不可信，派生退回保守状态，不用残缺观察
  *   断言更高状态。
  */
@@ -16,6 +17,7 @@ import type {
   PackV2BrowserActionRow,
   PackV2ChannelRow,
   PackV2HttpTransactionRow,
+  PackV2RenderSurfaceRow,
   PackV2TargetRow,
 } from '../capture-pack-v2/types';
 import type { ObserverHookFailure } from './collectorEvidence';
@@ -91,6 +93,19 @@ function hookFailure(overrides: Partial<ObserverHookFailure> = {}): ObserverHook
   return { hook: 'crypto', stage: 'install', detail: 'subtle is not extensible', ...overrides };
 }
 
+function renderSurface(
+  overrides: Partial<PackV2RenderSurfaceRow> = {},
+): PackV2RenderSurfaceRow {
+  return {
+    id: 'render-0001',
+    occurredAt: at(1500),
+    targetId: 'target-root',
+    surface: 'canvas-context',
+    detail: '2d',
+    ...overrides,
+  };
+}
+
 function facts(overrides: Partial<WorkflowFacts> = {}): WorkflowFacts {
   return {
     transactions: [],
@@ -98,6 +113,7 @@ function facts(overrides: Partial<WorkflowFacts> = {}): WorkflowFacts {
     targets: [],
     channels: [],
     navigations: [],
+    renderSurfaces: [],
     hookFailures: [],
     ...overrides,
   };
@@ -124,11 +140,12 @@ function loginPropagationFacts(): WorkflowFacts {
   });
 }
 
-/** 完整 Viewer 活动事实：点击 → 主框架导航 → WS 双向帧。 */
+/** 完整 Viewer 活动事实：点击 → 主框架导航 → 渲染表面 → WS 双向帧。 */
 function viewerActivityFacts(): WorkflowFacts {
   return facts({
     actions: [action({ occurredAt: at(0) })],
     navigations: [nav({ occurredAt: at(1000) })],
+    renderSurfaces: [renderSurface()],
     channels: [channel({ id: 'ws-1', createdAt: at(2000) })],
   });
 }
@@ -148,7 +165,32 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
         targets: [
           target({ id: 'target-popup', type: 'popup', openerTargetId: 'target-root', attachedAt: at(1000) }),
         ],
+        renderSurfaces: [renderSurface({ targetId: 'target-popup', occurredAt: at(1500) })],
         channels: [channel({ id: 'pc-1', kind: 'webrtc', createdAt: at(2000), url: null, payloadPath: null })],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('KVM_REACHED');
+  });
+
+  it('iframe/OOPIF 子 target 通过 parentTargetId 进入动作血缘 → KVM_REACHED', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        actions: [action({ occurredAt: at(0) })],
+        targets: [
+          target({
+            id: 'target-oopif',
+            type: 'oopif',
+            parentTargetId: 'target-root',
+            attachedAt: at(800),
+          }),
+        ],
+        navigations: [nav({ targetId: 'target-oopif', occurredAt: at(1000) })],
+        renderSurfaces: [
+          renderSurface({ targetId: 'target-oopif', occurredAt: at(1500) }),
+        ],
+        channels: [
+          channel({ id: 'ws-oopif', targetId: 'target-oopif', createdAt: at(2000) }),
+        ],
       }),
     );
     expect(derived.workflowStatus).toBe('KVM_REACHED');
@@ -159,6 +201,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
       facts({
         actions: [action({ occurredAt: at(0) })],
         navigations: [nav({ occurredAt: at(1000) })],
+        renderSurfaces: [renderSurface()],
         channels: [
           channel({ id: 'wt-1', kind: 'webtransport', createdAt: at(2000), url: 'https://bmc.test/wt', frameCounts: null, payloadPath: null }),
         ],
@@ -251,6 +294,48 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
+  // 第五轮 G4：Set-Cookie 的签发时刻是响应到达时刻（startedAt + max(receiveMs,
+  // sendMs+waitMs)），不是登录请求开始时刻——响应未到达前页面不可能持有该
+  // cookie，开始时刻与到达时刻之间携带 name=value 的请求不是观察到的传播。
+  it('反例：请求开始晚于登录请求、但早于登录响应到达（携带 cookie）→ 不构成传播', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        transactions: [
+          tx({
+            id: 'req-login',
+            method: 'POST',
+            startedAt: at(0),
+            requestBody: bodyRef(),
+            responseHeaders: { 'set-cookie': 'sid=abc123; Path=/' },
+            timing: { sendMs: 100, waitMs: 4900, receiveMs: 5000 },
+          }),
+          tx({ id: 'req-next', startedAt: at(1000), requestHeaders: { cookie: 'sid=abc123' } }),
+        ],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+    expect(derived.loginPropagation).toBe(false);
+  });
+
+  it('响应到达之后的请求携带 name=value → LOGIN_REACHED（到达时刻判定）', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        transactions: [
+          tx({
+            id: 'req-login',
+            method: 'POST',
+            startedAt: at(0),
+            requestBody: bodyRef(),
+            responseHeaders: { 'set-cookie': 'sid=abc123; Path=/' },
+            timing: { sendMs: 100, waitMs: 4900, receiveMs: 5000 },
+          }),
+          tx({ id: 'req-next', startedAt: at(6000), requestHeaders: { cookie: 'sid=abc123' } }),
+        ],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('LOGIN_REACHED');
+  });
+
   it('反例：导航与通道在场但无用户动作 → TARGET_OPENED', () => {
     const derived = deriveWorkflowStatus(
       facts({
@@ -304,6 +389,115 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
         channels: [channel({ id: 'ws-1', createdAt: at(6000) })],
       }),
     );
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：导航/通道属于无关窗口（targetId 不在动作血缘集合）→ 不算 Viewer 活动（三轮 T10）', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        actions: [action({ occurredAt: at(0) })],
+        navigations: [nav({ targetId: 'target-other', occurredAt: at(1000) })],
+        channels: [channel({ id: 'ws-1', targetId: 'target-other', createdAt: at(2000) })],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：popup opener 无关（openerTargetId 不在血缘集合）→ 其通道不算 Viewer 活动（三轮 T10）', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        actions: [action({ occurredAt: at(0) })],
+        targets: [
+          target({ id: 'target-popup', type: 'popup', openerTargetId: 'target-unrelated', attachedAt: at(1000) }),
+        ],
+        channels: [channel({ id: 'ws-1', targetId: 'target-popup', createdAt: at(2000) })],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('正例：真血缘 popup 上的通道（openerTargetId=target-root）→ KVM_REACHED（血缘正控制，三轮 T10）', () => {
+    const derived = deriveWorkflowStatus(
+      facts({
+        actions: [action({ occurredAt: at(0) })],
+        targets: [
+          target({ id: 'target-popup', type: 'popup', openerTargetId: 'target-root', attachedAt: at(1000) }),
+        ],
+        renderSurfaces: [renderSurface({ targetId: 'target-popup', occurredAt: at(1500) })],
+        channels: [channel({ id: 'ws-1', targetId: 'target-popup', createdAt: at(2000) })],
+      }),
+    );
+    expect(derived.workflowStatus).toBe('KVM_REACHED');
+  });
+
+  it('反例：登录后 Dashboard 后台告警 WS（无任何渲染/执行表面）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+    // §7.3 四组事实合取：点击 + 导航/打开 + **新建 Canvas/Video/Worker/WASM/持续渲染表面**
+    // + 持续双向通道。登录跳转 Dashboard 后建立的后台告警 WS 满足「动作→导航→双向
+    // 通道」但没有任何表面证据——不是 KVM。
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：渲染表面属无关窗口（targetId 不在血缘集合）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [renderSurface({ targetId: 'target-other', occurredAt: at(1500) })],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：渲染表面晚于动作但早于 Viewer 导航 → 不复用 Dashboard 表面', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [renderSurface({ occurredAt: at(500) })],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：双向通道晚于导航但早于新渲染表面 → 不拼接倒挂事实', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [renderSurface({ occurredAt: at(1500) })],
+      channels: [channel({ id: 'ws-1', createdAt: at(1200) })],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：渲染表面早于动作（登录前就存在的 Canvas）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [renderSurface({ occurredAt: at(-1000) })],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例：render-surface 钩子失败 → 页面侧表面证据不可信，不派生 KVM_REACHED（五轮 G1）', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      hookFailures: [hookFailure({ hook: 'render-surface', stage: 'install' })],
+    });
+    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('正例：render-surface 钩子失败但血缘内 WASM 事务（CDP 观察，不受页面钩子影响）→ KVM_REACHED（五轮 G1）', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [],
+      transactions: [tx({ id: 'req-wasm', resourceType: 'wasm', startedAt: at(1500) })],
+      hookFailures: [hookFailure({ hook: 'render-surface', stage: 'install' })],
+    });
+    expect(derived.workflowStatus).toBe('KVM_REACHED');
+  });
+
+  it('反例：WASM 事务属无关窗口 → 不派生 KVM_REACHED（五轮 G1）', () => {
+    const derived = deriveWorkflowStatus({
+      ...viewerActivityFacts(),
+      renderSurfaces: [],
+      transactions: [tx({ id: 'req-wasm', resourceType: 'wasm', targetId: 'target-other', startedAt: at(1500) })],
+    });
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
@@ -372,6 +566,55 @@ describe('workflowFactsSignature（P3-R11-4 派生缓存签名）', () => {
     const unattached = facts({ targets: [target({ id: 't-1', attached: false, attachedAt: undefined })] });
     expect(workflowFactsSignature(unattached)).not.toBe(
       workflowFactsSignature(facts({ targets: [target({ id: 't-1', attached: true, attachedAt: at(500) })] })),
+    );
+
+    // 血缘投影原位变更（第 12 轮新增读取面：targetId 归属变化可翻转派生结果，行数不变）
+    const lineage = viewerActivityFacts();
+    expect(workflowFactsSignature(lineage)).not.toBe(
+      workflowFactsSignature({ ...lineage, actions: [{ ...lineage.actions[0]!, targetId: 'target-other' }] }),
+    );
+    expect(workflowFactsSignature(lineage)).not.toBe(
+      workflowFactsSignature({ ...lineage, navigations: [{ ...lineage.navigations[0]!, targetId: 'target-other' }] }),
+    );
+    expect(workflowFactsSignature(lineage)).not.toBe(
+      workflowFactsSignature({ ...lineage, channels: [{ ...lineage.channels[0]!, targetId: 'target-other' }] }),
+    );
+    const lineageWithTarget = {
+      ...lineage,
+      targets: [target({ id: 'target-popup', type: 'popup', openerTargetId: 'target-root', attachedAt: at(1000) })],
+    };
+    expect(workflowFactsSignature(lineageWithTarget)).not.toBe(
+      workflowFactsSignature({
+        ...lineageWithTarget,
+        targets: [target({ id: 'target-popup', type: 'popup', openerTargetId: 'target-unrelated', attachedAt: at(1000) })],
+      }),
+    );
+
+    // 渲染表面投影（五轮 G1 新读取面：targetId 归属 / 时刻可翻转派生结果，行数不变）
+    const surfaced = viewerActivityFacts();
+    expect(workflowFactsSignature(surfaced)).not.toBe(
+      workflowFactsSignature({ ...surfaced, renderSurfaces: [{ ...surfaced.renderSurfaces[0]!, targetId: 'target-other' }] }),
+    );
+    expect(workflowFactsSignature(surfaced)).not.toBe(
+      workflowFactsSignature({ ...surfaced, renderSurfaces: [{ ...surfaced.renderSurfaces[0]!, occurredAt: at(-1000) }] }),
+    );
+    // WASM 表面证据读取面（resourceType / targetId 归属可翻转派生结果）
+    const wasmBase = facts({
+      ...viewerActivityFacts(),
+      renderSurfaces: [],
+      transactions: [tx({ id: 'req-wasm', resourceType: 'wasm', startedAt: at(1500) })],
+    });
+    expect(workflowFactsSignature(wasmBase)).not.toBe(
+      workflowFactsSignature({
+        ...wasmBase,
+        transactions: [tx({ id: 'req-wasm', resourceType: 'wasm', targetId: 'target-other', startedAt: at(1500) })],
+      }),
+    );
+    expect(workflowFactsSignature(wasmBase)).not.toBe(
+      workflowFactsSignature({
+        ...wasmBase,
+        transactions: [tx({ id: 'req-wasm', resourceType: 'script', startedAt: at(1500) })],
+      }),
     );
   });
 

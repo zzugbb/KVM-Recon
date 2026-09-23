@@ -84,6 +84,8 @@ describe('readCaptureFacts（工作区事实读取）', () => {
         channelGaps: [],
         unsupportedChannels: [],
         journalWriteFailures: [],
+        browserStateGaps: [],
+        evidenceGraphFailures: [],
         exportValidationFailures: [],
         workflowStatus: 'TARGET_OPENED',
       },
@@ -119,6 +121,39 @@ describe('readCaptureFacts（工作区事实读取）', () => {
         Buffer.from(JSON.stringify({ ...base, stopped: true, workflowStatus: 'KVM' })),
       ),
     ).toThrow('workflowStatus 非法');
+  });
+
+  it('旧格式摘要（缺 browserStateGaps/evidenceGraphFailures）读取侧补缺省空数组（三轮 T10）', () => {
+    // 第 12 轮新数组字段落盘前写的真实摘要：读取后两个新字段补 []，
+    // 其余字段原样透传——derivePackIntegrity 不因 undefined 崩溃
+    const base = {
+      schemaVersion: '1.0.0',
+      jobId: 'job',
+      workspaceId: 'ws',
+      startedAt: '2026-09-21T10:00:00.000Z',
+      stopped: true,
+      workflowStatus: 'TARGET_OPENED',
+      evidenceSummary: {
+        collectorReadyBeforeFirstNavigation: true,
+        rawJournalsClosed: true,
+        browserStateWritten: true,
+        evidenceReferencesClosed: true,
+        storageLimitReached: false,
+        targetAttachFailures: [],
+        missingBodies: [],
+        missingWorkerSources: [],
+        channelGaps: [{ id: 'ws-1', detail: '旧格式已有字段' }],
+        unsupportedChannels: [],
+        journalWriteFailures: [],
+        exportValidationFailures: [],
+        workflowStatus: 'TARGET_OPENED',
+      },
+    };
+    const facts = readCaptureFactsFromBuffer(Buffer.from(JSON.stringify(base)));
+    expect(facts.evidenceSummary?.browserStateGaps).toEqual([]);
+    expect(facts.evidenceSummary?.evidenceGraphFailures).toEqual([]);
+    // 真实摘要原样透传（不改写既有字段）
+    expect(facts.evidenceSummary?.channelGaps).toEqual([{ id: 'ws-1', detail: '旧格式已有字段' }]);
   });
 });
 

@@ -216,6 +216,47 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
     }
   });
 
+  it('第 12 轮新数组通道：written=true 但 gaps 非空同样失败，缺口明细在列（布尔与数组双通道）', () => {
+    // browserStateWritten=true + browserStateGaps 非空：步骤级缺口路径
+    const browserStateGap = derivePackIntegrity({
+      ...allPresentSummary(),
+      browserStateGaps: [{ id: 'cookies', detail: '返回缺少 cookies 数组' }],
+    });
+    expect(browserStateGap.captureIntegrity).toBe('INCOMPLETE');
+    expect(browserStateGap.reasons).toContain('INCOMPLETE_BROWSER_STATE');
+    const browserGate = browserStateGap.gates.find(gate => gate.id === 'browser-state-written');
+    expect(browserGate?.passed).toBe(false);
+    expect(browserGate?.detail).toContain('cookies');
+
+    const evidenceGraphGap = derivePackIntegrity({
+      ...allPresentSummary(),
+      evidenceGraphFailures: [{ id: 'evidence-graph', detail: 'ai/value-flow.json 写盘失败' }],
+    });
+    expect(evidenceGraphGap.captureIntegrity).toBe('INCOMPLETE');
+    expect(evidenceGraphGap.reasons).toContain('INCOMPLETE_EVIDENCE_REFERENCE');
+    const evidenceGate = evidenceGraphGap.gates.find(
+      gate => gate.id === 'evidence-references-closed',
+    );
+    expect(evidenceGate?.passed).toBe(false);
+    expect(evidenceGate?.detail).toContain('ai/value-flow.json');
+
+    // 布尔通道 fallback：gaps 空但布尔为假
+    const notWritten = derivePackIntegrity({
+      ...allPresentSummary(),
+      browserStateWritten: false,
+    });
+    expect(
+      notWritten.gates.find(gate => gate.id === 'browser-state-written')?.detail,
+    ).toContain('浏览器状态快照未写入');
+    const notClosed = derivePackIntegrity({
+      ...allPresentSummary(),
+      evidenceReferencesClosed: false,
+    });
+    expect(
+      notClosed.gates.find(gate => gate.id === 'evidence-references-closed')?.detail,
+    ).toContain('证据图未闭环');
+  });
+
   it('buildPackStatusTriple 拒绝 COMPLETE + 失败门禁', () => {
     const derived = derivePackIntegrity(allPresentSummary());
     // 人为构造「无原因但存在失败门禁」的非法派生结果（回归 0.2 式界面显示完整但资料缺失）。

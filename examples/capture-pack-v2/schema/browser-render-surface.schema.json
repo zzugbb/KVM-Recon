@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kvm-recon.local/schema/2.0/browser-render-surface.schema.json",
+  "title": "KVM-Recon Capture Pack 2.0 raw/browser/render-surfaces.jsonl 行",
+  "type": "object",
+  "required": ["id", "occurredAt", "targetId", "surface", "detail"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "occurredAt": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "surface": {
+      "enum": ["canvas", "video", "offscreencanvas", "canvas-context", "worker", "shared-worker", "request-animation-frame"]
+    },
+    "detail": { "type": ["string", "null"] }
+  }
+}

@@ -43,6 +43,8 @@
               "path": { "type": "string", "minLength": 1 }
             }
           },
+          "contentHash": { "type": "string", "minLength": 1 },
+          "sourceLength": { "type": "integer", "minimum": 0 },
           "sourceMapPath": { "type": "string" }
         }
       }

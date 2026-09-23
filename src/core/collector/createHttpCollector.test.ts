@@ -99,4 +99,67 @@ describe('HTTP 采集器 journal 写失败记账', () => {
     const gate = derived.gates.find(row => row.id === 'raw-journals-closed');
     expect(gate?.passed).toBe(false);
   });
+
+  it('204/205/304 明确无正文语义：不记 missingBodies 缺口（第 12 轮自审补钉）', async () => {
+    const evidence = createCollectorEvidence();
+    const http = createHttpCollector(createFailingWorkspace('__never__'), evidence);
+    http.openHop({ ...HOP, id: 'req-204' });
+    http.patchHop('req-204', { status: 204 });
+    http.openHop({ ...HOP, id: 'req-205', url: 'https://bmc.test/reset' });
+    http.patchHop('req-205', { status: 205 });
+    http.openHop({ ...HOP, id: 'req-304', url: 'https://bmc.test/redirect-target' });
+    http.patchHop('req-304', { status: 304 });
+    await http.commit('req-204');
+    await http.commit('req-205');
+    await http.commit('req-304');
+    // 状态码已知的明确无正文语义：不是「应有而未有」，不得作证缺失
+    expect(evidence.summary(summaryInput).missingBodies).toEqual([]);
+  });
+
+  it('patchHop 对已 commit 的 hop 返回 false 且不改行（三轮 T4：journal 只追加）', async () => {
+    const evidence = createCollectorEvidence();
+    const http = createHttpCollector(createFailingWorkspace('__never__'), evidence);
+    http.openHop({ ...HOP, id: 'req-committed' });
+    await http.commit('req-committed');
+    // commit 之后的晚到事实（status / 正文引用）不得无痕写进内存行——
+    // 行已落盘，改内存行等于编造落盘内容
+    const patched = http.patchHop('req-committed', { status: 200 });
+    expect(patched).toBe(false);
+    const rows = http.transactionRows();
+    expect(rows[0].status).toBeNull();
+    expect(rows[0].responseBody).toBeUndefined();
+  });
+
+  // 第五轮 G2（规范 §7.4「非持续响应正文全部落盘」）：在途非持续请求视图
+  // 供自动收尾看门狗等待；EventSource / event-stream / multipart 流式响应
+  // 是持续通道，等它完成等于永不收尾。
+  it('在途非持续 hop 在列；EventSource / 流式响应不在列；完成后移除', async () => {
+    const evidence = createCollectorEvidence();
+    const http = createHttpCollector(createFailingWorkspace('__never__'), evidence);
+    http.openHop({ ...HOP, id: 'req-xhr', resourceType: 'XHR' });
+    http.openHop({ ...HOP, id: 'req-es', resourceType: 'EventSource' });
+    http.openHop({ ...HOP, id: 'req-sse', resourceType: 'XHR' });
+    http.patchHop('req-sse', {
+      status: 200,
+      responseHeaders: { 'content-type': 'text/event-stream' },
+    });
+    http.openHop({ ...HOP, id: 'req-mjpeg', resourceType: 'Media' });
+    http.patchHop('req-mjpeg', {
+      responseHeaders: { 'content-type': 'multipart/x-mixed-replace; boundary=frame' },
+    });
+
+    expect(http.pendingNonStreamingHops().map(hop => hop.id)).toEqual(['req-xhr']);
+
+    // 完成后（commit）从在途视图移除
+    await http.commit('req-xhr');
+    expect(http.pendingNonStreamingHops()).toEqual([]);
+  });
+
+  it('响应头未到达的 EventSource hop（resourceType 已知）也不阻塞自动收尾', () => {
+    const evidence = createCollectorEvidence();
+    const http = createHttpCollector(createFailingWorkspace('__never__'), evidence);
+    // EventSource 在 requestWillBeSent 即携带 resourceType——头未到达也可判持续
+    http.openHop({ ...HOP, id: 'req-es-early', resourceType: 'EventSource' });
+    expect(http.pendingNonStreamingHops()).toEqual([]);
+  });
 });

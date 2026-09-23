@@ -4,12 +4,14 @@
  * 从观察事实（HTTP 事务 / 用户动作 / target 血缘 / 通道行 / 主框架导航 /
  * 观察脚本钩子失败记账）派生 WorkflowStatus，协议无关、不依赖厂商 URL
  * 与页面语义：
- * - LOGIN_REACHED：POST + 请求正文 + 2xx/3xx 响应 Set-Cookie，且之后的
- *   请求逐字节携带该 name=value（观察到的 cookie 传播，不猜登录语义）；
- * - KVM_REACHED：用户动作（click / form-submit）之后出现主框架导航或
- *   popup target，且之后建立持续双向通道——WS 双向帧 >0、WebRTC 双向
- *   消息 >0，或 WebTransport 通道在场（payload 不可观察，存在即通道
- *   事实）；SSE / 下载为单向通道，单独不构成；
+ * - LOGIN_REACHED：POST + 请求正文 + 2xx/3xx 响应 Set-Cookie（签发时刻 =
+ *   响应到达时刻，非请求开始时刻），且之后的请求逐字节携带该 name=value
+ *   （观察到的 cookie 传播，不猜登录语义）；
+ * - KVM_REACHED：用户动作（click / form-submit）之后，在动作 target 的
+ *   血缘集合（自身 + 经 openerTargetId / parentTargetId 链关联的后代）内，
+ *   严格按“打开或导航 → 新渲染/执行表面 → 持续双向通道”的顺序出现事实。
+ *   WS 双向帧 >0、WebRTC 双向消息 >0，或 WebTransport 通道在场（payload
+ *   不可观察，存在即通道事实）；SSE / 下载为单向通道，单独不构成；
  * - 否则 TARGET_OPENED。
  *
  * 钩子失败折扣：观察脚本某钩子安装失败时，对应观察面的事实不可信，
@@ -21,6 +23,7 @@ import type {
   PackV2BrowserActionRow,
   PackV2ChannelRow,
   PackV2HttpTransactionRow,
+  PackV2RenderSurfaceRow,
   PackV2TargetRow,
   WorkflowStatus,
 } from '../capture-pack-v2/types';
@@ -40,6 +43,8 @@ export interface WorkflowFacts {
   targets: ReadonlyArray<PackV2TargetRow>;
   channels: ReadonlyArray<PackV2ChannelRow>;
   navigations: ReadonlyArray<WorkflowNavigationFact>;
+  /** 新建渲染/执行表面行（§7.3 第 2 组事实，五轮 G1）。 */
+  renderSurfaces: ReadonlyArray<PackV2RenderSurfaceRow>;
   hookFailures: ReadonlyArray<ObserverHookFailure>;
 }
 
@@ -55,6 +60,25 @@ export function timeOf(iso: string | undefined): number {
   if (!iso) return 0;
   const parsed = Date.parse(iso);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * 响应到达时间的近似（第五轮 G4；与 valueFlowEngine 同一实现语义）：
+ * receiveMs 是 requestTime→receiveHeadersEnd 的累计偏移（CDP 语义），
+ * startedAt + receiveMs 覆盖建连段，是响应头到达墙钟的轻微高估；
+ * sendMs+waitMs 漏掉建连段。取两者较大值作为到达时间——拒绝边的保守
+ * 方向（宁可晚判到达，不早判）。timing 缺失（CDP 未提供）时退回请求
+ * 开始时间（诚实下限）。Set-Cookie 签发、响应正文的存在时刻都以到达
+ * 时刻计：响应未到达前页面不可能持有该 cookie 或读到该正文。
+ */
+export function responseArrivalAt(transaction: PackV2HttpTransactionRow): number {
+  const timing = transaction.timing;
+  if (!timing) return timeOf(transaction.startedAt);
+  const toHeaders = Math.max(
+    timing.receiveMs || 0,
+    (timing.sendMs || 0) + (timing.waitMs || 0),
+  );
+  return timeOf(transaction.startedAt) + toHeaders;
 }
 
 function headerOf(headers: Readonly<Record<string, string>>, name: string): string | null {
@@ -88,7 +112,9 @@ function deriveLoginReached(facts: WorkflowFacts): boolean {
     const setCookie = headerOf(transaction.responseHeaders, 'set-cookie');
     if (!setCookie) continue;
     for (const pair of setCookiePairs(setCookie)) {
-      issued.push({ at: timeOf(transaction.startedAt), transactionId: transaction.id, pair });
+      // 签发时刻 = 响应到达时刻（第五轮 G4）：请求开始晚于登录请求、但
+      // 早于登录响应到达的请求不可能持有该 cookie，不构成传播证据
+      issued.push({ at: responseArrivalAt(transaction), transactionId: transaction.id, pair });
     }
   }
   if (issued.length === 0) return false;
@@ -134,6 +160,65 @@ function isBidirectionalChannel(
   return false;
 }
 
+/**
+ * 动作 target 的 Viewer 血缘集合（第 12 轮阻断 1）：自身 + 由它经
+ * openerTargetId 链打开的 popup 后代，以及 parentTargetId 链挂载的
+ * iframe/OOPIF/Worker 后代。另一棵血缘子树 / 无血缘窗口的导航与通道
+ * 不在集合内，不构成信号（宁可漏不可错）。
+ * detectViewerActivity（viewerActivity.ts）与 deriveViewerActivity 共用。
+ */
+export function viewerLineageOf(
+  actionTargetId: string,
+  targets: ReadonlyArray<PackV2TargetRow>,
+): Set<string> {
+  const lineage = new Set<string>([actionTargetId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const target of targets) {
+      if (lineage.has(target.id)) continue;
+      const parent =
+        target.type === 'popup' ? target.openerTargetId : target.parentTargetId;
+      if (!parent) continue;
+      if (lineage.has(parent)) {
+        lineage.add(target.id);
+        grew = true;
+      }
+    }
+  }
+  return lineage;
+}
+
+/**
+ * §7.3 第 2 组事实（五轮 G1）：动作后在动作 target 血缘集合内新建的
+ * Canvas / Video / OffscreenCanvas / Worker / 持续渲染表面（页面观察脚本
+ * 上报，钩子失败时该观察面不可信），或 WASM 事务（CDP Network 域观察，
+ * 不受页面钩子影响）。登录跳转 Dashboard 后的后台告警 WS 没有任何表面
+ * 证据，不构成 KVM。
+ */
+function earliestRenderSurfaceAt(
+  facts: WorkflowFacts,
+  lineage: ReadonlySet<string>,
+  at: number,
+  brokenHooks: ReadonlySet<string>,
+): number | null {
+  let earliest = Number.POSITIVE_INFINITY;
+  if (!brokenHooks.has('render-surface')) {
+    for (const surface of facts.renderSurfaces) {
+      if (!surface.targetId || !lineage.has(surface.targetId)) continue;
+      const occurredAt = timeOf(surface.occurredAt);
+      if (occurredAt >= at && occurredAt < earliest) earliest = occurredAt;
+    }
+  }
+  for (const transaction of facts.transactions) {
+    if (transaction.resourceType !== 'wasm') continue;
+    if (!transaction.targetId || !lineage.has(transaction.targetId)) continue;
+    const occurredAt = timeOf(transaction.startedAt);
+    if (occurredAt >= at && occurredAt < earliest) earliest = occurredAt;
+  }
+  return Number.isFinite(earliest) ? earliest : null;
+}
+
 function deriveViewerActivity(facts: WorkflowFacts): boolean {
   const brokenHooks = new Set(facts.hookFailures.map(failure => failure.hook));
   // 钩子失败记账溢出（*）：观察面整体不可信，不派生 KVM_REACHED
@@ -142,14 +227,37 @@ function deriveViewerActivity(facts: WorkflowFacts): boolean {
   if (brokenHooks.has('action')) return false;
   for (const action of facts.actions) {
     const at = timeOf(action.occurredAt);
-    const targetOpenedAfterAction = facts.targets.some(
-      target => target.type === 'popup' && target.attachedAt !== undefined && timeOf(target.attachedAt) >= at,
-    );
-    const navigatedAfterAction = facts.navigations.some(navigation => timeOf(navigation.occurredAt) >= at);
-    if (!targetOpenedAfterAction && !navigatedAfterAction) continue;
+    // 时间不可解析 → 零信号（保守方向，与 detectViewerActivity 一致：不得把 0 凑成时序）
+    if (!at) continue;
+    // 动作 target 缺失 → 血缘不可判：零信号（保守方向）
+    if (!action.targetId) continue;
+    const lineage = viewerLineageOf(action.targetId, facts.targets);
+    // 打开证据：血缘集合内动作之后出现的 popup 或主框架导航（取最早）
+    let openedAt = Number.POSITIVE_INFINITY;
+    for (const target of facts.targets) {
+      if (target.type !== 'popup' || target.attachedAt === undefined) continue;
+      if (!lineage.has(target.id)) continue;
+      const attachedAt = timeOf(target.attachedAt);
+      if (attachedAt >= at && attachedAt < openedAt) openedAt = attachedAt;
+    }
+    for (const navigation of facts.navigations) {
+      if (!lineage.has(navigation.targetId)) continue;
+      const occurredAt = timeOf(navigation.occurredAt);
+      if (occurredAt >= at && occurredAt < openedAt) openedAt = occurredAt;
+    }
+    if (!Number.isFinite(openedAt)) continue;
+    // 打开证据之后才新建的渲染/执行表面；不能借用
+    // 登录前/导航前已存在的 Dashboard Canvas 拼出 Viewer。
+    const surfaceAt = earliestRenderSurfaceAt(facts, lineage, openedAt, brokenHooks);
+    if (surfaceAt === null) continue;
+    // 通道必须不早于渲染表面：动作 → 打开 → 表面 → 通道。
     if (
       facts.channels.some(
-        channel => timeOf(channel.createdAt) >= at && isBidirectionalChannel(channel, brokenHooks),
+        channel =>
+          channel.targetId !== null &&
+          lineage.has(channel.targetId) &&
+          timeOf(channel.createdAt) >= surfaceAt &&
+          isBidirectionalChannel(channel, brokenHooks),
       )
     ) {
       return true;
@@ -183,23 +291,34 @@ export function workflowFactsSignature(facts: WorkflowFacts): string {
     parts.push(
       `tx:${transaction.id}:${transaction.method}:${transaction.requestBody ? 1 : 0}:` +
         `${transaction.status ?? ''}:${headerOf(transaction.responseHeaders, 'set-cookie') ?? ''}:` +
-        `${headerOf(transaction.requestHeaders, 'cookie') ?? ''}:${transaction.startedAt}`,
+        `${headerOf(transaction.requestHeaders, 'cookie') ?? ''}:${transaction.startedAt}:` +
+        // WASM 表面证据读取面（五轮 G1）：归属/资源类型可翻转派生结果
+        `${transaction.resourceType}:${transaction.targetId ?? ''}:` +
+        // 响应到达时刻读取面（五轮 G4）：timing 在 responseReceived 原位补齐，
+        // LOGIN_REACHED 的签发时刻随之变化，漏投影会给过期状态
+        `${transaction.timing?.sendMs ?? ''}/${transaction.timing?.waitMs ?? ''}/${transaction.timing?.receiveMs ?? ''}`,
     );
   }
   for (const action of facts.actions) {
-    parts.push(`action:${action.id}:${action.occurredAt}`);
+    parts.push(`action:${action.id}:${action.targetId}:${action.occurredAt}`);
   }
   for (const target of facts.targets) {
-    parts.push(`target:${target.id}:${target.type}:${target.attachedAt ?? ''}`);
+    parts.push(
+      `target:${target.id}:${target.type}:${target.openerTargetId ?? ''}:` +
+        `${target.parentTargetId ?? ''}:${target.attachedAt ?? ''}`,
+    );
   }
   for (const channel of facts.channels) {
     parts.push(
-      `channel:${channel.id}:${channel.kind}:${channel.createdAt}:` +
+      `channel:${channel.id}:${channel.kind}:${channel.targetId ?? ''}:${channel.createdAt}:` +
         `${channel.frameCounts?.up ?? ''}/${channel.frameCounts?.down ?? ''}`,
     );
   }
   for (const navigation of facts.navigations) {
-    parts.push(`nav:${navigation.occurredAt}:${navigation.url ?? ''}`);
+    parts.push(`nav:${navigation.occurredAt}:${navigation.targetId}:${navigation.url ?? ''}`);
+  }
+  for (const surface of facts.renderSurfaces) {
+    parts.push(`surface:${surface.id}:${surface.targetId}:${surface.occurredAt}:${surface.surface}`);
   }
   for (const failure of facts.hookFailures) {
     parts.push(`hook:${failure.hook}`);

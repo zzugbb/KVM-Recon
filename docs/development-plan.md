@@ -20,10 +20,10 @@
 
 **0.3.0 阶段 0–3 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
 
-- 阶段 0（契约）：Capture Pack 2.0 类型与三正交状态、`schema/2.0/`（30 个 Schema，包内自校验）、随机 URL Mock KVM、完整度失败 Fixture 与样例包一致性验证器。
+- 阶段 0（契约）：Capture Pack 2.0 类型与三正交状态、`schema/2.0/`（33 个 Schema，包内自校验）、随机 URL Mock KVM、完整度失败 Fixture 与样例包一致性验证器。
 - 阶段 1（工作区）：单作业 `JobWorkspace`（跨进程互斥、磁盘水位、finalize 不可变）、SHA-256 内容寻址 `BodyStore`、流式 ZIP64 导出。
-- 阶段 2（采集）：`src/core/collector/` 协议无关全量采集（CDP journal、HTTP/HAR、WS 全帧、WebCrypto、脚本/Worker/WASM、NetLog、截图/DOM 快照/时间线、Storage、实时通道）；生产 Controller + 单作业 Electron 壳 + 崩溃恢复导出（保守证据摘要）。
-- 阶段 3（证据图与完整度）：`workflowStatusEngine` 从只读事实快照派生三态（`LOGIN_REACHED` 要求观察到的 Set-Cookie 传播、`KVM_REACHED` 要求 Viewer 活动组合时序，识别失败退回诚实下限）；`valueFlowEngine` + `catalog/relations.jsonl` 只记字节级观察背书的值传播边与结构关系（knownIds 闭环门禁）；Viewer 活动识别（`viewerActivity.ts`）+ 15s 稳定窗口自动收尾看门狗（只 `controller.stop()`，绝不自动导出/关窗）；挂载中途失败补 `attached=false` salvage 行；Chromium `responseReceivedExtraInfo` 先行事件序下 Set-Cookie 合并修复。
+- 阶段 2（采集）：`src/core/collector/` 协议无关全量采集（CDP journal、HTTP/HAR、WS 全帧、WebCrypto、脚本/Worker/WASM、NetLog、截图/DOM 快照/时间线、Storage、实时通道）；生产 Controller + 单作业 Electron 壳 + 崩溃恢复（保守证据摘要；恢复只提示不自动导出，恢复卡手动选择目录导出，成功才 markExported）。
+- 阶段 3（证据图与完整度）：`workflowStatusEngine` 从只读事实快照派生三态（`LOGIN_REACHED` 要求观察到的 Set-Cookie 传播、`KVM_REACHED` 要求“动作 → 打开/导航 → 新渲染/执行表面 → 双向通道”的严格时序）；popup 与 iframe/OOPIF/Worker 均按 opener/parent target 血缘归属，初始截图与手动/自动收尾无竞态，popup 的 sessionStorage/IndexedDB/CacheStorage 独立留存；脚本源码取不到时仅允许用相同 CDP hash 的已采正文补全，否则降级完整度，采集器自身带 `kvm-recon-internal://` 标记的探针不进入目标脚本门禁。`valueFlowEngine` + `catalog/relations.jsonl` 只记字节级观察背书的值传播边与结构关系（knownIds 闭环门禁，响应到达时间含 `receiveMs`）；浏览器状态与证据图失败显式记入缺口；Viewer 检出后的 15s 稳定窗口只自动 `controller.stop()`，绝不自动导出/关窗。
 - 0.2.x 运行链路与五项大小上限已删除；新链路无上限、不脱敏；workflowStatus 由阶段 3 派生引擎从观察事实给出（可达 `KVM_REACHED`），完整度由十项门禁从证据摘要派生——`COMPLETE` 只与 `KVM_REACHED` 组合，未到达 KVM 时 `INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED`。
 - 验证：vitest + E2E 全绿，含 Mock KVM 真实浏览器对照与现场 HAR 回放（`KVM_RECON_FIELD_COLLECTION_2` 指向语料目录，只读）；真机验收按产品安排最后统一进行。
 

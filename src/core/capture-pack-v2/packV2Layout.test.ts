@@ -43,7 +43,7 @@ describe('checkPackV2Layout（规范 §11 目录契约）', () => {
     const files = [
       ...PACK_V2_REQUIRED_FILES,
       'raw/cdp/extra-index.json',
-      'raw/browser/screenshots/viewer-stable.png',
+      'raw/browser/screenshots/0002-stop.png',
       'schema/extra-note.md',
     ];
     const check = checkPackV2Layout(files);

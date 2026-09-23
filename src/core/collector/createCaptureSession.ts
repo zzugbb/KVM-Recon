@@ -105,6 +105,14 @@ export interface CaptureSession {
   evidence(): CollectorEvidence;
   /** 派生引擎只读事实快照（阶段 3；采集期随时可调，stop 后为终态事实）。 */
   workflowFacts(): WorkflowFacts;
+  /** 在途非持续 HTTP 请求视图（规范 §7.4：自动收尾等待其落盘）。 */
+  pendingNonStreamingRequests(): ReadonlyArray<{ id: string; url: string }>;
+  /**
+   * viewer-initial 阶段截图（§7.4「至少完成 Viewer 初始与稳定阶段截图」；
+   * 第五轮 G3）：检出 Viewer 活动时由看门狗对 viewer 所在根 target 调用。
+   * 未知根 target 或截图失败 → 显式记账并返回 false（识别失败不停采集）。
+   */
+  captureViewerInitialScreenshot(targetId: string): Promise<boolean>;
   /** 阶段 3 派生的证据摘要（workflowStatus 由引擎从观察事实派生，不再由调用方指定）。 */
   integrityEvidence(): PackIntegrityEvidenceSummary;
 }
@@ -125,6 +133,9 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   const browser = createBrowserStateCollector(workspace, evidence);
   const realtime = createRealtimeCollector(workspace, evidence);
   let attachments: AttachedCapture[] = [];
+  // 根 target → 附件（第五轮 G3）：viewer-initial 阶段截图与 popup 根收尾
+  // 快照按根 target 路由，不再只从主根采集。
+  const rootAttachments = new Map<string, AttachedCapture>();
   // 挂载中途失败的根 target 补行（attached=false）：事件监听在 enable 序列
   // 前已注册，事务可能已进共享 collector 且 targetId 指向该根 target；
   // 不补行则 catalog/targets.json 缺行，relations 引用未知 ID，导出被拒。
@@ -137,6 +148,12 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   let referencesClosed = false;
   let stopped = false;
   let stopPromise: Promise<void> | null = null;
+  // Viewer 初始截图可由看门狗异步发起。手动 stop 也必须等它落定，
+  // 否则 CDP 返回截图前 workspace 已 finalize，会将本可留存的截图误记为缺失。
+  const pendingViewerInitialCaptures = new Set<Promise<boolean>>();
+  // popup/OOPIF 可在 stop 前一刻开始挂载。收尾必须等待已发起的
+  // attach 落定，否则迟到附件会在终态目录/证据图生成后继续写共享 collector。
+  const pendingAttachmentOperations = new Set<Promise<void>>();
 
   if (init.netlog) {
     try {
@@ -160,6 +177,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     targets: attachments.flatMap(attached => attached.targets()),
     channels: [...webSockets.channelRows(), ...realtime.channelRows()],
     navigations: attachments.flatMap(attached => attached.mainFrameNavigations()),
+    renderSurfaces: browser.renderSurfaceRows(),
     hookFailures: [...evidence.diagnostics().observerHookFailures],
   });
   // 派生结果签名缓存（P3-R11-4）：renderer 2s 轮询 / 看门狗轮询在事实
@@ -237,6 +255,15 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       }
     };
 
+    // stop() 调用瞬间已将 stopped 置 true，不会再登记新附件/截图；
+    // 先等待此前已发起的工作，再关闭事件入口。失败附件已自行
+    // 补 salvage target 并记账，不应使其他附件无法收尾。
+    if (pendingAttachmentOperations.size > 0) {
+      await Promise.allSettled([...pendingAttachmentOperations]);
+    }
+    if (pendingViewerInitialCaptures.size > 0) {
+      await Promise.allSettled([...pendingViewerInitialCaptures]);
+    }
     for (const attached of attachments) attached.stopAccepting();
     await Promise.all(attachments.map(attached => safeStep('drain', () => attached.drain())));
     collectorReady =
@@ -244,10 +271,52 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     if (primary) {
       const primaryAttached = primary;
       await safeStep('snapshot-browser-state', async () => {
-        await primaryAttached.snapshotBrowserState();
-        browserStateWritten = true;
+        const steps = await primaryAttached.snapshotBrowserState();
+        // 按步骤键遍历（新增步骤自动进步骤明细，不出现静默步骤）
+        const failedSteps = (Object.keys(steps) as Array<keyof typeof steps>).filter(
+          step => !steps[step],
+        );
+        for (const step of failedSteps) {
+          // 第 12 轮阻断 4：步骤失败（内部已记账为 droppedEvent）不得
+          // 伪装成「已写入」——browserStateGaps 缺口 → INCOMPLETE_BROWSER_STATE
+          evidence.recordGap('browserState', step, '浏览器状态快照步骤失败（详见 droppedEventByMethod）');
+        }
+        browserStateWritten = failedSteps.length === 0;
         const pageEnv = await primaryAttached.collectPageEnvironment();
         if (pageEnv) pageEnvironment = pageEnv;
+      });
+    }
+    // popup 根的 Storage + 最终状态也逐根采集。Cookie 是 profile 级，
+    // 但 sessionStorage 是 browsing-context 级，主根快照不能代表 popup。
+    for (const [rootTargetId, attached] of rootAttachments) {
+      if (attached === primary) continue;
+      await safeStep('snapshot-popup-storage', async () => {
+        const steps = await attached.snapshotAdditionalStorage();
+        for (const step of (Object.keys(steps) as Array<keyof typeof steps>)) {
+          if (steps[step]) continue;
+          evidence.recordGap(
+            'browserState',
+            `popup-${step}:${rootTargetId}`,
+            `popup 根（${rootTargetId}）${step} 快照失败（详见 droppedEventByMethod）`,
+          );
+        }
+      });
+      await safeStep('snapshot-final-surfaces', async () => {
+        const steps = await attached.snapshotFinalSurfaces();
+        if (!steps.stopScreenshot) {
+          evidence.recordGap(
+            'browserState',
+            `stop-screenshot:${rootTargetId}`,
+            `popup 根（${rootTargetId}）收尾 stop 截图失败（详见 droppedEventByMethod）`,
+          );
+        }
+        if (!steps.domSnapshot) {
+          evidence.recordGap(
+            'browserState',
+            `dom-snapshot:${rootTargetId}`,
+            `popup 根（${rootTargetId}）收尾 DOM 快照失败（详见 droppedEventByMethod）`,
+          );
+        }
       });
     }
     await safeStep('http-flush', () => http.flush());
@@ -369,7 +438,11 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     // 证据图（阶段 3 第 2 刀）：从观察事实派生 ai/value-flow.json 与
     // catalog/relations.jsonl。只记字节级观察背书的边；storage 快照读取
     // 失败只丢 cookie 链（显式记账），crypto / WS 参数链继续派生。
+    // 第 12 轮阻断 5：派生/写盘失败（含 storage 读取降级）不得伪装成
+    // 「已闭环」——evidenceGraphOk=false 时 referencesClosed 不置位。
+    let evidenceGraphOk = false;
     await safeStep('evidence-graph', async () => {
+      let storageReadFailed = false;
       let storageCookies: Array<{ name: string; value: string }> = [];
       let storageCapturedAt = now();
       try {
@@ -388,6 +461,12 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       } catch (error) {
         // storage.json 是快照步产物；读取失败不牵连其余派生链
         evidence.droppedEvent('value-flow-storage-read', error);
+        evidence.recordGap(
+          'evidenceGraph',
+          'value-flow-storage-read',
+          'storage 快照读取失败：cookie 链边丢弃',
+        );
+        storageReadFailed = true;
       }
       const readBody = async (ref: PackV2BodyRef): Promise<Buffer | null> => {
         try {
@@ -419,12 +498,22 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
         'catalog/relations.jsonl',
         relations.length === 0 ? '' : `${relations.map(row => JSON.stringify(row)).join('\n')}\n`,
       );
+      if (!storageReadFailed) evidenceGraphOk = true;
     });
+    if (!evidenceGraphOk) {
+      // 步骤整体抛出（safeStep 已记 droppedEvent）或 storage 读取降级：
+      // 缺口显式记账，evidence-references-closed 门禁如实失败
+      evidence.recordGap(
+        'evidenceGraph',
+        'evidence-graph',
+        '证据图派生或写盘未完成（详见 droppedEventByMethod）',
+      );
+    }
 
     await safeStep('workspace-flush', async () => {
       await workspace.flush();
       rawJournalsClosed = true;
-      referencesClosed = true;
+      if (evidenceGraphOk) referencesClosed = true;
     });
     // 终态 facts（含完整证据摘要）必须在 finalize 前落盘：崩溃恢复导出的
     // 单一事实来源。
@@ -434,56 +523,62 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
 
   return {
     workspace,
-    async attachCdp(cdp, context) {
-      if (stopped) throw new Error('采集会话已停止，不能再挂载 CDP');
-      let attached: AttachedCapture;
-      try {
-        attached = await attachProtocolAgnosticCapture({
-          cdp,
-          journal,
-          http,
-          webSockets,
-          crypto,
-          scripts,
-          browser,
-          realtime,
-          evidence,
-          now,
-          rootTargetId: context?.targetId ?? 'target-root',
-          windowId: context?.windowId,
-          rootWindowRole: context?.windowRole,
-          rootOpenerTargetId: context?.openerTargetId,
-        });
-      } catch (error) {
-        // 挂载中途失败（enable 序列某步抛出）：附件被丢弃，但已进共享
-        // collector 的事务仍在——补 attached=false 行保住 target 身份，
-        // 识别失败绝不牵连导出（UNKNOWN_EVIDENCE_ID 门禁不再触发）。
-        salvagedTargets.push({
-          id: context?.targetId ?? 'target-root',
-          type: context?.windowRole === 'popup' ? 'popup' : 'page',
-          attached: false,
-          url: null,
-          ...(context?.openerTargetId ? { openerTargetId: context.openerTargetId } : {}),
-          detachReason: 'attach-failed',
-        });
-        throw error;
-      }
-      if (!primary) {
-        primary = attached;
-        primaryTargetId = context?.targetId ?? 'target-root';
-      }
-      attachments.push(attached);
-      if (!pageEnvironment) {
-        // 浏览器级环境事实：挂在导航前采集也成立（不依赖具体页面内容）。
+    attachCdp(cdp, context) {
+      if (stopped) return Promise.reject(new Error('采集会话已停止，不能再挂载 CDP'));
+      let operation!: Promise<void>;
+      operation = (async () => {
+        let attached: AttachedCapture;
         try {
-          const pageEnv = await attached.collectPageEnvironment();
-          if (pageEnv) pageEnvironment = pageEnv;
+          attached = await attachProtocolAgnosticCapture({
+            cdp,
+            journal,
+            http,
+            webSockets,
+            crypto,
+            scripts,
+            browser,
+            realtime,
+            evidence,
+            now,
+            rootTargetId: context?.targetId ?? 'target-root',
+            windowId: context?.windowId,
+            rootWindowRole: context?.windowRole,
+            rootOpenerTargetId: context?.openerTargetId,
+          });
         } catch (error) {
-          // 捕获早期环境采集失败：stop 时会重试；崩溃恢复退回保守事实
-          evidence.droppedEvent('page-environment-early', error);
+          // 挂载中途失败（enable 序列某步抛出）：附件被丢弃，但已进共享
+          // collector 的事务仍在——补 attached=false 行保住 target 身份，
+          // 识别失败绝不牵连导出（UNKNOWN_EVIDENCE_ID 门禁不再触发）。
+          salvagedTargets.push({
+            id: context?.targetId ?? 'target-root',
+            type: context?.windowRole === 'popup' ? 'popup' : 'page',
+            attached: false,
+            url: null,
+            ...(context?.openerTargetId ? { openerTargetId: context.openerTargetId } : {}),
+            detachReason: 'attach-failed',
+          });
+          throw error;
         }
-      }
-      if (!stopped) await writeCaptureFacts(false);
+        if (!primary) {
+          primary = attached;
+          primaryTargetId = context?.targetId ?? 'target-root';
+        }
+        attachments.push(attached);
+        rootAttachments.set(context?.targetId ?? 'target-root', attached);
+        if (!pageEnvironment) {
+          // 浏览器级环境事实：挂在导航前采集也成立（不依赖具体页面内容）。
+          try {
+            const pageEnv = await attached.collectPageEnvironment();
+            if (pageEnv) pageEnvironment = pageEnv;
+          } catch (error) {
+            // 捕获早期环境采集失败：stop 时会重试；崩溃恢复退回保守事实
+            evidence.droppedEvent('page-environment-early', error);
+          }
+        }
+        if (!stopped) await writeCaptureFacts(false);
+      })().finally(() => pendingAttachmentOperations.delete(operation));
+      pendingAttachmentOperations.add(operation);
+      return operation;
     },
     async drain() {
       await Promise.all(attachments.map(attached => attached.drain()));
@@ -517,6 +612,55 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     },
     workflowFacts() {
       return collectWorkflowFacts();
+    },
+    pendingNonStreamingRequests() {
+      return http.pendingNonStreamingHops();
+    },
+    async captureViewerInitialScreenshot(targetId: string) {
+      // 第五轮 G3（§7.4）：viewer-initial 阶段截图按根 target 路由；未知
+      // target（未挂载 / 已 detach / 收尾后）显式记账返回 false，识别与
+      // 采集照常继续——缺截图由一致性验证器如实报缺口。
+      // Viewer 可以在 iframe/OOPIF 子 target 中。截图仍从其所属根
+      // BrowserWindow 采全画面，不应因 targetId 不是根窗口就误报缺失。
+      const attached =
+        rootAttachments.get(targetId) ??
+        attachments.find(candidate => candidate.targets().some(target => target.id === targetId));
+      if (!attached || stopped) {
+        evidence.droppedEvent(
+          'viewer-initial-screenshot',
+          new Error(stopped ? `收尾已开始，viewer target ${targetId} 阶段截图不再写入` : `未知 viewer 根 target：${targetId}（未挂载）`),
+        );
+        evidence.recordGap(
+          'browserState',
+          `viewer-initial:${targetId}`,
+          stopped ? '收尾开始前未完成 Viewer 初始截图' : 'Viewer target 未挂载，无法完成初始截图',
+        );
+        return false;
+      }
+      let operation!: Promise<boolean>;
+      operation = (async () => {
+        try {
+          const captured = await attached.capturePhaseScreenshot('viewer-initial');
+          if (!captured) {
+            evidence.recordGap(
+              'browserState',
+              `viewer-initial:${targetId}`,
+              'Viewer 初始截图失败（详见 droppedEventByMethod）',
+            );
+          }
+          return captured;
+        } catch (error) {
+          evidence.droppedEvent('viewer-initial-screenshot', error);
+          evidence.recordGap(
+            'browserState',
+            `viewer-initial:${targetId}`,
+            'Viewer 初始截图异常（详见 droppedEventByMethod）',
+          );
+          return false;
+        }
+      })().finally(() => pendingViewerInitialCaptures.delete(operation));
+      pendingViewerInitialCaptures.add(operation);
+      return operation;
     },
     integrityEvidence() {
       return evidence.summary({

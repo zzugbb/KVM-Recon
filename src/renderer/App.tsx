@@ -29,12 +29,17 @@ interface StatusPayload {
   job: StatusJob | null;
   export: { zipPath: string; fileName: string; status: { captureIntegrity: string } } | null;
   recovery: {
-    kind: 'exported' | 'refused' | 'failed';
+    kind: 'recovered' | 'exported' | 'refused' | 'failed';
     jobId?: string;
     zipPath?: string;
     reason?: string;
     error?: string;
     conservative?: boolean;
+    workflowStatus?: string;
+    targetUrl?: string;
+    deviceLabel?: string;
+    /** 本次导出的实际完整度（kind=exported）：照实显示。 */
+    captureIntegrity?: string;
   } | null;
 }
 
@@ -109,10 +114,14 @@ export function App() {
 
   const preloadMissing = typeof window !== 'undefined' && !window.kvmRecon?.startCapture;
   const job = status?.job ?? null;
-  const canStart = !job && !busy && target.trim().length > 0 && !preloadMissing;
+  const recovery = status?.recovery ?? null;
+  // 恢复作业待导出期间不能开始新作业（与恢复卡文案承诺一致，主进程同样拒绝）
+  const canStart =
+    !job && !busy && target.trim().length > 0 && !preloadMissing && recovery?.kind !== 'recovered';
   const canStop = job?.state === 'capturing' && !busy;
   const canExport = job && job.state !== 'exported' && !busy;
   const canDiscard = job?.state === 'exported' && !busy;
+  const canExportRecovered = recovery?.kind === 'recovered' && !busy;
 
   return (
     <div className="app-shell">
@@ -130,22 +139,43 @@ export function App() {
         </p>
       ) : null}
 
-      {status?.recovery ? (
+      {recovery ? (
         <div className="status-card" role="alert" aria-label="崩溃恢复结果">
           <h2>上次作业恢复</h2>
-          {status.recovery.kind === 'exported' ? (
+          {recovery.kind === 'recovered' ? (
+            <>
+              <p>
+                上次未完成的作业 <code>{recovery.jobId}</code> 已恢复接管（
+                {recovery.conservative ? '硬崩溃保守摘要' : '真实摘要'}
+                {recovery.deviceLabel ? <> · 设备说明：{recovery.deviceLabel}</> : ''}
+                {recovery.targetUrl ? <> · 目标 <code>{recovery.targetUrl}</code></> : ''}
+                {recovery.workflowStatus ? ` · 恢复时派生：${recovery.workflowStatus}` : ''}
+                ）。恢复不自动导出：请手动选择目录导出，导出完成前不能开始新的采集作业。
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => void run(() => window.kvmRecon!.exportRecoveredCapture())}
+                  disabled={!canExportRecovered}
+                >
+                  导出恢复作业
+                </button>
+              </div>
+            </>
+          ) : recovery.kind === 'exported' ? (
             <p>
-              上次未完成的作业 {status.recovery.jobId} 已按保守事实恢复导出到{' '}
-              <code>{status.recovery.zipPath}</code>
-              （{status.recovery.conservative ? '硬崩溃保守摘要' : '真实摘要'}，包为 INCOMPLETE）。
+              上次未完成的作业 {recovery.jobId} 已恢复并手动导出到{' '}
+              <code>{recovery.zipPath}</code>
+              （{recovery.conservative ? '硬崩溃保守摘要' : '真实摘要'}，包为{' '}
+              {recovery.captureIntegrity ?? '未知完整度'}）。
             </p>
-          ) : status.recovery.kind === 'refused' ? (
+          ) : recovery.kind === 'refused' ? (
             <p>
-              拒绝恢复作业 {status.recovery.jobId ?? ''}：{status.recovery.reason}
+              拒绝恢复作业 {recovery.jobId ?? ''}：{recovery.reason}
             </p>
           ) : (
             <p>
-              恢复作业 {status.recovery.jobId ?? ''} 失败：{status.recovery.error}
+              恢复作业 {recovery.jobId ?? ''} 失败：{recovery.error}
             </p>
           )}
         </div>

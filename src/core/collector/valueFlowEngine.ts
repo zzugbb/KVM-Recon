@@ -30,7 +30,7 @@ import type {
   ValueFlowNode,
 } from '../capture-pack-v2/types';
 import { headerValue } from './cdpValues';
-import { setCookiePairs, timeOf } from './workflowStatusEngine';
+import { responseArrivalAt, setCookiePairs, timeOf } from './workflowStatusEngine';
 
 const TX_PATH = 'raw/http/transactions.jsonl';
 const STORAGE_PATH = 'raw/browser/storage.json';
@@ -138,20 +138,6 @@ function containsAny(haystack: Buffer, needles: ReadonlyArray<Buffer>): boolean 
   return needles.some(needle => needle.byteLength > 0 && haystack.indexOf(needle) >= 0);
 }
 
-/**
- * 响应到达时间的近似（第 11 轮审核 P3-R11-1）：请求开始 + sendMs（请求
- * 发送）+ waitMs（等待响应首字节）。用作「响应正文 / Set-Cookie → 消费者」
- * 边的时间下限——消费者（crypto 调用 / WS 握手 / cookie 携带请求）发生在
- * 请求开始与响应到达之间时，页面尚不可能读到该正文或持有该 cookie，
- * 字节包含不构成传播证据，不得成边。timing 缺失（CDP 未提供）时退回
- * 请求开始时间（诚实下限：不做比已知事实更强的时序主张）。
- */
-function responseArrivalAt(transaction: PackV2HttpTransactionRow): number {
-  const timing = transaction.timing;
-  if (!timing) return timeOf(transaction.startedAt);
-  return timeOf(transaction.startedAt) + (timing.sendMs || 0) + (timing.waitMs || 0);
-}
-
 interface CryptoNeedle {
   nodeKey: string;
   at: number;
@@ -184,20 +170,23 @@ export async function deriveValueFlow(
       const eq = pair.indexOf('=');
       const value = pair.slice(eq + 1);
       if (!value) continue;
+      // 响应的存在时刻 = 到达时刻（第五轮 G4）：Set-Cookie 在响应头到达时
+      // 才对页面可见，节点不得记成请求开始时已存在
+      const arrivedAt = responseArrivalAt(transaction);
       const nodeKey = addNode({
         key: `set-cookie:${transaction.id}:${pair}`,
         kind: 'http-response',
         name: `${pair.slice(0, eq)}（响应 Set-Cookie）`,
         evidencePath: TX_PATH,
         evidenceId: transaction.id,
-        occurredAt: transaction.startedAt,
+        occurredAt: new Date(arrivedAt).toISOString(),
       });
       issued.push({
         pair,
         name: pair.slice(0, eq),
         value,
         txId: transaction.id,
-        at: responseArrivalAt(transaction),
+        at: arrivedAt,
         nodeKey,
       });
     }
@@ -374,6 +363,9 @@ export async function deriveValueFlow(
   for (const transaction of facts.transactions) {
     if (!transaction.responseBody) continue;
     const arrivedAt = responseArrivalAt(transaction);
+    // 响应正文的存在时刻 = 到达时刻（第五轮 G4）：节点与边不得记成请求
+    // 开始时就已存在
+    const arrivedAtIso = new Date(arrivedAt).toISOString();
     const body = await readBody(transaction.responseBody);
     if (!body) continue;
     for (const needle of inputNeedles) {
@@ -385,7 +377,7 @@ export async function deriveValueFlow(
         name: `响应正文（${transaction.url}）`,
         evidencePath: TX_PATH,
         evidenceId: transaction.id,
-        occurredAt: transaction.startedAt,
+        occurredAt: arrivedAtIso,
       });
       edges.push({
         fromKey: responseKey,
@@ -393,7 +385,7 @@ export async function deriveValueFlow(
         relation: 'derived-from',
         evidencePath: CRYPTO_PATH,
         replaySubstitution: true,
-        occurredAt: transaction.startedAt,
+        occurredAt: arrivedAtIso,
       });
     }
     for (const param of wsParams) {
@@ -405,7 +397,7 @@ export async function deriveValueFlow(
         name: `响应正文（${transaction.url}）`,
         evidencePath: TX_PATH,
         evidenceId: transaction.id,
-        occurredAt: transaction.startedAt,
+        occurredAt: arrivedAtIso,
       });
       addPropagationEdge(
         responseKey,

@@ -36,6 +36,7 @@ import type {
   PackV2Manifest,
   PackV2NetLogFile,
   PackV2RelationRow,
+  PackV2RenderSurfaceRow,
   PackV2ReplayChannelsFile,
   PackV2ReplayManifest,
   PackV2ReplayRequestRow,
@@ -555,7 +556,7 @@ export async function createSampleCapturePackV2(
       responseBody: httpBodyRef(exchange.responseBody),
       initiator: initiatorFor(exchange),
       referer: refererFor(exchange),
-      timing: { sendMs: 1, waitMs: 4, receiveMs: 5 },
+      timing: { sendMs: 1, waitMs: 4, receiveMs: 7 },
       connectionId: 'conn-0001',
       remoteIpAddress: SAMPLE_CANONICAL_HOST,
       remotePort: SAMPLE_CANONICAL_PORT,
@@ -984,8 +985,8 @@ export async function createSampleCapturePackV2(
       { occurredAt: isoAt(startedAt, 11), kind: 'dom-snapshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/dom-snapshots/0001-login.html' },
       { occurredAt: isoAt(startedAt, 12), kind: 'dom-snapshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/dom-snapshots/0002-console-entry.html' },
       { occurredAt: isoAt(startedAt, 13), kind: 'dom-snapshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/dom-snapshots/0003-viewer.html' },
-      { occurredAt: isoAt(startedAt, 14), kind: 'screenshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/screenshots/viewer-initial.png' },
-      { occurredAt: isoAt(startedAt, 15), kind: 'screenshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/screenshots/viewer-stable.png' },
+      { occurredAt: isoAt(startedAt, 14), kind: 'screenshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/screenshots/0001-viewer-initial.png' },
+      { occurredAt: isoAt(startedAt, 15), kind: 'screenshot-saved', targetId: 'target-page-0001', detail: 'raw/browser/screenshots/0002-stop.png' },
     ];
 
     const actions: PackV2BrowserActionRow[] = [
@@ -1004,6 +1005,32 @@ export async function createSampleCapturePackV2(
         targetId: 'target-page-0001',
         elementSummary: '#console-open 打开远程控制台',
         url: urls.consoleEntry,
+      },
+    ];
+
+    // §7.3 第 2 组事实样例：动作后在血缘内新建的渲染/执行表面
+    //（canvas-context / Worker 构造 / 持续渲染，五轮 G1）
+    const renderSurfaces: PackV2RenderSurfaceRow[] = [
+      {
+        id: 'render-0001',
+        occurredAt: isoAt(startedAt, 6),
+        targetId: 'target-page-0001',
+        surface: 'canvas-context',
+        detail: '2d',
+      },
+      {
+        id: 'render-0002',
+        occurredAt: isoAt(startedAt, 7),
+        targetId: 'target-page-0001',
+        surface: 'worker',
+        detail: urls.viewerWorker,
+      },
+      {
+        id: 'render-0003',
+        occurredAt: isoAt(startedAt, 8),
+        targetId: 'target-page-0001',
+        surface: 'request-animation-frame',
+        detail: '1',
       },
     ];
 
@@ -1204,6 +1231,7 @@ export async function createSampleCapturePackV2(
       { path: 'raw/runtime/crypto.jsonl', content: jsonl(cryptoRows) },
       { path: 'raw/browser/timeline.jsonl', content: jsonl(timeline) },
       { path: 'raw/browser/actions.jsonl', content: jsonl(actions) },
+      { path: 'raw/browser/render-surfaces.jsonl', content: jsonl(renderSurfaces) },
       { path: 'raw/browser/targets.json', content: json2({ schemaVersion: '2.0.0', targets } satisfies PackV2TargetsFile) },
       { path: 'raw/browser/storage.json', content: json2(storage) },
       { path: 'raw/browser/console.jsonl', content: jsonl(consoleRows) },
@@ -1212,8 +1240,8 @@ export async function createSampleCapturePackV2(
       { path: 'raw/browser/dom-snapshots/0003-viewer.html', content: exchanges[4].responseBody },
       // Viewer 初始与稳定阶段截图（规范 §7.4）。阶段 0 为两张不同的占位样例图，
       // 真实画面截图由阶段 2 采集器生成。
-      { path: 'raw/browser/screenshots/viewer-initial.png', content: sampleViewerPng([0x42, 0xc7, 0xb7, 0xff]) },
-      { path: 'raw/browser/screenshots/viewer-stable.png', content: sampleViewerPng([0x4b, 0xc2, 0x7a, 0xff]) },
+      { path: 'raw/browser/screenshots/0001-viewer-initial.png', content: sampleViewerPng([0x42, 0xc7, 0xb7, 0xff]) },
+      { path: 'raw/browser/screenshots/0002-stop.png', content: sampleViewerPng([0x4b, 0xc2, 0x7a, 0xff]) },
       { path: 'raw/scripts/index.json', content: json2({ schemaVersion: '2.0.0', scripts } satisfies PackV2ScriptsIndex) },
       { path: `raw/scripts/files/${inlineScriptDigest}`, content: inlineScriptSource },
       { path: `raw/scripts/files/${loginDigestScriptDigest}`, content: loginDigestScriptSource },
@@ -1314,6 +1342,8 @@ export async function createSampleCapturePackV2(
         : [{ id: 'ws-0001', detail: '双向 WebSocket 帧未采集完整' }],
       unsupportedChannels: [],
       journalWriteFailures: [],
+      browserStateGaps: [],
+      evidenceGraphFailures: [],
       exportValidationFailures: structuralProblems.map(problem => ({
         id: problem.path || problem.code,
         detail: problem.detail,

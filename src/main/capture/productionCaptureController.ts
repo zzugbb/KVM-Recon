@@ -104,6 +104,10 @@ export async function createProductionCapture(
   let probeResult: ProbeBmcTargetResult | null = null;
   let stopped = false;
   let stoppedAt: string | null = null;
+  // 幂等：并发/重入 stop 共享同一次收尾（五轮 G6）。与 createCaptureSession
+  // 同一形态——收尾序列不可重放（认证 probe 是带会话 Cookie 的网络副作用），
+  // 失败也复用同一 promise：调用方拿到同一拒绝，重试入口在 discard/恢复链路
+  let stopPromise: Promise<void> | null = null;
 
   // Viewer 自动收尾看门狗（规范 §7.4）：检测 → 稳定 → 只 stop，
   // 绝不自动导出 / 关窗 / 弹保存框；识别失败只记诊断，绝不停采集。
@@ -111,6 +115,8 @@ export async function createProductionCapture(
     getFacts: () => captureSession.workflowFacts(),
     now: () => Date.now(),
     recordDiagnostic: (kind, detail) => recordDiagnostic(kind, detail),
+    pendingNonStreamingRequests: () => captureSession.pendingNonStreamingRequests(),
+    captureViewerInitialState: targetId => captureSession.captureViewerInitialScreenshot(targetId),
     // 返回 Promise 本体：拒绝由看门狗记 viewer-auto-stop-failed 诊断（P3-R11-2）
     autoStop: () => stop(),
   });
@@ -211,14 +217,18 @@ export async function createProductionCapture(
       callback(true);
       recordDiagnostic('cert-trusted', `${error} ${url}`);
     });
-    contents.on('console-message', (_event, level, message, line, sourceId) => {
-      if (level < 2) return;
+    // Electron 44：console-message 是单事件对象签名（旧五参数形式已弃用，
+    // 五轮 G9）。旧数字 level 的 2/3（warning/error）对应新字符串枚举
+    contents.on('console-message', event => {
+      if (event.level !== 'warning' && event.level !== 'error') return;
       // 页面 console 全文已在包内（CDP Log → raw/browser/console.jsonl）；
       // 这里只保留 stderr/环形缓冲镜像（截断并遮蔽敏感词，避免口令打到控制台）
-      const safe = String(message)
+      const safe = String(event.message)
         .replace(/password|passwd|cookie|token|authorization/gi, '[redacted]')
         .slice(0, 240);
-      recordCaptureWindowLog(`capture-console level=${level} ${safe} (${sourceId}:${line})`);
+      recordCaptureWindowLog(
+        `capture-console level=${event.level} ${safe} (${event.sourceId}:${event.lineNumber})`,
+      );
     });
     contents.on('render-process-gone', (_event, details) => {
       recordDiagnostic('renderer-gone', `reason=${details.reason} exit=${details.exitCode}`);
@@ -365,13 +375,23 @@ export async function createProductionCapture(
   }
 
   async function stop() {
+    if (stopPromise) return stopPromise;
     viewerWatchdog.stop();
-    if (stopped) return;
-    await refreshAuthenticatedProbe();
-    await writeProbeFile();
-    await captureSession.stop();
-    stoppedAt = new Date().toISOString();
-    stopped = true;
+    stopPromise = (async () => {
+      await refreshAuthenticatedProbe();
+      try {
+        await writeProbeFile();
+      } catch (error) {
+        // 收尾期 Probe 写盘失败（磁盘不可写/水位触发）不能阻断
+        // 核心采集会话收尾；记账后继续，Capture Pack 将由必需文件/
+        // 导出门禁诚实降级，不把作业永久留在 active。
+        captureSession.evidence().droppedEvent('probe-stop-write', error);
+      }
+      await captureSession.stop();
+      stoppedAt = new Date().toISOString();
+      stopped = true;
+    })();
+    return stopPromise;
   }
 
   async function exportPack(zipDir: string): Promise<ProductionCaptureExportResult> {

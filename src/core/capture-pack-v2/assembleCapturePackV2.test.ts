@@ -52,6 +52,8 @@ function evidence(workflowStatus: PackIntegrityEvidenceSummary['workflowStatus']
     channelGaps: [],
     unsupportedChannels: [],
     journalWriteFailures: [],
+    browserStateGaps: [],
+    evidenceGraphFailures: [],
     exportValidationFailures: [],
     workflowStatus,
   };

@@ -1,18 +1,21 @@
 /**
  * KVM-Recon 主进程入口（0.3.0 阶段 2：生产 Controller + 单作业模型）。
  *
- * IPC 面只保留单作业生命周期：start / status / stop / export / discard。
- * 启动时先恢复上一个未完成作业（recoverCrashedJobExport，规范 §4.2：
- * 应用异常退出后只恢复这一份；拒绝恢复时现场资料保留）。
+ * IPC 面只保留单作业生命周期：start / status / stop / export / discard
+ * （+ 恢复作业手动导出 exportRecovered）。
+ * 启动时先恢复上一个未完成作业（recoverCrashedJob，规范 §4.2：
+ * 应用异常退出后只恢复这一份；恢复止步于 finalize，不自动导出——
+ * 由用户在恢复卡上手动选择目录导出；拒绝恢复时现场资料保留）。
  * 0.2.x 的多作业 / 暂停 / 手动截图 / 打开对比包 / 离场复验 IPC 已删除。
  */
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { APP_VERSION, BUILD_ID } from '../version';
-import { recoverCrashedJobExport } from '../core/export/recoverCrashedJobExport';
+import type { JobWorkspace } from '../core/job-workspace/createJobWorkspace';
+import { exportRecoveredJob, recoverCrashedJob } from '../core/export/recoverCrashedJob';
 import {
   createProductionCapture,
   type ProductionCaptureController,
@@ -83,17 +86,34 @@ interface CaptureStatusPayload {
 }
 
 interface RecoveryNotice {
-  kind: 'exported' | 'refused' | 'failed';
+  kind: 'recovered' | 'exported' | 'refused' | 'failed';
   jobId?: string;
   zipPath?: string;
   reason?: string;
   error?: string;
   conservative?: boolean;
+  /** 待导出恢复作业的信息（kind=recovered）：恢复只接管不导出，导出由用户手动触发。 */
+  workflowStatus?: string;
+  targetUrl?: string;
+  deviceLabel?: string;
+  /** 本次导出的实际完整度（kind=exported）：照实显示，不得硬编码 INCOMPLETE。 */
+  captureIntegrity?: string;
+}
+
+/** 启动恢复接管、等待用户手动导出的作业（finalized-unexported，导出成功才 markExported）。 */
+interface RecoveredPendingJob {
+  workspace: JobWorkspace;
+  jobId: string;
+  conservative: boolean;
 }
 
 let activeController: ProductionCaptureController | null = null;
 let lastExport: (ProductionCaptureExportResult & { zipPath: string }) | null = null;
 let recoveryNotice: RecoveryNotice | null = null;
+let recoveredPending: RecoveredPendingJob | null = null;
+// exportRecovered 进行中标志：ipcMain.handle 不串行化，并发 invoke 会绕过
+// recoveredPending 检查写出两份 ZIP / 双重 markExported——同步置位挡重入
+let exportRecoveredInFlight = false;
 
 function statusJob(): CaptureStatusJob | null {
   if (!activeController) return null;
@@ -131,6 +151,12 @@ function registerCaptureHandlers() {
           return {
             ok: false as const,
             error: '已有进行中的采集作业（单作业模型）。先停止并导出，或丢弃已导出的作业。',
+          };
+        }
+        if (recoveredPending) {
+          return {
+            ok: false as const,
+            error: `上次恢复的作业 ${recoveredPending.jobId} 尚未导出。请先在恢复卡上导出，导出完成前不能开始新的采集作业。`,
           };
         }
         const target = parseTargetInput(String(payload?.target ?? ''));
@@ -197,6 +223,69 @@ function registerCaptureHandlers() {
       return { ...statusPayload(), zipPath: result.zipPath, fileName: result.fileName };
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
+    }
+  });
+
+  ipcMain.handle('capture:exportRecovered', async (event, payload?: { zipDir?: string }) => {
+    if (!recoveredPending) {
+      return { ok: false as const, error: '没有待导出的恢复作业。' };
+    }
+    if (exportRecoveredInFlight) {
+      return { ok: false as const, error: '恢复作业导出进行中，请等待本次导出完成。' };
+    }
+    exportRecoveredInFlight = true;
+    try {
+      let zipDir = typeof payload?.zipDir === 'string' && payload.zipDir ? payload.zipDir : null;
+      if (!zipDir) {
+        const parentWindow = BrowserWindow.fromWebContents(event.sender);
+        const options = {
+          title: '选择恢复作业保存位置',
+          defaultPath: app.getPath('downloads'),
+          properties: ['openDirectory' as const, 'createDirectory' as const],
+        };
+        const result = parentWindow
+          ? await dialog.showOpenDialog(parentWindow, options)
+          : await dialog.showOpenDialog(options);
+        if (result.canceled || !result.filePaths[0]) {
+          return { ok: false as const, error: '已取消导出（恢复作业保留，可重新导出）。' };
+        }
+        zipDir = result.filePaths[0];
+      }
+      const pending = recoveredPending;
+      const result = await exportRecoveredJob({
+        workspace: pending.workspace,
+        zipDir,
+        tool: { version: APP_VERSION, buildId: BUILD_ID },
+      });
+      if (!result.ok) {
+        // 导出失败不 markExported：待导出状态保留，可重试
+        return { ok: false as const, error: result.error };
+      }
+      // lastExport 只描述当前作业（activeController）的导出；恢复作业不属于
+      // 任何当前作业，置位会让下一个新作业从首轮 status 起就报 'exported'
+      // （canStop/canExport 全关，UI 无法停止/导出/丢弃）。恢复导出的事实
+      // 由 recoveryNotice（kind=exported，含 zipPath/完整度）独自承载。
+      // 先翻待导出状态再 close：close 抛错（互斥超时等）不得让已导出的
+      // 作业退回待导出——那会诱导用户重试导出写出第二份 ZIP。
+      recoveredPending = null;
+      recoveryNotice = {
+        kind: 'exported',
+        jobId: pending.jobId,
+        zipPath: result.zipPath,
+        conservative: pending.conservative,
+        captureIntegrity: result.status.captureIntegrity,
+      };
+      try {
+        await pending.workspace.close();
+      } catch (error) {
+        // 句柄由进程退出兜底释放；导出事实已持久化（markExported 在 close 前）
+        recordCaptureWindowLog(`recovered-export-close-failed ${errorMessage(error)}`);
+      }
+      return { ...statusPayload(), zipPath: result.zipPath, fileName: result.fileName };
+    } catch (error) {
+      return { ok: false as const, error: errorMessage(error) };
+    } finally {
+      exportRecoveredInFlight = false;
     }
   });
 
@@ -320,23 +409,32 @@ function createMainWindow() {
   }
 }
 
-/** 启动时崩溃恢复（规范 §4.2）：恢复上一个未完成作业并直接导出到下载目录。 */
+/**
+ * 启动时崩溃恢复（规范 §4.2；第 12 轮：只提示不自动写 ZIP）。
+ * 恢复止步于 finalize：finalized-unexported 挂起为待导出，由用户在
+ * 恢复卡上手动选择目录导出（capture:exportRecovered）。
+ */
 async function recoverPreviousJob() {
-  const result = await recoverCrashedJobExport({
+  const result = await recoverCrashedJob({
     rootDir: workspacesRootDir(),
-    zipDir: app.getPath('downloads'),
     tool: { version: APP_VERSION, buildId: BUILD_ID },
     resetStaleOwner: true,
   });
   if (result.kind === 'no-workspace') return;
-  if (result.kind === 'exported') {
-    recoveryNotice = {
-      kind: 'exported',
+  if (result.kind === 'recovered') {
+    recoveredPending = {
+      workspace: result.workspace,
       jobId: result.jobId,
-      zipPath: result.zipPath,
       conservative: result.conservative,
     };
-    void shell.showItemInFolder(result.zipPath);
+    recoveryNotice = {
+      kind: 'recovered',
+      jobId: result.jobId,
+      conservative: result.conservative,
+      workflowStatus: result.workflowStatus,
+      targetUrl: result.targetUrl,
+      deviceLabel: result.deviceLabel,
+    };
     return;
   }
   if (result.kind === 'refused') {
@@ -347,8 +445,15 @@ async function recoverPreviousJob() {
 }
 
 // 采集中的正常退出也要收尾：把真实证据摘要写进 capture-facts，
-// 下次启动的恢复导出就能用真实摘要而不是保守摘要。
+// 下次启动的恢复就能用真实摘要而不是保守摘要。
+// 待导出的恢复作业只需释放句柄（finalized-unexported 现场保留，
+// 下次启动幂等再恢复提示，resetStaleOwner 已覆盖属主未释放的情况）。
 app.on('before-quit', event => {
+  if (recoveredPending) {
+    const pending = recoveredPending;
+    recoveredPending = null;
+    void pending.workspace.close().catch(() => undefined);
+  }
   if (!activeController || activeController.session.workspace.state !== 'active') return;
   event.preventDefault();
   void (async () => {

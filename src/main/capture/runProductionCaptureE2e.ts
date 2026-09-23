@@ -131,20 +131,25 @@ export async function runProductionCaptureE2e() {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
 
-  // probe 用确定性桩（E2E 断言采集链路，probe 正确性另有单测）
-  const e2eProbe = async (): Promise<ProbeBmcTargetResult> => ({
-    basic: { host: '127.0.0.1', port, scheme: 'http', vendor: '', product: '', firmwareVersion: '' },
-    paths: {},
-    familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
-    tls: {
-      reachable: true,
-      authorized: true,
-      authorizationError: '',
-      protocol: '',
-      cipher: null,
-      certificate: null,
-    },
-  });
+  // probe 用确定性桩（E2E 断言采集链路，probe 正确性另有单测）；
+  // 调用计数供并发 stop 幂等断言（五轮 G6：start 匿名 1 次 + stop 认证 1 次）
+  let e2eProbeCalls = 0;
+  const e2eProbe = async (): Promise<ProbeBmcTargetResult> => {
+    e2eProbeCalls += 1;
+    return {
+      basic: { host: '127.0.0.1', port, scheme: 'http', vendor: '', product: '', firmwareVersion: '' },
+      paths: {},
+      familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
+      tls: {
+        reachable: true,
+        authorized: true,
+        authorizationError: '',
+        protocol: '',
+        cipher: null,
+        certificate: null,
+      },
+    };
+  };
 
   const controller = await createProductionCapture({
     jobId: 'e2e-capture-controller',
@@ -196,7 +201,9 @@ export async function runProductionCaptureE2e() {
     await sleep(300);
   }
 
-  await controller.stop();
+  // 五轮 G6 反例：并发 stop 必须共享同一次收尾——重入各跑一遍收尾序列会
+  // 重复执行认证 probe（两次带会话 Cookie 的网络探测）
+  await Promise.all([controller.stop(), controller.stop()]);
   const exportResult = await controller.exportPack(zipDir);
 
   const zipEntries = await readZipEntries(exportResult.zipPath);
@@ -236,6 +243,9 @@ export async function runProductionCaptureE2e() {
 
   const failures = [
     !posted.received ? 'target=_blank POST 未到达服务端' : '',
+    e2eProbeCalls !== 2
+      ? `并发 stop 收尾序列重复执行（probe 跑了 ${e2eProbeCalls} 次，应为 start 1 次 + stop 1 次）`
+      : '',
     !popupLoaded.received ? '弹窗未加载' : '',
     !postRequest ? `缺少 POST 事务记录（transactions: ${transactions.slice(0, 400) || '(empty)'}）` : '',
     !popupDocument ? '缺少弹窗 Document 事务' : '',

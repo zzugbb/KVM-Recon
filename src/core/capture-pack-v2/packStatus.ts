@@ -75,8 +75,11 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
   // journal 行写入磁盘失败 = raw journal 缺行，按 §14 映射 INCOMPLETE_RAW_JOURNAL
   const rawJournal =
     !summary.rawJournalsClosed || summary.journalWriteFailures.length > 0;
-  const browserState = !summary.browserStateWritten;
-  const evidenceReference = !summary.evidenceReferencesClosed;
+  // 第 12 轮阻断 4：状态快照步骤失败（写入了空数据）不是「已写入」
+  const browserState = !summary.browserStateWritten || summary.browserStateGaps.length > 0;
+  // 第 12 轮阻断 5：证据图派生/写盘失败（被 best-effort 吞掉）不是「已闭环」
+  const evidenceReference =
+    !summary.evidenceReferencesClosed || summary.evidenceGraphFailures.length > 0;
 
   const reasons = sortIncompleteReasons([
     ...(bodyMissing ? (['INCOMPLETE_BODY_MISSING'] as const) : []),
@@ -143,8 +146,26 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
           .map(gap => `${gap.id}${gap.detail ? `: ${gap.detail}` : ''}`)
           .join('; ') || undefined,
     },
-    { id: 'browser-state-written', passed: summary.browserStateWritten },
-    { id: 'evidence-references-closed', passed: summary.evidenceReferencesClosed },
+    {
+      id: 'browser-state-written',
+      passed: browserState === false,
+      detail:
+        summary.browserStateGaps
+          .map(gap => `${gap.id}${gap.detail ? `: ${gap.detail}` : ''}`)
+          .join('; ') ||
+        (summary.browserStateWritten ? undefined : '浏览器状态快照未写入') ||
+        undefined,
+    },
+    {
+      id: 'evidence-references-closed',
+      passed: evidenceReference === false,
+      detail:
+        summary.evidenceGraphFailures
+          .map(gap => `${gap.id}${gap.detail ? `: ${gap.detail}` : ''}`)
+          .join('; ') ||
+        (summary.evidenceReferencesClosed ? undefined : '证据图未闭环') ||
+        undefined,
+    },
     {
       id: 'zip-self-validated',
       passed: !exportValidation,

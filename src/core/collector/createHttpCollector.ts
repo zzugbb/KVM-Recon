@@ -42,6 +42,17 @@ function contentTypeOf(headers: Record<string, string>): string | null {
   return found ? found[1] : null;
 }
 
+/**
+ * 持续（流式）响应判定：EventSource（requestWillBeSent 即带 resourceType，
+ * 头未到达也可判）或 event-stream / multipart 响应——这类响应没有
+ * loadingFinished，等它完成等于永不收尾（规范 §7.4 只等非持续正文）。
+ */
+function isStreamingHop(hop: PackV2HttpTransactionRow): boolean {
+  if (hop.resourceType.toLowerCase() === 'eventsource') return true;
+  const contentType = contentTypeOf(hop.responseHeaders)?.toLowerCase() ?? '';
+  return contentType.includes('text/event-stream') || contentType.includes('multipart/x-mixed-replace');
+}
+
 export interface HttpHopInput {
   id: string;
   targetId: string;
@@ -60,7 +71,11 @@ export interface HttpHopInput {
 export interface HttpCollector {
   openHop(input: HttpHopInput): void;
   has(id: string): boolean;
-  patchHop(id: string, patch: Partial<PackV2HttpTransactionRow>): void;
+  /**
+   * 改未提交 hop 的行内字段（status / timing / 正文引用等）。已提交返回
+   * false（journal 只追加，不改写已落盘行），由调用方按显式缺口/丢弃记账。
+   */
+  patchHop(id: string, patch: Partial<PackV2HttpTransactionRow>): boolean;
   /**
    * 合并 extraInfo 头（请求 Cookie / 响应 Set-Cookie 等，Chromium 对
    * fetch/XHR 把这些头放在 requestWillBeSentExtraInfo / responseReceivedExtraInfo）。
@@ -74,14 +89,23 @@ export interface HttpCollector {
   storeBody(bytes: Uint8Array): Promise<PackV2BodyRef>;
   /**
    * 提交 hop。outcome='failed' 表示请求以 loadingFailed 终止（无正文是
-   * 明确语义）；outcome='finished' 时若缺响应正文且非无正文状态码则记
-   * missingBodies 缺口。
+   * 明确语义）；status=null（从未收到完成事件）不构成无正文语义——缺响应
+   * 正文必须记 missingBodies 缺口（规范 §14 条 3：完整正文或明确的无正文
+   * 语义，二者必居其一，「未完成」两者都不是）。
    */
   commit(id: string, outcome?: 'finished' | 'failed'): Promise<void>;
   /** 收尾时提交尚未 commit 的 hop（失败/未完成请求）。 */
   flush(): Promise<void>;
   /** 派生引擎只读快照：全部 hop 行浅拷贝（含未 commit 的，stop 序列在 flush 后调用）。 */
   transactionRows(): PackV2HttpTransactionRow[];
+  /** 在途（未 commit）hop 的 URL 视图：Worker 跨 session 别名按 URL 唯一匹配在途父请求。 */
+  inFlightHops(): Array<{ id: string; url: string; resourceType: string }>;
+  /**
+   * 在途非持续（非流式）hop 视图：自动收尾看门狗等待其完成再 stop
+   * （规范 §7.4「非持续响应正文全部落盘」）。EventSource / event-stream /
+   * multipart 流式响应是持续通道，永远等不到 loadingFinished，不计入。
+   */
+  pendingNonStreamingHops(): Array<{ id: string; url: string }>;
 }
 
 export function createHttpCollector(workspace: JobWorkspace, evidence: CollectorEvidence): HttpCollector {
@@ -118,7 +142,10 @@ export function createHttpCollector(workspace: JobWorkspace, evidence: Collector
       return hops.has(id);
     },
     patchHop(id, patch) {
-      Object.assign(requireHop(id), patch);
+      const hop = requireHop(id);
+      if (committed.has(id)) return false;
+      Object.assign(hop, patch);
+      return true;
     },
     mergeHopHeaders(id, patch) {
       const hop = requireHop(id);
@@ -186,11 +213,14 @@ export function createHttpCollector(workspace: JobWorkspace, evidence: Collector
       }
       const hasExplicitNoBodySemantics =
         outcome === 'failed' ||
-        hop.status === null ||
-        NO_BODY_STATUS.has(hop.status) ||
+        (hop.status !== null && NO_BODY_STATUS.has(hop.status)) ||
         hop.redirectToId !== undefined;
       if (!hasExplicitNoBodySemantics && !hop.responseBody) {
-        evidence.recordGap('missingBodies', hop.id, `响应正文缺失（status=${hop.status}）`);
+        evidence.recordGap(
+          'missingBodies',
+          hop.id,
+          `响应正文缺失（status=${hop.status ?? '未收到完成事件'}）`,
+        );
       }
     },
     async flush() {
@@ -200,6 +230,22 @@ export function createHttpCollector(workspace: JobWorkspace, evidence: Collector
     },
     transactionRows() {
       return [...hops.values()].map(hop => ({ ...hop }));
+    },
+    inFlightHops() {
+      const out: Array<{ id: string; url: string; resourceType: string }> = [];
+      for (const [id, hop] of hops) {
+        if (committed.has(id)) continue;
+        out.push({ id, url: hop.url, resourceType: hop.resourceType });
+      }
+      return out;
+    },
+    pendingNonStreamingHops() {
+      const out: Array<{ id: string; url: string }> = [];
+      for (const [id, hop] of hops) {
+        if (committed.has(id) || isStreamingHop(hop)) continue;
+        out.push({ id, url: hop.url });
+      }
+      return out;
     },
   };
 }

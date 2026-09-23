@@ -39,6 +39,8 @@ function allEvidencePresentSummary(): PackIntegrityEvidenceSummary {
     channelGaps: [],
     unsupportedChannels: [],
     journalWriteFailures: [],
+    browserStateGaps: [],
+    evidenceGraphFailures: [],
     exportValidationFailures: [],
     workflowStatus: 'KVM_REACHED',
   };
