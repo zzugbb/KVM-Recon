@@ -1,5 +1,17 @@
 export {};
 
+/** 最近事实条目（规范 §5.2：非敏感摘要，稳定 ID + 类型 + URL origin/path）。 */
+interface RecentFactEntry {
+  occurredAt: string;
+  kind:
+    | 'target-attached'
+    | 'channel-opened'
+    | 'user-action'
+    | 'navigation'
+    | 'render-surface';
+  text: string;
+}
+
 interface CaptureStatusJob {
   jobId: string;
   state: 'capturing' | 'stopped' | 'exported';
@@ -8,11 +20,33 @@ interface CaptureStatusJob {
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
+  /** stop 序列进行中（手动与自动收尾共用路径；界面「正在收尾」瞬态）。 */
+  finalizing: boolean;
+  /** 稳定宽度计数器（规范 §5.2）。 */
+  counts: {
+    httpTransactions: number;
+    targets: number;
+    channels: number;
+    websocketChannels: number;
+    actions: number;
+  };
+  /** 包工件字节记账（JSONL + 工件 + 已发布正文；不含 ZIP 导出）。 */
+  bytesWritten: number;
+  /** 收尾后的预导出完整度（仅界面文案用；导出后以导出结果为准）。收尾前为 null。 */
+  captureIntegrity: 'COMPLETE' | 'INCOMPLETE' | null;
+  /** INCOMPLETE 时的稳定原因码（收尾前为空）。 */
+  incompleteReasons: string[];
+  recentFacts: RecentFactEntry[];
   diagnostics: {
     droppedEvents: number;
     droppedEventByMethod: Record<string, number>;
     gapCounts: Record<string, number>;
     storageLimitReached: boolean;
+    observerHookFailures: Array<{ hook: string; stage: string; detail: string }>;
+    channelGaps: string[];
+    unsupportedChannels: string[];
+    captureWindowLogTail: string[];
+    disk: { freeBytes: number; marginBytes: number; ok: boolean } | null;
   };
 }
 
@@ -68,6 +102,7 @@ declare global {
       stopCapture(): Promise<StatusResult>;
       exportCapture(zipDir?: string): Promise<StatusResult>;
       exportRecoveredCapture(zipDir?: string): Promise<StatusResult>;
+      revealExportFolder(): Promise<{ ok: true } | IpcError>;
       discardCapture(): Promise<StatusResult>;
     };
   }

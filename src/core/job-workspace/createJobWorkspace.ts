@@ -183,6 +183,14 @@ export interface JobWorkspace {
   flush(): Promise<void>;
   /** 每个 JSONL 文件的追加/fsync 计数（诊断与测试：验证 fsync 节拍）。 */
   jsonlWriteStats(): ReadonlyMap<string, { appends: number; syncs: number }>;
+  /**
+   * 包工件字节记账（界面展示用，只读单调计数）：JSONL 追加成功行 +
+   * writeArtifact 内容 + BodyStore 发布正文。不含工作区内部文件
+   * （workspace.json / .owner / .tmp 中间态）与 ZIP 导出；失败写入不计。
+   */
+  bytesWritten(): number;
+  /** BodyStore 正文发布（finish 改名成功）时报数；去重命中不报。只记账，不落盘。 */
+  recordBodyBytes(bytes: number): void;
   /** 先原子落盘 finalized 标记，再切换内存状态（收尾完成，尚未导出）。 */
   finalize(): Promise<void>;
   /** ZIP 导出并自校验成功后调用：持久化 exported，此后才允许清理/启动下一作业。 */
@@ -495,11 +503,15 @@ function createWorkspace(
   /** 按文件串行化追加（链在句柄记录上，close 时链已随租赁耗尽）。
    *  fsync 按「累计追加次数」每 fsyncEveryAppends 次一次（默认 128）——
    *  用队列深度会变成每次追加都 fsync（顺序 10 次 = 10 次 sync）。 */
+  // 包工件字节记账：只在写入成功后累加（失败/中止不计），UI 展示用
+  let bytesWrittenTotal = 0;
+
   const enqueueAppend = (record: OpenRecord, line: string): Promise<void> => {
     record.appendCount += 1;
     const needSync = record.appendCount % fsyncEveryAppends === 0;
     const run = record.chain.then(async () => {
       await record.handle.appendFile(line, 'utf8');
+      bytesWrittenTotal += Buffer.byteLength(line, 'utf8');
       if (needSync) {
         await record.handle.sync();
         record.syncCount += 1;
@@ -600,6 +612,8 @@ function createWorkspace(
         const normalized = normalizeArtifactPath(path);
         await mkdir(dirname(join(dir, normalized)), { recursive: true });
         await writeFile(join(dir, normalized), content);
+        bytesWrittenTotal +=
+          typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.byteLength;
       } finally {
         release();
       }
@@ -654,6 +668,15 @@ function createWorkspace(
         stats.set(path, { appends: record.appendCount, syncs: record.syncCount });
       }
       return stats;
+    },
+    bytesWritten() {
+      return bytesWrittenTotal;
+    },
+    recordBodyBytes(bytes) {
+      if (!Number.isSafeInteger(bytes) || bytes < 0) {
+        throw new Error(`非法字节数：${bytes}`);
+      }
+      bytesWrittenTotal += bytes;
     },
     async finalize() {
       assertWritable();

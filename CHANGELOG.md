@@ -39,7 +39,9 @@
 - 0.3.0 阶段 4：值传播图新增 storage 值链——响应正文 ⊇ sessionStorage/localStorage 值 → storage 节点 → 后续请求/WS 握手头与查询参数（值逐字节相同、时间不早于最早包含响应的到达时刻；短于 8 字节不构成包含证据）；登录/启动请求的 CSRF 头、WS 握手 token 等真实动态值进入回放计划。
 - 0.3.0 阶段 4：新增协议 Fixture 回放 E2E（`e2e/protocol-fixture-replay.mjs`，挂入 `test:e2e`）：子进程完整采集导出 ZIP → 起全新 Mock 实例（`perInstanceTokens`：路径/字段名/头名 seed 复现、会话凭证每次实例 OS 随机——同一台设备上的全新会话）按 manifest 动态值替换重放登录（新鲜 nonce → 新鲜 SHA-256 摘要）、启动（新鲜 Cookie + CSRF 头）与 WS 握手（新鲜 viewerToken 查询参数），服务端接受（200/200/101 + 帧字节）；负向对照陈旧摘要 401 / 全陈旧 401 / 新 Cookie + 陈旧 CSRF 403 / 陈旧 viewerToken 401，声明的动态值全部消费闭环。
 - 0.3.0 阶段 4：样例包 `createSampleCapturePackV2` 的 `ai/value-flow.json` / `catalog/relations.jsonl` / adapter dossier / `ai/index.json` 候选 / replay 三件套全部换真实引擎生成（与装配层同一引擎、同一事实形状）；`raw/cdp/events.jsonl` 补 `Page.frameNavigated`；新增离线再生契约测试——`readPackFacts` 只凭包内工件重新派生与包内派生物逐项相等（规范 §15「新版 Analyzer 可从既有包重新生成」的验收样例）。
-- 当前版本仍为 0.2.10：阶段 0–4 已在主分支落地，0.2.x 运行链路已删除（已发布安装包不受影响）；阶段 5–6 未实现，真机验收最后统一进行。
+- 0.3.0 阶段 5（界面收口）：界面重排为规范 §5 单屏单作业工作台——顶栏（应用名 + 版本 + 常驻「原始资料 · 未脱敏」徽标）、输入行（BMC 地址 + 设备说明）、四步阶段条（连接目标 ── 登录活动 ── Viewer 活动 ── 完整性校验）、稳定宽度计数器（HTTP/Targets/WS/已写入/缺失）、最近事实 feed、高级诊断 `<details>` 默认折叠（缺口分类/丢弃事件/观察钩子失败/通道断档/不受支持通道/磁盘余量/采集窗口日志尾部）；页面阶段由 `stage.ts` 纯函数八阶段派生（idle/launching/capturing-login/capturing-viewer/finalizing/complete/incomplete/exported，已收尾但未派生 COMPLETE 一律按 incomplete 不主张未验证的完整）；样式整体重写为深石墨色板（圆角 ≤8px、ID/字节/路径等宽），新增 lucide-react 图标依赖。
+- 0.3.0 阶段 5（状态载荷与导出收口）：`capture:status` 扩展计数器（来自 `workflowFacts()`）、包工件字节记账（`JobWorkspace.bytesWritten()`：JSONL 追加行 + writeArtifact + BodyStore 发布正文按字节累加，失败写入与去重命中不计）、收尾后预导出完整度与原因码（仅 finalize 后派生，只用于按钮文案，导出后以导出结果为准）、最近事实 feed（`recentFacts.ts` 纯函数：target 挂载/通道开启/用户动作/主框架导航/渲染表面按时间归并、上限 30 条、URL 只出 origin+path——query/fragment 可能含会话 token 一律剥除）；INCOMPLETE 时导出按钮明确「导出未完整包」；导出成功显示摘要与路径 +「打开所在文件夹」（新 IPC `capture:revealExport`，路径由主进程 `lastExport` 决定，渲染层不能传任意路径）+「采集下一台」（丢弃并清理临时目录）；删除 0.2.x 死 CSS 选择器（job-list/pack-review/pack-diff 等）与多作业/对比包界面入口回归断言。
+- 当前版本仍为 0.2.10：阶段 0–5 已在主分支落地，0.2.x 运行链路已删除（已发布安装包不受影响）；阶段 6 全量验收未开始，真机验收最后统一进行。
 
 ## [0.2.10] - 2026-09-16
 

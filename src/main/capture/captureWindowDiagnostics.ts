@@ -22,3 +22,8 @@ export function recordCaptureWindowLog(line: string) {
 export function getCaptureWindowLogs() {
   return lines.join('\n');
 }
+
+/** 环形缓冲逐行副本（capture:status 高级诊断载荷用）。 */
+export function getCaptureWindowLogLines(): string[] {
+  return [...lines];
+}

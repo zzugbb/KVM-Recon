@@ -9,20 +9,22 @@
  * 0.2.x 的多作业 / 暂停 / 手动截图 / 打开对比包 / 离场复验 IPC 已删除。
  */
 
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { APP_VERSION, BUILD_ID } from '../version';
 import type { JobWorkspace } from '../core/job-workspace/createJobWorkspace';
 import { exportRecoveredJob, recoverCrashedJob } from '../core/export/recoverCrashedJob';
+import { derivePackIntegrity } from '../core/capture-pack-v2/packStatus';
 import {
   createProductionCapture,
   type ProductionCaptureController,
   type ProductionCaptureExportResult,
   type ProductionCaptureTarget,
 } from './capture/productionCaptureController';
-import { getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
+import { getCaptureWindowLogLines, getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
+import { MAX_RECENT_FACTS, recentFactsOf, type RecentFactEntry } from './capture/recentFacts';
 import {
   isE2eCaptureControllerLaunch,
   runProductionCaptureE2e,
@@ -69,11 +71,34 @@ interface CaptureStatusJob {
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
+  /** stop 序列进行中（手动与自动收尾共用路径；界面「正在收尾」瞬态）。 */
+  finalizing: boolean;
+  /** 稳定宽度计数器（规范 §5.2）。 */
+  counts: {
+    httpTransactions: number;
+    targets: number;
+    channels: number;
+    websocketChannels: number;
+    actions: number;
+  };
+  /** 包工件字节记账（JSONL + 工件 + 已发布正文；不含 ZIP 导出）。 */
+  bytesWritten: number;
+  /** 收尾后的预导出完整度（仅界面文案用；导出后以导出结果为准）。收尾前为 null。 */
+  captureIntegrity: 'COMPLETE' | 'INCOMPLETE' | null;
+  /** INCOMPLETE 时的稳定原因码（收尾前为空）。 */
+  incompleteReasons: string[];
+  /** 最近事实（非敏感摘要，上限截断）。 */
+  recentFacts: RecentFactEntry[];
   diagnostics: {
     droppedEvents: number;
     droppedEventByMethod: Record<string, number>;
     gapCounts: Record<string, number>;
     storageLimitReached: boolean;
+    observerHookFailures: Array<{ hook: string; stage: string; detail: string }>;
+    channelGaps: string[];
+    unsupportedChannels: string[];
+    captureWindowLogTail: string[];
+    disk: { freeBytes: number; marginBytes: number; ok: boolean } | null;
   };
 }
 
@@ -114,25 +139,84 @@ let recoveredPending: RecoveredPendingJob | null = null;
 // exportRecovered 进行中标志：ipcMain.handle 不串行化，并发 invoke 会绕过
 // recoveredPending 检查写出两份 ZIP / 双重 markExported——同步置位挡重入
 let exportRecoveredInFlight = false;
+/** 高级诊断里环形缓冲的截尾行数（载荷膨胀上限）。 */
+const CAPTURE_LOG_TAIL = 40;
 
-function statusJob(): CaptureStatusJob | null {
+function statusJobSync(): CaptureStatusJob | null {
   if (!activeController) return null;
-  const stopped = activeController.session.workspace.state !== 'active';
+  const controller = activeController;
+  // finalizing 窗口仍是采集会话：渲染层以 capturing + finalizing 标志派生
+  // 「正在收尾」瞬态；只有 finalized 落盘后四项 stop 布尔才是终态、完整度可派生，
+  // 此前就报 stopped 会在判定存在前宣称 incomplete。
+  const stopped = controller.session.workspace.state === 'finalized';
+  // workflowFacts 契约：采集期随时可调，stop 后为终态事实
+  const facts = controller.session.workflowFacts();
+  const evidenceSummary = controller.session.integrityEvidence();
+  // 预导出完整度只在收尾完成后派生（四项 stop 布尔此时为终态；
+  // zip 自校验门导出前空集通过——导出后以导出结果为准，不编造 COMPLETE）
+  const derived =
+    controller.session.workspace.state === 'finalized'
+      ? derivePackIntegrity(evidenceSummary)
+      : null;
+  const gapLines = (gaps: ReadonlyArray<{ id: string; detail?: string }>): string[] =>
+    gaps.map(gap => (gap.detail ? `${gap.id}：${gap.detail}` : gap.id));
   return {
-    jobId: activeController.session.workspace.jobId,
+    jobId: controller.session.workspace.jobId,
     state: lastExport ? 'exported' : stopped ? 'stopped' : 'capturing',
-    workflowStatus: activeController.session.integrityEvidence().workflowStatus,
-    windowsOpen: activeController.windowsOpen(),
-    storageLimited: activeController.session.workspace.storageLimited,
-    windowsLabel: activeController.session.workspace.deviceLabel ?? '',
-    diagnostics: activeController.session.evidence().diagnostics() as CaptureStatusJob['diagnostics'],
+    workflowStatus: evidenceSummary.workflowStatus,
+    windowsOpen: controller.windowsOpen(),
+    storageLimited: controller.session.workspace.storageLimited,
+    windowsLabel: controller.session.workspace.deviceLabel ?? '',
+    finalizing: controller.finalizing(),
+    counts: {
+      httpTransactions: facts.transactions.length,
+      targets: facts.targets.length,
+      channels: facts.channels.length,
+      websocketChannels: facts.channels.filter(channel => channel.kind === 'websocket').length,
+      actions: facts.actions.length,
+    },
+    bytesWritten: controller.session.workspace.bytesWritten(),
+    captureIntegrity:
+      derived?.captureIntegrity === 'COMPLETE' || derived?.captureIntegrity === 'INCOMPLETE'
+        ? derived.captureIntegrity
+        : null,
+    incompleteReasons: [...(derived?.reasons ?? [])],
+    recentFacts: recentFactsOf(facts),
+    diagnostics: {
+      ...controller.session.evidence().diagnostics(),
+      observerHookFailures: controller
+        .session
+        .evidence()
+        .diagnostics()
+        .observerHookFailures.map(failure => ({ ...failure })),
+      channelGaps: gapLines(evidenceSummary.channelGaps),
+      unsupportedChannels: gapLines(evidenceSummary.unsupportedChannels),
+      captureWindowLogTail: getCaptureWindowLogLines().slice(-CAPTURE_LOG_TAIL),
+      disk: null,
+    },
   };
 }
 
-function statusPayload(): CaptureStatusPayload {
+async function statusJob(): Promise<CaptureStatusJob | null> {
+  const job = statusJobSync();
+  if (!job || !activeController) return job;
+  try {
+    const snapshot = await activeController.session.workspace.diskCheck();
+    job.diagnostics.disk = {
+      freeBytes: snapshot.freeBytes,
+      marginBytes: snapshot.marginBytes,
+      ok: snapshot.ok,
+    };
+  } catch {
+    // workspace 已关闭（丢弃/恢复中）等：磁盘信息留空，不阻断状态轮询
+  }
+  return job;
+}
+
+async function statusPayload(): Promise<CaptureStatusPayload> {
   return {
     ok: true,
-    job: statusJob(),
+    job: await statusJob(),
     export: lastExport,
     recovery: recoveryNotice,
   };
@@ -220,7 +304,7 @@ function registerCaptureHandlers() {
       const result = await activeController.exportPack(zipDir);
       lastExport = result;
       await activeController.closeWindows();
-      return { ...statusPayload(), zipPath: result.zipPath, fileName: result.fileName };
+      return { ...(await statusPayload()), zipPath: result.zipPath, fileName: result.fileName };
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
     }
@@ -281,12 +365,22 @@ function registerCaptureHandlers() {
         // 句柄由进程退出兜底释放；导出事实已持久化（markExported 在 close 前）
         recordCaptureWindowLog(`recovered-export-close-failed ${errorMessage(error)}`);
       }
-      return { ...statusPayload(), zipPath: result.zipPath, fileName: result.fileName };
+      return { ...(await statusPayload()), zipPath: result.zipPath, fileName: result.fileName };
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
     } finally {
       exportRecoveredInFlight = false;
     }
+  });
+
+  // 打开最近一次导出 ZIP 所在文件夹（无参数：路径由主进程决定，
+  // 渲染层不能传任意路径给 shell）
+  ipcMain.handle('capture:revealExport', () => {
+    if (!lastExport?.zipPath) {
+      return { ok: false as const, error: '尚无已导出的采集包可显示。' };
+    }
+    void shell.showItemInFolder(lastExport.zipPath);
+    return { ok: true as const };
   });
 
   ipcMain.handle('capture:discard', async () => {

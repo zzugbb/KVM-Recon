@@ -379,6 +379,64 @@ describe('JSONL 句柄与 fsync 节拍（并发首次打开只建一个句柄）
   }, 30000);
 });
 
+describe('bytesWritten（包工件字节记账）', () => {
+  it('appendJsonl 按追加行字节累加，writeArtifact 按内容字节累加', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    expect(workspace.bytesWritten()).toBe(0);
+    await workspace.appendJsonl('raw/http/transactions.jsonl', { id: 'http-000001' });
+    const rowBytes = Buffer.byteLength('{"id":"http-000001"}\n', 'utf8');
+    expect(workspace.bytesWritten()).toBe(rowBytes);
+    await workspace.writeArtifact('manifest.json', 'x'.repeat(100));
+    expect(workspace.bytesWritten()).toBe(rowBytes + 100);
+    await workspace.writeArtifact('raw/binary.bin', new Uint8Array([1, 2, 3]));
+    expect(workspace.bytesWritten()).toBe(rowBytes + 103);
+    await workspace.close();
+  }, 30000);
+
+  it('写入失败不计入（路径非法被拒时计数不变）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    await expect(workspace.writeArtifact('../escape.txt', 'x'.repeat(50))).rejects.toThrow();
+    await expect(workspace.appendJsonl(WORKSPACE_MARKER_FILE, { a: 1 })).rejects.toThrow();
+    expect(workspace.bytesWritten()).toBe(0);
+    await workspace.close();
+  }, 30000);
+
+  it('BodyStore 正文发布计入一次；同内容去重不重复计；abort 不计', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    const bodies = createBodyStore({ workspace, namespace: 'raw/http/bodies' });
+    const first = await bodies.openWriter();
+    await first.write(Buffer.from('session-payload'));
+    await first.finish();
+    expect(workspace.bytesWritten()).toBe('session-payload'.length);
+    const duplicate = await bodies.openWriter();
+    await duplicate.write(Buffer.from('session-payload'));
+    await duplicate.finish();
+    expect(workspace.bytesWritten()).toBe('session-payload'.length);
+    const aborted = await bodies.openWriter();
+    await aborted.write(Buffer.from('discarded-payload'));
+    await aborted.abort();
+    expect(workspace.bytesWritten()).toBe('session-payload'.length);
+    const second = await bodies.openWriter();
+    await second.write(Buffer.from('another-payload'));
+    await second.finish();
+    expect(workspace.bytesWritten()).toBe('session-payload'.length + 'another-payload'.length);
+    await workspace.close();
+  }, 30000);
+
+  it('recordBodyBytes 拒绝负数与非整数（记账入口只有 BodyStore）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    expect(() => workspace.recordBodyBytes(-1)).toThrow('非法字节数');
+    expect(() => workspace.recordBodyBytes(1.5)).toThrow('非法字节数');
+    expect(() => workspace.recordBodyBytes(Number.NaN)).toThrow('非法字节数');
+    expect(workspace.bytesWritten()).toBe(0);
+    await workspace.close();
+  }, 30000);
+});
+
 describe('JobWorkspace 工件读写与路径安全', () => {
   it('writeArtifact / appendJsonl / readArtifact 往返一致（自动建子目录）', async () => {
     const rootDir = await newRootDir();

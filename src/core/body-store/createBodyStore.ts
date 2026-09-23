@@ -212,6 +212,9 @@ export function createBodyStore(init: BodyStoreInit): BodyStore {
                 try {
                   await rename(partPath!, finalPath);
                   partPath = null;
+                  // 只在新文件真正发布时报数：去重命中（含并发竞态按去重
+                  // 处理的分支）不重复计入字节记账。
+                  workspace.recordBodyBytes(bytes);
                 } catch (error) {
                   const code = (error as NodeJS.ErrnoException).code;
                   // 并发同内容 finish 的竞态：POSIX rename 覆盖即可；

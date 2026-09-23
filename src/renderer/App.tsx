@@ -1,26 +1,45 @@
 import { useEffect, useState } from 'react';
+import { Activity, AlertTriangle, Download, FolderOpen, Play } from 'lucide-react';
 
 import { APP_VERSION } from '../version';
+import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageStatusText } from './stage';
 
 /**
- * 单作业工作台（规范 §4 / §5，阶段 2 最小面；阶段 5 收口打磨）。
- * 两个输入（BMC 地址 + 设备说明）+ 生命周期按钮（开始/停止/导出/丢弃），
- * 顶部常驻「原始资料 · 未脱敏」提示，启动时显示崩溃恢复结果。
+ * 单屏单作业工作台（规范 §4 / §5，阶段 5 收口）。
+ * 顶栏常驻「原始资料 · 未脱敏」；两个输入（BMC 地址 + 设备说明）；
+ * 阶段条 + 稳定宽度计数器 + 最近事实（非敏感摘要）；高级诊断默认折叠；
+ * 导出永远手动（COMPLETE 不自动弹保存框；INCOMPLETE 按钮明确写「导出未完整包」）。
  */
 
 interface StatusJob {
   jobId: string;
   state: 'capturing' | 'stopped' | 'exported';
-  /** 采集会话派生的工作流状态（观察事实推导，不靠人工判断）。 */
   workflowStatus: 'TARGET_OPENED' | 'LOGIN_REACHED' | 'KVM_REACHED';
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
+  finalizing: boolean;
+  counts: {
+    httpTransactions: number;
+    targets: number;
+    channels: number;
+    websocketChannels: number;
+    actions: number;
+  };
+  bytesWritten: number;
+  captureIntegrity: 'COMPLETE' | 'INCOMPLETE' | null;
+  incompleteReasons: string[];
+  recentFacts: Array<{ occurredAt: string; kind: string; text: string }>;
   diagnostics: {
     droppedEvents: number;
     droppedEventByMethod: Record<string, number>;
     gapCounts: Record<string, number>;
     storageLimitReached: boolean;
+    observerHookFailures: Array<{ hook: string; stage: string; detail: string }>;
+    channelGaps: string[];
+    unsupportedChannels: string[];
+    captureWindowLogTail: string[];
+    disk: { freeBytes: number; marginBytes: number; ok: boolean } | null;
   };
 }
 
@@ -38,36 +57,32 @@ interface StatusPayload {
     workflowStatus?: string;
     targetUrl?: string;
     deviceLabel?: string;
-    /** 本次导出的实际完整度（kind=exported）：照实显示。 */
     captureIntegrity?: string;
   } | null;
 }
 
-function stateText(job: StatusJob | null) {
-  if (!job) return '空闲';
-  if (job.state === 'exported') return '已导出';
-  if (job.state === 'stopped') return '已收尾（可导出）';
-  return job.windowsOpen ? '采集中' : '采集窗口已关闭（可停止收尾）';
-}
-
-/** 派生工作流状态（观察事实推导）：KVM_REACHED = 已进入 HTML5 KVM 画面。 */
-function workflowStatusText(status: StatusJob['workflowStatus'] | undefined) {
-  if (status === 'KVM_REACHED') return '已进入 KVM（KVM_REACHED）';
-  if (status === 'LOGIN_REACHED') return '已登录（LOGIN_REACHED）';
-  if (status === 'TARGET_OPENED') return '目标已打开（TARGET_OPENED）';
-  return '';
-}
-
-function gapSummary(job: StatusJob | null) {
-  if (!job) return '';
-  const gaps: Array<[string, string]> = Object.entries(job.diagnostics.gapCounts).map(
-    ([key, count]) => [key, String(count)],
-  );
-  if (job.diagnostics.droppedEvents > 0) {
-    gaps.push(['丢弃事件', String(job.diagnostics.droppedEvents)]);
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 'B';
+  for (const next of units) {
+    if (value < 1024) break;
+    value /= 1024;
+    unit = next;
   }
-  if (gaps.length === 0) return '无缺口记录';
-  return gaps.map(([key, count]) => `${key}×${count}`).join('、');
+  return `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} ${unit}`;
+}
+
+function formatTime(iso: string): string {
+  const matched = /^(\d{2}:\d{2}:\d{2})/.exec(new Date(iso).toTimeString());
+  return matched ? matched[1] : iso;
+}
+
+function gapTotal(job: StatusJob | null): number {
+  if (!job) return 0;
+  return Object.values(job.diagnostics.gapCounts).reduce((sum, count) => sum + count, 0);
 }
 
 export function App() {
@@ -75,8 +90,8 @@ export function App() {
   const [deviceLabel, setDeviceLabel] = useState('');
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [launching, setLaunching] = useState(false);
 
   async function refreshStatus() {
     if (!window.kvmRecon?.getCaptureStatus) return;
@@ -97,7 +112,6 @@ export function App() {
   async function run(action: () => Promise<{ ok: boolean } & Record<string, unknown>>) {
     setBusy(true);
     setError('');
-    setMessage('');
     try {
       const result = await action();
       if ('ok' in result && result.ok) {
@@ -112,6 +126,15 @@ export function App() {
     }
   }
 
+  async function start() {
+    setLaunching(true);
+    try {
+      await run(() => window.kvmRecon!.startCapture(target, deviceLabel));
+    } finally {
+      setLaunching(false);
+    }
+  }
+
   const preloadMissing = typeof window !== 'undefined' && !window.kvmRecon?.startCapture;
   const job = status?.job ?? null;
   const recovery = status?.recovery ?? null;
@@ -122,25 +145,42 @@ export function App() {
   const canExport = job && job.state !== 'exported' && !busy;
   const canDiscard = job?.state === 'exported' && !busy;
   const canExportRecovered = recovery?.kind === 'recovered' && !busy;
+  const canReveal = job?.state === 'exported' && Boolean(status?.export) && !busy;
+
+  const stage = derivePageStage({
+    job: job
+      ? {
+          state: job.state,
+          workflowStatus: job.workflowStatus,
+          finalizing: job.finalizing,
+          captureIntegrity: job.captureIntegrity,
+        }
+      : null,
+    launching: launching && !job,
+  });
+  const bar = stageBarOf(stage);
+  const exportLabel =
+    job && job.state === 'stopped' && job.captureIntegrity !== 'COMPLETE' ? '导出未完整包' : '导出采集包';
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <p className="eyebrow">KVM-Recon v{APP_VERSION} · 离线 BMC/KVM 资料采集工具</p>
-        <h1>单作业采集工作台</h1>
-        <p className="description" role="status">
-          原始资料 · 未脱敏：导出的 Capture Pack 可能包含有效凭据与会话，只能作为敏感文件保管。
-        </p>
+      <header className="top-bar">
+        <span className="app-name">
+          KVM-Recon <span className="mono">v{APP_VERSION}</span>
+        </span>
+        <span className="sensitive-badge" role="status">
+          原始资料 · 未脱敏
+        </span>
       </header>
 
       {preloadMissing ? (
         <p className="error-card" role="alert">
-          采集接口未加载：请使用 KVM-Recon 桌面应用打开本页面，不要用浏览器打开。
+          <AlertTriangle size={14} aria-hidden /> 采集接口未加载：请使用 KVM-Recon 桌面应用打开本页面，不要用浏览器打开。
         </p>
       ) : null}
 
       {recovery ? (
-        <div className="status-card" role="alert" aria-label="崩溃恢复结果">
+        <div className="recovery-card" role="alert" aria-label="崩溃恢复结果">
           <h2>上次作业恢复</h2>
           {recovery.kind === 'recovered' ? (
             <>
@@ -158,14 +198,13 @@ export function App() {
                   onClick={() => void run(() => window.kvmRecon!.exportRecoveredCapture())}
                   disabled={!canExportRecovered}
                 >
-                  导出恢复作业
+                  <Download size={14} aria-hidden /> 导出恢复作业
                 </button>
               </div>
             </>
           ) : recovery.kind === 'exported' ? (
             <p>
-              上次未完成的作业 {recovery.jobId} 已恢复并手动导出到{' '}
-              <code>{recovery.zipPath}</code>
+              上次未完成的作业 {recovery.jobId} 已恢复并手动导出到 <code>{recovery.zipPath}</code>
               （{recovery.conservative ? '硬崩溃保守摘要' : '真实摘要'}，包为{' '}
               {recovery.captureIntegrity ?? '未知完整度'}）。
             </p>
@@ -181,38 +220,162 @@ export function App() {
         </div>
       ) : null}
 
-      <section className="target-form" aria-label="新建采集作业">
-        <div className="field-row field-row-primary">
-          <label>
-            BMC 地址
-            <input
-              value={target}
-              onChange={event => setTarget(event.target.value)}
-              placeholder="例如 10.10.8.111 或 https://10.10.8.111:8443"
-              disabled={Boolean(job) || busy}
-            />
-          </label>
-        </div>
-        <div className="field-row">
-          <label>
-            设备说明（可选）
-            <input
-              value={deviceLabel}
-              onChange={event => setDeviceLabel(event.target.value)}
-              placeholder="例如 Dell R740 / iDRAC9"
-              disabled={Boolean(job) || busy}
-            />
-          </label>
-        </div>
+      <section className="target-row" aria-label="新建采集作业">
+        <label>
+          BMC 地址
+          <input
+            value={target}
+            onChange={event => setTarget(event.target.value)}
+            placeholder="例如 10.10.8.111 或 https://10.10.8.111:8443"
+            disabled={Boolean(job) || busy}
+          />
+        </label>
+        <label>
+          设备说明（可选）
+          <input
+            value={deviceLabel}
+            onChange={event => setDeviceLabel(event.target.value)}
+            placeholder="例如 Dell R740 / iDRAC9"
+            disabled={Boolean(job) || busy}
+          />
+        </label>
+        <button type="button" onClick={() => void start()} disabled={!canStart} title="开始采集">
+          <Play size={14} aria-hidden /> 开始采集
+        </button>
+      </section>
+
+      <section className="stage-bar" aria-label="采集阶段">
+        {STAGE_BAR_STEPS.map((step, index) => (
+          <span key={step} className={`stage-step stage-${bar[index]}`}>
+            {step}
+          </span>
+        ))}
+      </section>
+
+      <section className="status-line" aria-label="当前状态" role="status">
+        <span className="status-label">{stageStatusText(stage)}</span>
+        {job ? <> · <code>{job.jobId}</code></> : null}
+        {job && job.state === 'capturing' && !job.windowsOpen ? ' · 采集窗口已关闭（可停止收尾）' : ''}
+      </section>
+
+      {job && job.state === 'stopped' && job.incompleteReasons.length > 0 ? (
+        <section className="incomplete-reasons" aria-label="完整度缺失明细">
+          <h3>
+            <AlertTriangle size={14} aria-hidden /> 采集不完整：{job.incompleteReasons.length} 项原因
+          </h3>
+          <ul>
+            {job.incompleteReasons.map(reason => (
+              <li key={reason}>
+                <code>{reason}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {job?.storageLimited ? (
+        <p className="error-card" role="alert">
+          <AlertTriangle size={14} aria-hidden /> 磁盘水位已触发（storageLimited），包完整性不保证 COMPLETE。
+        </p>
+      ) : null}
+
+      <section className="counters" aria-label="采集计数">
+        <span>
+          HTTP <span className="mono counter">{job?.counts.httpTransactions ?? 0}</span>
+        </span>
+        <span>
+          Targets <span className="mono counter">{job?.counts.targets ?? 0}</span>
+        </span>
+        <span>
+          WS <span className="mono counter">{job?.counts.websocketChannels ?? 0}</span>
+        </span>
+        <span>
+          已写入 <span className="mono counter">{formatBytes(job?.bytesWritten ?? 0)}</span>
+        </span>
+        <span>
+          缺失 <span className="mono counter">{gapTotal(job)}</span>
+        </span>
+      </section>
+
+      <section className="recent-facts" aria-label="最近事实">
+        <h3>最近事实</h3>
+        {job && job.recentFacts.length > 0 ? (
+          <ul className="facts-list">
+            {job.recentFacts.map((fact, index) => (
+              <li key={`${fact.occurredAt}-${index}`}>
+                <span className="mono fact-time">{formatTime(fact.occurredAt)}</span> {fact.text}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">暂无事实记录。</p>
+        )}
+      </section>
+
+      <footer className="action-bar">
+        <details className="advanced-diagnostics">
+          <summary>
+            <Activity size={14} aria-hidden /> 高级诊断
+          </summary>
+          <div className="diagnostics-body">
+            {job ? (
+              <>
+                <dl>
+                  <dt>缺口分类</dt>
+                  <dd>
+                    {Object.entries(job.diagnostics.gapCounts).length > 0
+                      ? Object.entries(job.diagnostics.gapCounts)
+                          .map(([key, count]) => `${key}×${count}`)
+                          .join('、')
+                      : '无'}
+                  </dd>
+                  <dt>丢弃事件</dt>
+                  <dd>
+                    {job.diagnostics.droppedEvents === 0
+                      ? '无'
+                      : `${job.diagnostics.droppedEvents}（${Object.entries(job.diagnostics.droppedEventByMethod)
+                          .map(([method, count]) => `${method}×${count}`)
+                          .join('、')}）`}
+                  </dd>
+                  <dt>观察脚本钩子失败</dt>
+                  <dd>
+                    {job.diagnostics.observerHookFailures.length === 0
+                      ? '无'
+                      : job.diagnostics.observerHookFailures
+                          .map(failure => `${failure.hook}/${failure.stage}：${failure.detail}`)
+                          .join('；')}
+                  </dd>
+                  <dt>通道断档</dt>
+                  <dd>{job.diagnostics.channelGaps.length === 0 ? '无' : job.diagnostics.channelGaps.join('；')}</dd>
+                  <dt>不受支持通道</dt>
+                  <dd>
+                    {job.diagnostics.unsupportedChannels.length === 0
+                      ? '无'
+                      : job.diagnostics.unsupportedChannels.join('；')}
+                  </dd>
+                  <dt>磁盘信息</dt>
+                  <dd>
+                    {job.diagnostics.disk
+                      ? `剩余 ${formatBytes(job.diagnostics.disk.freeBytes)}（安全余量 ${formatBytes(job.diagnostics.disk.marginBytes)}）`
+                      : '不可用'}
+                  </dd>
+                </dl>
+                {job.diagnostics.captureWindowLogTail.length > 0 ? (
+                  <pre className="log-tail">{job.diagnostics.captureWindowLogTail.join('\n')}</pre>
+                ) : null}
+              </>
+            ) : (
+              <p className="muted">空闲：暂无诊断信息。</p>
+            )}
+          </div>
+        </details>
         <div className="actions">
-          <button type="button" onClick={() => void run(() => window.kvmRecon!.startCapture(target, deviceLabel))} disabled={!canStart}>
-            开始采集
-          </button>
           <button
             type="button"
             className="secondary"
             onClick={() => void run(() => window.kvmRecon!.stopCapture())}
             disabled={!canStop}
+            title="停止并收尾"
           >
             停止并收尾
           </button>
@@ -220,52 +383,42 @@ export function App() {
             type="button"
             onClick={() => void run(() => window.kvmRecon!.exportCapture())}
             disabled={!canExport}
+            title={exportLabel}
           >
-            导出采集包
+            <Download size={14} aria-hidden /> {exportLabel}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void run(() => window.kvmRecon!.revealExportFolder())}
+            disabled={!canReveal}
+            title="打开所在文件夹"
+          >
+            <FolderOpen size={14} aria-hidden /> 打开所在文件夹
           </button>
           <button
             type="button"
             className="secondary"
             onClick={() => void run(() => window.kvmRecon!.discardCapture())}
             disabled={!canDiscard}
+            title="采集下一台（清理本作业临时目录）"
           >
-            丢弃已导出作业
+            采集下一台
           </button>
         </div>
-      </section>
+      </footer>
 
-      {message ? (
-        <p className="message" role="status">
-          {message}
-        </p>
-      ) : null}
       {error ? (
         <p className="error-card" role="alert">
           {error}
         </p>
       ) : null}
 
-      <section className="status-card" aria-label="当前作业">
-        <h2>当前作业</h2>
-        {job ? (
-          <>
-            <p>
-              <span className="status-label">{stateText(job)}</span> · <code>{job.jobId}</code>
-              {job.windowsLabel ? ` · ${job.windowsLabel}` : ''}
-              {workflowStatusText(job.workflowStatus) ? ` · 派生：${workflowStatusText(job.workflowStatus)}` : ''}
-            </p>
-            <p>缺口记录：{gapSummary(job)}</p>
-            {job.storageLimited ? <p className="error-card">磁盘水位已触发（storageLimited），包完整性不保证 COMPLETE。</p> : null}
-          </>
-        ) : (
-          <p>空闲：填写 BMC 地址后点「开始采集」，在弹出的窗口里手工登录并打开 HTML5 KVM。</p>
-        )}
-        {status?.export ? (
-          <p>
-            已导出：<code>{status.export.zipPath}</code>（{status.export.status.captureIntegrity}）
-          </p>
-        ) : null}
-      </section>
+      {status?.export ? (
+        <p className="export-summary">
+          已导出：<code>{status.export.zipPath}</code>（{status.export.status.captureIntegrity}）
+        </p>
+      ) : null}
     </div>
   );
 }

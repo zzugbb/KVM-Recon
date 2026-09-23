@@ -76,6 +76,8 @@ export interface ProductionCaptureController {
   exportPack(zipDir: string): Promise<ProductionCaptureExportResult>;
   windowsOpen(): boolean;
   closeWindows(): Promise<void>;
+  /** stop 序列进行中（手动与自动收尾共用同一路径；界面「正在收尾」瞬态）。 */
+  finalizing(): boolean;
 }
 
 export async function createProductionCapture(
@@ -104,6 +106,7 @@ export async function createProductionCapture(
   let probeResult: ProbeBmcTargetResult | null = null;
   let stopped = false;
   let stoppedAt: string | null = null;
+  let stopInFlight = false;
   // 幂等：并发/重入 stop 共享同一次收尾。与 createCaptureSession
   // 同一形态——收尾序列不可重放（认证 probe 是带会话 Cookie 的网络副作用），
   // 失败也复用同一 promise：调用方拿到同一拒绝，重试入口在 discard/恢复链路
@@ -376,19 +379,24 @@ export async function createProductionCapture(
   async function stop() {
     if (stopPromise) return stopPromise;
     viewerWatchdog.stop();
+    stopInFlight = true;
     stopPromise = (async () => {
-      await refreshAuthenticatedProbe();
       try {
-        await writeProbeFile();
-      } catch (error) {
-        // 收尾期 Probe 写盘失败（磁盘不可写/水位触发）不能阻断
-        // 核心采集会话收尾；记账后继续，Capture Pack 将由必需文件/
-        // 导出门禁诚实降级，不把作业永久留在 active。
-        captureSession.evidence().droppedEvent('probe-stop-write', error);
+        await refreshAuthenticatedProbe();
+        try {
+          await writeProbeFile();
+        } catch (error) {
+          // 收尾期 Probe 写盘失败（磁盘不可写/水位触发）不能阻断
+          // 核心采集会话收尾；记账后继续，Capture Pack 将由必需文件/
+          // 导出门禁诚实降级，不把作业永久留在 active。
+          captureSession.evidence().droppedEvent('probe-stop-write', error);
+        }
+        await captureSession.stop();
+        stoppedAt = new Date().toISOString();
+        stopped = true;
+      } finally {
+        stopInFlight = false;
       }
-      await captureSession.stop();
-      stoppedAt = new Date().toISOString();
-      stopped = true;
     })();
     return stopPromise;
   }
@@ -463,5 +471,8 @@ export async function createProductionCapture(
     exportPack,
     windowsOpen,
     closeWindows,
+    finalizing() {
+      return stopInFlight;
+    },
   };
 }
