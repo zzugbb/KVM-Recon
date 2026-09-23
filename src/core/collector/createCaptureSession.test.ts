@@ -57,10 +57,22 @@ function jsonl(buffer: Buffer): Array<Record<string, unknown>> {
     .map(line => JSON.parse(line) as Record<string, unknown>);
 }
 
-/** 有界轮询等待异步事件链产生可观察状态（每轮一个 macrotask）。 */
-async function until(condition: () => Promise<boolean> | boolean, maxTicks = 500): Promise<void> {
-  for (let i = 0; i < maxTicks; i += 1) {
+/**
+ * 有界轮询等待异步事件链产生可观察状态（每轮一个 macrotask）。
+ * 预算按墙钟计而非 tick 数：事件链上的 journal 落盘是真实磁盘 I/O，
+ * 慢速 CI 盘上固定 tick 数会在等待条件就绪前耗尽。超时必须抛错——
+ * 静默放弃会让后续断言拿到过时状态，报出误导性的失败。
+ */
+async function until(
+  condition: () => Promise<boolean> | boolean,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     if (await condition()) return;
+    if (Date.now() >= deadline) {
+      throw new Error(`等待条件超时（${timeoutMs}ms）：事件链未在预算内就绪`);
+    }
     await new Promise(resolve => setImmediate(resolve));
   }
 }
