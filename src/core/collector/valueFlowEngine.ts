@@ -1,5 +1,5 @@
 /**
- * 值传播与证据图派生引擎（规范 §8.6 / §16，阶段 3 第 2 刀）。
+ * 值传播与证据图派生引擎（规范 §8.6 / §16）。
  *
  * 从观察事实派生 ai/value-flow.json 的节点与边、catalog/relations.jsonl 的
  * 结构关系行。协议无关、不依赖厂商 URL 与页面语义；边只记有字节级观察
@@ -170,7 +170,7 @@ export async function deriveValueFlow(
       const eq = pair.indexOf('=');
       const value = pair.slice(eq + 1);
       if (!value) continue;
-      // 响应的存在时刻 = 到达时刻（第五轮 G4）：Set-Cookie 在响应头到达时
+      // 响应的存在时刻 = 到达时刻：Set-Cookie 在响应头到达时
       // 才对页面可见，节点不得记成请求开始时已存在
       const arrivedAt = responseArrivalAt(transaction);
       const nodeKey = addNode({
@@ -363,7 +363,7 @@ export async function deriveValueFlow(
   for (const transaction of facts.transactions) {
     if (!transaction.responseBody) continue;
     const arrivedAt = responseArrivalAt(transaction);
-    // 响应正文的存在时刻 = 到达时刻（第五轮 G4）：节点与边不得记成请求
+    // 响应正文的存在时刻 = 到达时刻：节点与边不得记成请求
     // 开始时就已存在
     const arrivedAtIso = new Date(arrivedAt).toISOString();
     const body = await readBody(transaction.responseBody);

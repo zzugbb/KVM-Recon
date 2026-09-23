@@ -13,7 +13,7 @@ import {
 } from './captureFacts';
 
 /**
- * capture-facts 反例先行：targetUrl 解析失败不猜（null 显式返回）；
+ * capture-facts 反例：targetUrl 解析失败不猜（null 显式返回）；
  * 残缺 facts 拒绝解析；硬崩溃恢复的保守证据摘要把无法证明的门禁
  * 全部置为不通过（缺失必须显式，规范 §3）。
  */
@@ -124,7 +124,7 @@ describe('readCaptureFacts（工作区事实读取）', () => {
   });
 
   it('旧格式摘要（缺 browserStateGaps/evidenceGraphFailures）读取侧补缺省空数组（三轮 T10）', () => {
-    // 第 12 轮新数组字段落盘前写的真实摘要：读取后两个新字段补 []，
+    // 新数组字段落盘前写的旧格式真实摘要：读取后两个新字段补 []，
     // 其余字段原样透传——derivePackIntegrity 不因 undefined 崩溃
     const base = {
       schemaVersion: '1.0.0',

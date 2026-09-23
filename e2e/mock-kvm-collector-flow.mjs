@@ -53,7 +53,7 @@ async function main() {
     logLevel: 'silent',
     outfile: join(appDir, 'capture-session.mjs'),
   });
-  // 阶段 3 第 3 刀：Viewer 自动收尾看门狗 + 信号识别（会话级自动收尾断言用）
+  // Viewer 自动收尾看门狗 + 信号识别（会话级自动收尾断言用）
   await build({
     entryPoints: [join(rootDir, 'src/main/capture/viewerAutoStopWatchdog.ts')],
     bundle: true,
@@ -85,7 +85,7 @@ async function main() {
     outfile: join(appDir, 'electron-netlog-source.mjs'),
     external: ['electron'],
   });
-  // 第 11 轮审核测试缺口：§20 验收场景 1 端到端闭环——完整会话导出
+  // §20 验收场景 1 端到端闭环——完整会话导出
   // exportJobWorkspaceZip 后断言 COMPLETE + KVM_REACHED。
   // banner 注入 require：yazl/yauzl 等 CJS 依赖的 require('fs') 在 ESM
   // 输出里没有 require 可用（Dynamic require of "fs" is not supported）

@@ -15,7 +15,7 @@ import {
 import { exportRecoveredJob, recoverCrashedJob } from './recoverCrashedJob';
 
 /**
- * 崩溃恢复（第 12 轮拆分）：恢复只接管 + 保守摘要覆写 + finalize，
+ * 崩溃恢复：恢复只接管 + 保守摘要覆写 + finalize，
  * **不导出、不 markExported、不自动打开目录**——导出由用户在恢复卡上
  * 手动选择目录（exportRecoveredJob），成功才 markExported；取消/失败
  * 保留待导出状态（下次启动幂等再恢复）。
@@ -102,7 +102,7 @@ async function writeMinimalWorkspaceArtifacts(workspace: JobWorkspace) {
 }
 
 describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
-  it('硬崩溃（v1 facts）：保守摘要覆写 + finalize，不导出、不 markExported（第 12 轮）', async () => {
+  it('硬崩溃（v1 facts）：保守摘要覆写 + finalize，不导出、不 markExported', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({
       jobId: 'job-recover-crash',
@@ -203,8 +203,7 @@ describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
     expect(result.jobId).toBe('job-recover-nofacts');
     expect(result.reason).toContain('capture-facts.json 缺失');
     expect(result.reason).toContain('保留');
-    // refused 也要释放工作区句柄与 .owner 租约（四轮 F7：现场资料保留 ≠
-    // 句柄滞留到进程退出）；释放后下次启动照常幂等再接管
+    // refused 也要释放工作区句柄与 .owner 租约；释放后下次启动照常幂等再接管
     await expect(readFile(join(rootDir, 'current', '.owner'), 'utf-8')).rejects.toThrow();
     const again = await recoverCrashedJob({
       rootDir,
@@ -352,7 +351,7 @@ describe('exportRecoveredJob（恢复作业手动导出）', () => {
     await recovery.workspace.close();
   });
 
-  it('旧格式真实摘要（缺 browserStateGaps/evidenceGraphFailures）：读取侧补缺省空数组，恢复导出不崩溃（第 12 轮二轮自审 P3）', async () => {
+  it('旧格式真实摘要（缺 browserStateGaps/evidenceGraphFailures）：读取侧补缺省空数组，恢复导出不崩溃', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({
       jobId: 'job-recover-legacy-summary',
@@ -360,7 +359,7 @@ describe('exportRecoveredJob（恢复作业手动导出）', () => {
       targetUrl: 'https://10.10.8.111:8443/login',
     });
     await writeMinimalWorkspaceArtifacts(workspace);
-    // 本轮改动之前落盘的 stopped facts：真实摘要没有两个新字段
+    // 新字段落盘前写的旧格式 stopped facts：真实摘要没有两个新字段
     const legacySummary = {
       collectorReadyBeforeFirstNavigation: true,
       rawJournalsClosed: true,
@@ -415,7 +414,7 @@ describe('exportRecoveredJob（恢复作业手动导出）', () => {
     await recovery.workspace.close();
   });
 
-  it('导出失败不 markExported：待导出状态保留可重试（第 12 轮）', async () => {
+  it('导出失败不 markExported：待导出状态保留可重试', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({
       jobId: 'job-recover-retry',
@@ -462,7 +461,7 @@ describe('exportRecoveredJob（恢复作业手动导出）', () => {
     await recovery.workspace.close();
   });
 
-  it('反例：facts 缺 evidenceSummary（未经恢复接管的畸形现场）拒绝导出，现场保留（第 12 轮自审补钉）', async () => {
+  it('反例：facts 缺 evidenceSummary（未经恢复接管的畸形现场）拒绝导出，现场保留', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({
       jobId: 'job-recover-nosummary',

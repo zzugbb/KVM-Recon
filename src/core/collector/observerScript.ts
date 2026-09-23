@@ -321,10 +321,10 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
     }
 
     try {
-      // 已知边界（P3-B，审计第三轮）：构造器包装返回原生实例，
+      // 已知边界：构造器包装返回原生实例，
       // 「class X extends RTCPeerConnection/WebTransport/EventSource」的子类
       // 拿到的是原生对象而非子类实例，子类原型方法不可用。
-      // 修复需 Proxy 级构造器方案；BMC 页面极少子类化这些接口，本轮显式记为边界不修复。
+      // 修复需 Proxy 级构造器方案；BMC 页面极少子类化这些接口，显式记为边界不修复。
       // （WebTransport / EventSource 的构造器包装同此边界。）
       var WrappedPC = function RTCPeerConnection() {
         if (!(this instanceof WrappedPC)) {
@@ -754,7 +754,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
     }
   }
 
-  // ---------- 渲染/执行表面（规范 §7.3 第 2 组事实，五轮 G1） ----------
+  // ---------- 渲染/执行表面（规范 §7.3 第 2 组事实） ----------
   // 新建 Canvas / Video / OffscreenCanvas / Worker / 持续渲染（rAF）的事实
   // 组合（§7.3 KVM 判定合取的第 2 组事实）。CDP worker target 行不带 opener
   // 血缘归属，页面侧构造事实补上这一面。

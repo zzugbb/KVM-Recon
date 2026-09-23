@@ -271,7 +271,7 @@ export async function assembleCapturePackV2(
     replayEntryPath: 'replay/manifest.json',
   };
 
-  // 阶段 3 第 2 刀：ai/value-flow.json 由采集会话收尾派生（字节级观察背书的
+  // ai/value-flow.json 由采集会话收尾派生（字节级观察背书的
   // 值传播）。装配层工作区文件优先：在场即采用（不在派生清单重复输出，
   // 避免与工作区同路径工件的 ZIP 重复路径冲突），缺失才落空兜底；
   // 在场但结构非法时拒绝装配（失败关闭，不静默降级为空图）。

@@ -112,7 +112,7 @@ export function readCaptureFactsFromBuffer(buffer: Buffer): CaptureFacts {
     workflowStatus: parsed.workflowStatus!,
     stopped: parsed.stopped!,
     recovered: parsed?.recovered === true,
-    // 旧格式摘要缺 browserStateGaps/evidenceGraphFailures（第 12 轮新增字段）：
+    // 旧格式摘要缺 browserStateGaps/evidenceGraphFailures：
     // 读取侧补缺省空数组——缺口判定退回布尔通道，恢复导出不因缺字段崩溃
     evidenceSummary: normalizeEvidenceSummary(parsed?.evidenceSummary),
     droppedEventByMethod:

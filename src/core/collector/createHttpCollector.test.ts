@@ -1,6 +1,6 @@
 /**
  * HTTP 采集器 journal 写失败记账（规范 §3「缺失必须显式」）。
- * 反例（P3-4）：事务行 appendJsonl 失败时行永久丢失（committed 已置位，
+ * 反例：事务行 appendJsonl 失败时行永久丢失（committed 已置位，
  * flush 不再重试），只有 droppedEvent 进程内计数，不进导出包的证据摘要
  * ——包内摘要无对应缺失记录，「应有而未有」无人作证。
  */
@@ -100,7 +100,7 @@ describe('HTTP 采集器 journal 写失败记账', () => {
     expect(gate?.passed).toBe(false);
   });
 
-  it('204/205/304 明确无正文语义：不记 missingBodies 缺口（第 12 轮自审补钉）', async () => {
+  it('204/205/304 明确无正文语义：不记 missingBodies 缺口', async () => {
     const evidence = createCollectorEvidence();
     const http = createHttpCollector(createFailingWorkspace('__never__'), evidence);
     http.openHop({ ...HOP, id: 'req-204' });
@@ -130,7 +130,7 @@ describe('HTTP 采集器 journal 写失败记账', () => {
     expect(rows[0].responseBody).toBeUndefined();
   });
 
-  // 第五轮 G2（规范 §7.4「非持续响应正文全部落盘」）：在途非持续请求视图
+  // （规范 §7.4「非持续响应正文全部落盘」）：在途非持续请求视图
   // 供自动收尾看门狗等待；EventSource / event-stream / multipart 流式响应
   // 是持续通道，等它完成等于永不收尾。
   it('在途非持续 hop 在列；EventSource / 流式响应不在列；完成后移除', async () => {

@@ -41,13 +41,13 @@ function timingOf(transaction: PackV2HttpTransactionRow): { send: number; wait: 
   return {
     send: timing?.sendMs ?? -1,
     wait: timing?.waitMs ?? -1,
-    // receiveMs 是 requestTime→响应头的累计偏移，不是正文时长（第 12 轮）：
+    // receiveMs 是 requestTime→响应头的累计偏移，不是正文时长：
     // 正文时长不可知，按 HAR 语义记 -1，不得把累计偏移伪装成正文段时长
     receive: -1,
   };
 }
 
-/** 到响应头的时间（第 12 轮）：max(receiveMs, sendMs+waitMs)，不做双重计数。 */
+/** 到响应头的时间：max(receiveMs, sendMs+waitMs)，不做双重计数。 */
 function timeToHeadersOf(transaction: PackV2HttpTransactionRow): number {
   const timing = transaction.timing;
   if (!timing) return -1;

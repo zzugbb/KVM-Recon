@@ -338,7 +338,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(storedLarge.toString('utf8')).toBe(largeBody);
   });
 
-  it('Worker 跨 session 完成事件经唯一 URL 匹配关联父请求（第 12 轮阻断 2 反例）', async () => {
+  it('Worker 跨 session 完成事件经唯一 URL 匹配关联父请求', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-worker-alias-join',
@@ -448,7 +448,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(dropped['Network.loadingFinished']).toBeGreaterThanOrEqual(1);
   });
 
-  it('Worker URL 迟到：完成事件已丢弃时 targetInfoChanged 补齐 URL 并经 Worker session 补读入口正文（五轮 G5）', async () => {
+  it('Worker URL 迟到：完成事件已丢弃时 targetInfoChanged 补齐 URL 并经 Worker session 补读入口正文', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-worker-url-late-salvage',
@@ -516,7 +516,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(dropped['Network.loadingFinished']).toBeGreaterThanOrEqual(1);
   });
 
-  it('Worker URL 迟到但完成事件未到：不预读，完成事件经别名正常落 status 与正文（五轮 G5）', async () => {
+  it('Worker URL 迟到但完成事件未到：不预读，完成事件经别名正常落 status 与正文', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-worker-url-late-alias',
@@ -576,7 +576,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     ).toEqual([]);
   });
 
-  it('Worker URL 迟到且匹配多候选父请求 → 不补读不误关联（五轮 G5 宁漏不错）', async () => {
+  it('Worker URL 迟到且匹配多候选父请求 → 不补读不误关联', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-worker-url-late-ambiguous',
@@ -784,7 +784,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(gaps.some(gap => (gap.detail ?? '').includes('晚于 commit'))).toBe(true);
   });
 
-  it('已 commit 行的晚到 redirectResponse 不无痕丢弃：状态/头/redirectToId 显式记账（四轮 F2）', async () => {
+  it('已 commit 行的晚到 redirectResponse 不无痕丢弃：状态/头/redirectToId 显式记账', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-late-redirect-after-commit',
@@ -831,7 +831,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(dropped['Network.requestWillBeSent']).toBeGreaterThanOrEqual(1);
   });
 
-  it('204 完成事件的正文读取失败不记假缺口；缺正文由 commit 单点判定（四轮 F4）', async () => {
+  it('204 完成事件的正文读取失败不记假缺口；缺正文由 commit 单点判定', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-nobody-read-fail',
@@ -870,7 +870,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(dropped['Network.getResponseBody']).toBeGreaterThanOrEqual(2);
   });
 
-  it('drain 期空链不解锁别名：先到的未知完成事件不是「已跟踪」证据（四轮 F6）', async () => {
+  it('drain 期空链不解锁别名：先到的未知完成事件不是「已跟踪」证据', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-drain-empty-chain',
@@ -923,7 +923,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(dropped['Network.responseReceived']).toBeGreaterThanOrEqual(2);
   });
 
-  it('drain 期间到达的 HTTP 完成事件照常处理：在途请求不丢正文（第 12 轮阻断 3 反例）', async () => {
+  it('drain 期间到达的 HTTP 完成事件照常处理：在途请求不丢正文', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-drain-completion',
@@ -956,7 +956,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(session.integrityEvidence().missingBodies).toEqual([]);
   });
 
-  it('drain 期不追踪新请求：requestWillBeSent 显式记账丢弃，不新增事务行（第 12 轮自审补钉）', async () => {
+  it('drain 期不追踪新请求：requestWillBeSent 显式记账丢弃，不新增事务行', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-drain-new-request',
@@ -1041,7 +1041,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     ).toEqual([]);
   });
 
-  it('Cookie 快照失败 → browserStateGaps 缺口 → INCOMPLETE_BROWSER_STATE（第 12 轮阻断 4 反例）', async () => {
+  it('Cookie 快照失败 → browserStateGaps 缺口 → INCOMPLETE_BROWSER_STATE', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-browser-state-cookies-fail',
@@ -1100,7 +1100,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(derived.reasons).toContain('INCOMPLETE_BROWSER_STATE');
   });
 
-  // 第五轮 G7 反例：CacheStorage 正文取出但落盘失败，cacheStorageOk 仍为
+  // CacheStorage 正文取出但落盘失败，cacheStorageOk 仍为
   // true = 伪装成「已写入」——步骤明细必须翻 false。
   it('CacheStorage 正文落盘失败 → cacheStorage 步骤翻 false → browserStateGaps 缺口', async () => {
     const rootDir = await newRootDir();
@@ -1130,7 +1130,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(derived.reasons).toContain('INCOMPLETE_BROWSER_STATE');
   });
 
-  it('收尾截图失败 → browserStateGaps 缺口（第 12 轮阻断 4 同类残留：截图也进步骤明细）', async () => {
+  it('收尾截图失败 → browserStateGaps 缺口（截图也进步骤明细）', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-browser-state-screenshot-fail',
@@ -1192,7 +1192,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(summary.evidenceGraphFailures).toEqual([]);
   });
 
-  it('证据图生成失败 → referencesClosed=false → INCOMPLETE_EVIDENCE_REFERENCE（第 12 轮阻断 5 反例）', async () => {
+  it('证据图生成失败 → referencesClosed=false → INCOMPLETE_EVIDENCE_REFERENCE', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-evidence-graph-fail',
@@ -1467,7 +1467,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(session.integrityEvidence().missingWorkerSources).toHaveLength(0);
   });
 
-  it('inline / eval / network script 源码为空也产生缺口，不得只对 Worker/WASM 降级（五轮 G8）', async () => {
+  it('inline / eval / network script 源码为空也产生缺口，不得只对 Worker/WASM 降级', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-script-empty-source-gap',
@@ -1834,7 +1834,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(diagnostics.droppedEventByMethod['Runtime.bindingCalled']).toBe(2);
   });
 
-  it('观察脚本 render-surface 路由写入 render-surfaces.jsonl；未知 surface 显式记账不落行（五轮 G1）', async () => {
+  it('观察脚本 render-surface 路由写入 render-surfaces.jsonl；未知 surface 显式记账不落行', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
       jobId: 'job-collector-render-surfaces',
@@ -2125,7 +2125,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(factsLogin?.responseHeaders['set-cookie']).toBe('sid=abc123; Path=/');
   });
 
-  it('workflowStatus 派生：点击 + 主框架导航 + 渲染表面 + WS 双向帧 → KVM_REACHED；缺表面（后台告警 WS）→ TARGET_OPENED（五轮 G1）', async () => {
+  it('workflowStatus 派生：点击 + 主框架导航 + 渲染表面 + WS 双向帧 → KVM_REACHED；缺表面（后台告警 WS）→ TARGET_OPENED', async () => {
     const rootDir = await newRootDir();
     let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
     const session = await startSession({
@@ -2168,7 +2168,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(session.integrityEvidence().workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('workflowStatus 派生正控制：点击 + 导航 + canvas-context 表面 + WS 双向帧 → KVM_REACHED（五轮 G1）', async () => {
+  it('workflowStatus 派生正控制：点击 + 导航 + canvas-context 表面 + WS 双向帧 → KVM_REACHED', async () => {
     const rootDir = await newRootDir();
     let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
     const session = await startSession({
@@ -2220,7 +2220,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(session.integrityEvidence().workflowStatus).toBe('KVM_REACHED');
   });
 
-  // 第五轮 G2（规范 §7.4「非持续响应正文全部落盘」）：自动收尾看门狗
+  // （规范 §7.4「非持续响应正文全部落盘」）：自动收尾看门狗
   // 等待在途非持续请求完成——会话层暴露只读视图。
   it('在途非持续请求视图（§7.4）：未完成在列，EventSource 与已完成不在列', async () => {
     const rootDir = await newRootDir();
@@ -2269,7 +2269,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     await session.stop();
   });
 
-  // 第五轮 G3（规范 §7.4「至少完成 Viewer 初始与稳定阶段截图」）：检测到
+  // （规范 §7.4「至少完成 Viewer 初始与稳定阶段截图」）：检测到
   // Viewer 活动时对 viewer target 补 viewer-initial 阶段截图（看门狗调用）。
   it('captureViewerInitialScreenshot：viewer target 阶段截图落盘；未知 target 显式记账返回 false', async () => {
     const rootDir = await newRootDir();
@@ -2369,7 +2369,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     ).toBe(true);
   });
 
-  // 第五轮 G3：popup Viewer 的最终状态（stop 截图 / DOM 快照）必须从 popup
+  // popup Viewer 的最终状态（stop 截图 / DOM 快照）必须从 popup
   // 根采集，不得只采主窗口。
   it('popup 根收尾：stop 截图与 DOM 快照也来自 popup 根（targetId 归属 popup）', async () => {
     const rootDir = await newRootDir();
@@ -2417,7 +2417,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     ]);
   });
 
-  it('证据图派生（阶段 3 第 2 刀）：value-flow 边 + relations 结构关系行落盘', async () => {
+  it('证据图派生：value-flow 边 + relations 结构关系行落盘', async () => {
     const rootDir = await newRootDir();
     let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
     const session = await startSession({

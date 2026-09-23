@@ -2,7 +2,7 @@
  * 观察脚本行为中立性反例（规范 §2.2：观察不得改变页面行为）。
  *
  * 在 node:vm 沙箱里执行真实 OBSERVER_SCRIPT_SOURCE，用最小假件驱动：
- * - SSE onXXX 赋值后页面回调必须仍被调用（P1 反例：包装只上报不回调）；
+ * - SSE onXXX 赋值后页面回调必须仍被调用（反例：包装只上报不回调）；
  * - 重新赋值不堆叠包装监听器（重复 emit / 旧 handler 复活都是行为改变）；
  * - addEventListener 第三参（once / capture）必须透传；
  * - 构造器包装后 instanceof 原生判断必须成立（prototype 指回原生）；
@@ -262,7 +262,7 @@ function installObserver(
 }
 
 /**
- * render-surface 钩子（五轮 G1）沙箱假件：document.createElement /
+ * render-surface 钩子沙箱假件：document.createElement /
  * HTMLCanvasElement.prototype.getContext / Worker / SharedWorker /
  * requestAnimationFrame 均为最小假件，验证包装中立性与上报。
  * 假件类每次调用新建（prototype 独立）：观察脚本会 defineProperty 到
@@ -533,8 +533,8 @@ describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () 
     }).toThrow("Constructor WebTransport requires 'new'");
   });
 
-  it('已知边界（P3-B）：extends 包装构造器的子类拿到原生实例，子类原型方法不可用', () => {
-    // 边界钉住（显式文档化，不修复）：构造器包装返回原生实例（prototype 指回
+  it('已知边界：extends 包装构造器的子类拿到原生实例，子类原型方法不可用', () => {
+    // 已知边界（显式文档化，不修复）：构造器包装返回原生实例（prototype 指回
     // 原生），class X extends EventSource 的 super() 之后拿到的不是子类实例。
     // 修复需 Proxy 级构造器方案；BMC 页面极少子类化这些接口（见脚本内注释）。
     const { sandbox } = installObserver();
@@ -562,7 +562,7 @@ describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () 
     expect(cryptoReports[0]).toMatchObject({ op: 'digest', algorithm: 'SHA-256' });
   });
 
-  it('反例（P2-1）：crypto.subtle 不可包装时钩子失败必须显式上报，不得静默', async () => {
+  it('反例：crypto.subtle 不可包装时钩子失败必须显式上报，不得静默', async () => {
     // 冻结的 subtle：defineProperty 抛错 → 包装安装静默跳过 → digest 调用
     // 零 crypto 行。缺失必须显式（规范 §3）：至少要有一条钩子失败记账行。
     const frozenSubtle = Object.freeze({
@@ -639,7 +639,7 @@ describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () 
     expect(closedReports).toHaveLength(1);
   });
 
-  it('反例（P2-R9-1）：DataChannel 监听安装失败必须显式上报钩子失败，不得静默', () => {
+  it('反例：DataChannel 监听安装失败必须显式上报钩子失败，不得静默', () => {
     // 恶意 dc：createDataChannel 返回无 addEventListener 的对象 →
     // 监听安装抛错被 catch 吞掉 → datachannel 证据面整体缺失零记账。
     // 缺失必须显式（规范 §3）：至少要有一条 webrtc-datachannel 钩子失败行。
@@ -664,7 +664,7 @@ describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () 
     expect(closedReports).toHaveLength(1);
   });
 
-  it('render-surface：new Worker 原生实例保真（instanceof）+ 构造事实上报（五轮 G1）', () => {
+  it('render-surface：new Worker 原生实例保真（instanceof）+ 构造事实上报', () => {
     const { sandbox, reports, FakeWorker } = installRenderSurfaceObserver();
     const Worker = sandbox.Worker as typeof FakeWorker;
     const worker = new Worker('http://bmc.test/viewer-worker.js');

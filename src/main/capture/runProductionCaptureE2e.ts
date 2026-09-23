@@ -1,5 +1,5 @@
 /**
- * 生产采集链路 E2E（阶段 2 第 4 刀）：createProductionCapture → stop →
+ * 生产采集链路 E2E：createProductionCapture → stop →
  * exportPack → 直接断言 ZIP 内容。
  *
  * 与 0.2.x 的关键差异（规范 §13 不脱敏策略）：POST token 必须原样在场
@@ -132,7 +132,7 @@ export async function runProductionCaptureE2e() {
   const port = typeof address === 'object' && address ? address.port : 0;
 
   // probe 用确定性桩（E2E 断言采集链路，probe 正确性另有单测）；
-  // 调用计数供并发 stop 幂等断言（五轮 G6：start 匿名 1 次 + stop 认证 1 次）
+  // 调用计数供并发 stop 幂等断言（start 匿名 1 次 + stop 认证 1 次）
   let e2eProbeCalls = 0;
   const e2eProbe = async (): Promise<ProbeBmcTargetResult> => {
     e2eProbeCalls += 1;
@@ -201,7 +201,7 @@ export async function runProductionCaptureE2e() {
     await sleep(300);
   }
 
-  // 五轮 G6 反例：并发 stop 必须共享同一次收尾——重入各跑一遍收尾序列会
+  // 并发 stop 必须共享同一次收尾——重入各跑一遍收尾序列会
   // 重复执行认证 probe（两次带会话 Cookie 的网络探测）
   await Promise.all([controller.stop(), controller.stop()]);
   const exportResult = await controller.exportPack(zipDir);

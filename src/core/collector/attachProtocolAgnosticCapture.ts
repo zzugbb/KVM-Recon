@@ -60,7 +60,7 @@ function internalScriptSource(name: string, source: string): string {
  * drain 阶段仍要落盘的事件：target 生命周期 / 脚本 / binding / 下载收尾，
  * 以及在途 HTTP 请求的完成事件（responseReceived / loadingFinished /
  * loadingFailed / extraInfo）——收尾截断在途请求的完成事实等于把未完成
- * 请求伪装成「无正文语义」（规范 §14 条 3，第 12 轮阻断 3）。
+ * 请求伪装成「无正文语义」（规范 §14 条 3）。
  * requestWillBeSent 不放开：drain 期不追踪新请求。
  */
 const DRAIN_METHODS = new Set([
@@ -79,7 +79,7 @@ const DRAIN_METHODS = new Set([
   'Network.responseReceivedExtraInfo',
 ]);
 
-/** 观察脚本上报的 render-surface 种类全集（§7.3 第 2 组事实，五轮 G1）。 */
+/** 观察脚本上报的 render-surface 种类全集（§7.3 第 2 组事实）。 */
 const RENDER_SURFACE_KINDS = new Set<RenderSurfaceKind>([
   'canvas',
   'video',
@@ -126,7 +126,7 @@ export interface AttachProtocolAgnosticCaptureInput {
 }
 
 /**
- * 浏览器状态快照的步骤明细（第 12 轮阻断 4）：各步失败已内部记账并
+ * 浏览器状态快照的步骤明细：各步失败已内部记账并
  * 继续收尾，但不得伪装成「已写入」——由 createCaptureSession 汇总为
  * browserStateGaps 缺口，完整度门禁如实失败。
  */
@@ -154,7 +154,7 @@ export interface AttachedCapture {
   }>;
   /** 阶段截图（§7.4：viewer-initial = 检测到 Viewer 活动时；stop = 收尾时）；失败内部已记 droppedEvent，成败返回调用方。 */
   capturePhaseScreenshot(label: string): Promise<boolean>;
-  /** 非主根收尾画面：stop 截图 + DOM 快照（popup Viewer 最终状态，五轮 G3）；失败内部已记 droppedEvent，成败返回调用方。 */
+  /** 非主根收尾画面：stop 截图 + DOM 快照（popup Viewer 最终状态）；失败内部已记 droppedEvent，成败返回调用方。 */
   snapshotFinalSurfaces(): Promise<{ stopScreenshot: boolean; domSnapshot: boolean }>;
   /** 页面侧运行环境（UA / 语言 / 时区 / 屏幕）。 */
   collectPageEnvironment(): Promise<PageEnvironment | null>;
@@ -430,8 +430,7 @@ export async function attachProtocolAgnosticCapture(
   const mainFrameNavigations: Array<{ occurredAt: string; targetId: string; url: string | null }> = [];
   const requestChains = new Map<string, string[]>();
   const ignored = new Set<string>();
-  // Worker 跨 session 事务关联（0.2.10 唯一匹配别名机制的 0.3 重建，第 12 轮
-  // 阻断 2）：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
+  // Worker 跨 session 事务关联（0.2.10 唯一匹配别名机制的 0.3 重建）：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
   // target 建立后其完成事件改在 Worker session 上报——按 scopedId 严格查找必然
   // miss。仅当 Worker target URL 与恰好一个在途父请求 URL 匹配时建立
   // `workerSession::requestId → 父 baseId` 别名；非唯一匹配不建（宁可漏不可错）。
@@ -441,7 +440,7 @@ export async function attachProtocolAgnosticCapture(
   // baseId → 原始 CDP requestId（入口脚本补读要在 Worker session 上用父请求的
   // 原始 requestId 调 Network.getResponseBody）
   const hopRequestIds = new Map<string, string>();
-  // URL 为空期间已有完成事件按未命中显式丢弃的 Worker session（五轮 G5）：
+  // URL 为空期间已有完成事件按未命中显式丢弃的 Worker session：
   // URL 经 targetInfoChanged 补齐后对这些 session 触发入口脚本补读
   const salvagePendingWorkerSessions = new Set<string>();
   let eventQueue = Promise.resolve();
@@ -650,7 +649,7 @@ export async function attachProtocolAgnosticCapture(
   }
 
   /**
-   * Worker 入口脚本正文补读（五轮 G5，0.2.10 salvageWorkerMainScript 的 0.3 重建）。
+   * Worker 入口脚本正文补读（0.2.10 salvageWorkerMainScript 的 0.3 重建）。
    * 入口脚本由页面 loader 发起（requestWillBeSent 落父会话），完成事件改在
    * Worker session 上报；Worker URL 迟到期间到达的完成事件已按未命中显式
    * 丢弃（不可重放）——URL 补齐后经 Worker session 主动补读正文
@@ -688,7 +687,7 @@ export async function attachProtocolAgnosticCapture(
 
   /**
    * Network 事件的事务 baseId 解析：scopedId 命中即用；Worker session 事件未
-   * 命中时按唯一 URL 匹配回退到父会话 baseId（第 12 轮阻断 2）。drain 期
+   * 命中时按唯一 URL 匹配回退到父会话 baseId。drain 期
    * requestWillBeSent 已被丢弃，未观测过的新请求不得凭 URL 唯一性建别名
    * （宁漏不错）——drain 期只对父会话已跟踪的 requestId（完成事件改在
    * Worker session 上报的分裂形态）回退关联，新事件按未命中显式记账。
@@ -715,7 +714,7 @@ export async function attachProtocolAgnosticCapture(
         }
       }
       if (!workerSessions.get(eventSessionId)!.url) {
-        // Worker URL 迟到（五轮 G5）：URL 为空时无法按 URL 建别名，本事件将按
+        // Worker URL 迟到：URL 为空时无法按 URL 建别名，本事件将按
         // 未命中由调用方显式丢弃——记下该 session 有不可重放的丢弃，URL 经
         // targetInfoChanged 补齐后触发入口脚本补读挽回正文
         salvagePendingWorkerSessions.add(eventSessionId);
@@ -868,7 +867,7 @@ export async function attachProtocolAgnosticCapture(
       return;
     }
     if (kind === 'render-surface') {
-      // §7.3 第 2 组事实（五轮 G1）：页面观察脚本上报的新建渲染/执行表面
+      // §7.3 第 2 组事实：页面观察脚本上报的新建渲染/执行表面
       const surface = renderSurfaceKindOf(parsed.surface);
       if (!surface) {
         input.evidence.droppedEvent(
@@ -1015,7 +1014,7 @@ export async function attachProtocolAgnosticCapture(
           ...(known?.detachReason ? { detachReason: known.detachReason } : {}),
         });
         if (targetUrl) {
-          // Worker URL 迟到补齐（五轮 G5）：attach 时 targetInfo.url 可能为空，
+          // Worker URL 迟到补齐：attach 时 targetInfo.url 可能为空，
           // workerSessions 里记的还是空 URL——URL 到达时补写；若该 session 在
           // URL 为空期间已有完成事件按未命中显式丢弃，立即补读入口脚本正文
           for (const [workerSessionId, session] of sessionTargets) {
@@ -1225,7 +1224,7 @@ export async function attachProtocolAgnosticCapture(
         return;
       }
       const chain = hopIds(baseId);
-      // 原始 requestId 留存（五轮 G5）：Worker 入口脚本补读要在 Worker session
+      // 原始 requestId 留存：Worker 入口脚本补读要在 Worker session
       // 上用父请求的原始 requestId 调 Network.getResponseBody
       hopRequestIds.set(baseId, requestId);
       const redirectResponse = isRecord(params.redirectResponse) ? params.redirectResponse : null;
@@ -1666,7 +1665,7 @@ export async function attachProtocolAgnosticCapture(
               try {
                 row.responseRef = await input.browser.storeCacheBody(Buffer.from(responseB64, 'base64'));
               } catch (error) {
-                // 第五轮 G7：正文取出但落盘失败 = 步骤失败，不得伪装成
+                // 正文取出但落盘失败 = 步骤失败，不得伪装成
                 // 「已写入」——droppedEvent 已记账，步骤明细同步翻 false
                 input.evidence.droppedEvent('cache-body', error);
                 cacheStorageOk = false;

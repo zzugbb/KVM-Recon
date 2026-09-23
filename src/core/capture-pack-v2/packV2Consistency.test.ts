@@ -257,7 +257,7 @@ describe('validatePackV2Consistency（独立一致性验证器）', () => {
     expect(codesOf(mutated)).toContain('MISSING_VIEWER_SCREENSHOTS');
   }, 30000);
 
-  // 第五轮 G3 反例：登录 / 导航点截图不得冒充 Viewer 阶段截图——只有
+  // 登录 / 导航点截图不得冒充 Viewer 阶段截图——只有
   // viewer-initial（检测到 Viewer 活动时）与 stop（收尾时）标签算阶段截图。
   it('COMPLETE 包两张截图都是导航点截图（无 viewer-initial / stop 标签）→ MISSING_VIEWER_SCREENSHOTS', async () => {
     const sample = await createSampleCapturePackV2();

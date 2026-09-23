@@ -129,7 +129,7 @@ const STATUS_FILES = [
 const CHECKSUM_FILE = 'checksums.sha256';
 
 /**
- * 截图阶段标签（第五轮 G3）：截图文件名 = raw/browser/screenshots/<seq>-<label>.png，
+ * 截图阶段标签：截图文件名 = raw/browser/screenshots/<seq>-<label>.png，
  * 标签 = 文件名去掉 .png 后再去掉前导序号前缀；viewer-initial 与 stop 是仅有的
  * 阶段截图标签（登录 / 导航等过程截图不得计入 §7.4 阶段截图条件）。
  */
@@ -1031,7 +1031,7 @@ export function validatePackV2Consistency(
           );
         }
         // COMPLETE 必须有 Viewer 初始 + 稳定双截图（规范 §7.4 / §14 条件 8；
-        // 第五轮 G3：按阶段标签判定，登录 / 导航等过程截图不再误计为阶段
+        // 按阶段标签判定，登录 / 导航等过程截图不再误计为阶段
         // 截图——文件名 = <seq>-<label>.png，viewer-initial 与 stop 是仅有的
         // 阶段截图标签）。
         const viewerInitialShots = screenshotPaths.filter(

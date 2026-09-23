@@ -170,9 +170,9 @@ export interface PackIntegrityEvidenceSummary {
   unsupportedChannels: IntegrityEvidenceGap[];
   /** journal 行（事务 / 资源索引）写入磁盘失败的证据（缺口持久记账，§3）。 */
   journalWriteFailures: IntegrityEvidenceGap[];
-  /** 浏览器状态快照失败步骤（第 12 轮阻断 4：失败不得伪装成已写入）。 */
+  /** 浏览器状态快照失败步骤（失败不得伪装成已写入）。 */
   browserStateGaps: IntegrityEvidenceGap[];
-  /** 证据图派生 / 写盘失败步骤（第 12 轮阻断 5：失败不得伪装成已闭环）。 */
+  /** 证据图派生 / 写盘失败步骤（失败不得伪装成已闭环）。 */
   evidenceGraphFailures: IntegrityEvidenceGap[];
   /** ZIP 重开校验失败项（条件 10）。 */
   exportValidationFailures: IntegrityEvidenceGap[];
@@ -729,7 +729,7 @@ export type RenderSurfaceKind =
   | 'request-animation-frame';
 
 /** raw/browser/render-surfaces.jsonl 每行：动作后血缘内新建的 Canvas / Video /
- * Worker / 持续渲染表面（§7.3 KVM 判定的第 2 组事实，第五轮 G1）。 */
+ * Worker / 持续渲染表面（§7.3 KVM 判定的第 2 组事实）。 */
 export interface PackV2RenderSurfaceRow {
   /** 稳定表面事件 ID（render-0001…）。 */
   id: string;

@@ -11,7 +11,7 @@ import {
 import type { PackIntegrityEvidenceSummary } from './types';
 
 /**
- * 包装配反例先行：environment 缺失拒绝；schema 目录缺失显式报错；
+ * 包装配反例：environment 缺失拒绝；schema 目录缺失显式报错；
  * TARGET_OPENED 恒 INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED；
  * 通道 ID 从 catalog/channels.json 事实复制；派生候选链/值传播/Replay 为空
  * （阶段 3 才派生，装配不编造）。

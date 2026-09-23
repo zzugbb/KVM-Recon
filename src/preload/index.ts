@@ -5,7 +5,7 @@ import { APP_VERSION } from '../version';
 /**
  * 单作业模型 IPC 面（规范 §4.2，阶段 2）：
  * start（地址 + 设备说明）/ status / stop / export / discard，
- * + 恢复作业手动导出 exportRecovered（第 12 轮：恢复只提示不自动写 ZIP）。
+ * + 恢复作业手动导出 exportRecovered（恢复只提示不自动写 ZIP）。
  * 0.2.x 的多作业、暂停、手动截图、离场复验、打开/对比包已删除。
  */
 contextBridge.exposeInMainWorld('kvmRecon', {

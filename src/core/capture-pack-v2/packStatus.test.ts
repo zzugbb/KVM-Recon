@@ -216,7 +216,7 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
     }
   });
 
-  it('第 12 轮新数组通道：written=true 但 gaps 非空同样失败，缺口明细在列（布尔与数组双通道）', () => {
+  it('written=true 但 gaps 非空同样失败，缺口明细在列（布尔与数组双通道）', () => {
     // browserStateWritten=true + browserStateGaps 非空：步骤级缺口路径
     const browserStateGap = derivePackIntegrity({
       ...allPresentSummary(),

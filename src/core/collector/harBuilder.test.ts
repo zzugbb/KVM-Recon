@@ -1,5 +1,5 @@
 /**
- * HAR entry 时序语义（第 12 轮附加项）。
+ * HAR entry 时序语义。
  *
  * CDP timing 语义：sendMs = sendEnd−sendStart（请求发送）、waitMs =
  * receiveHeadersEnd−sendEnd（等待响应）、receiveMs = requestTime→
@@ -30,7 +30,7 @@ function tx(overrides: Partial<PackV2HttpTransactionRow> = {}): PackV2HttpTransa
 }
 
 describe('harEntry 时序（CDP timing 语义）', () => {
-  it('time 不双重计数 receiveMs：max(receiveMs, sendMs+waitMs)，receive 段记 -1（第 12 轮）', () => {
+  it('time 不双重计数 receiveMs：max(receiveMs, sendMs+waitMs)，receive 段记 -1', () => {
     const entry = harEntry(
       tx({ timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 } }),
       harContentOf('text/html', undefined, null),

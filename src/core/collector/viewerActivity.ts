@@ -1,5 +1,5 @@
 /**
- * Viewer 活动识别纯模块（规范 §7.3，阶段 3 第 3 刀）。
+ * Viewer 活动识别纯模块（规范 §7.3）。
  *
  * 从 WorkflowFacts 识别 Viewer 活动组合信号：用户动作（click / form-submit）
  * 之后，在动作 target 的**血缘集合**（自身 + opener/parent 链后代）
@@ -25,7 +25,7 @@ export interface ViewerActivitySignal {
   openedVia: 'popup' | 'navigation';
   /** popup target id（openedVia=popup）或导航 URL（openedVia=navigation）。 */
   openedDetail: string;
-  /** Viewer 所在根 target（popup target id 或导航 target id）：viewer-initial 阶段截图路由用（§7.4，五轮 G3）。 */
+  /** Viewer 所在根 target（popup target id 或导航 target id）：viewer-initial 阶段截图路由用（§7.4）。 */
   viewerTargetId: string;
   /** §7.3 第 2 组事实：动作后血缘内新建的渲染/执行表面（页面侧或 WASM 事务）。 */
   surfaceKind: string;
@@ -57,7 +57,7 @@ function isBidirectionalChannel(
 }
 
 /**
- * §7.3 第 2 组事实（五轮 G1）：动作后在血缘集合内新建的渲染/执行表面——
+ * §7.3 第 2 组事实：动作后在血缘集合内新建的渲染/执行表面——
  * 页面观察脚本上报的 render-surface 行（钩子失败时该观察面不可信），
  * 或 WASM 事务（CDP 观察）。与 workflowStatusEngine.earliestRenderSurfaceAt
  * 保持同一事实组合（宁可漏不可错）。
@@ -96,7 +96,7 @@ function earliestSurfaceEvidence(
  * 打开证据（popup / 导航）、渲染表面与通道都必须属动作 target 的血缘集合，
  * 且严格按“动作 → 打开 → 表面 → 通道”排序。任何倒挂都不构成信号，
  * 也不能复用打开前已存在的 Dashboard Canvas。无渲染/执行表面证据
- * （登录后 Dashboard 后台告警 WS）不构成信号（§7.3 四组事实合取，五轮 G1）。
+ * （登录后 Dashboard 后台告警 WS）不构成信号（§7.3 四组事实合取）。
  */
 export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal[] {
   const brokenHooks = new Set(facts.hookFailures.map(failure => failure.hook));

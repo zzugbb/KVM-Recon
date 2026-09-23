@@ -75,9 +75,9 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
   // journal 行写入磁盘失败 = raw journal 缺行，按 §14 映射 INCOMPLETE_RAW_JOURNAL
   const rawJournal =
     !summary.rawJournalsClosed || summary.journalWriteFailures.length > 0;
-  // 第 12 轮阻断 4：状态快照步骤失败（写入了空数据）不是「已写入」
+  // 状态快照步骤失败（写入了空数据）不是「已写入」
   const browserState = !summary.browserStateWritten || summary.browserStateGaps.length > 0;
-  // 第 12 轮阻断 5：证据图派生/写盘失败（被 best-effort 吞掉）不是「已闭环」
+  // 证据图派生/写盘失败（被 best-effort 吞掉）不是「已闭环」
   const evidenceReference =
     !summary.evidenceReferencesClosed || summary.evidenceGraphFailures.length > 0;
 

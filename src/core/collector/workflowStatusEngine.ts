@@ -1,5 +1,5 @@
 /**
- * workflowStatus 派生引擎（规范 §6 / §7.3，阶段 3 第 1 刀）。
+ * workflowStatus 派生引擎（规范 §6 / §7.3）。
  *
  * 从观察事实（HTTP 事务 / 用户动作 / target 血缘 / 通道行 / 主框架导航 /
  * 观察脚本钩子失败记账）派生 WorkflowStatus，协议无关、不依赖厂商 URL
@@ -43,7 +43,7 @@ export interface WorkflowFacts {
   targets: ReadonlyArray<PackV2TargetRow>;
   channels: ReadonlyArray<PackV2ChannelRow>;
   navigations: ReadonlyArray<WorkflowNavigationFact>;
-  /** 新建渲染/执行表面行（§7.3 第 2 组事实，五轮 G1）。 */
+  /** 新建渲染/执行表面行（§7.3 第 2 组事实）。 */
   renderSurfaces: ReadonlyArray<PackV2RenderSurfaceRow>;
   hookFailures: ReadonlyArray<ObserverHookFailure>;
 }
@@ -63,7 +63,7 @@ export function timeOf(iso: string | undefined): number {
 }
 
 /**
- * 响应到达时间的近似（第五轮 G4；与 valueFlowEngine 同一实现语义）：
+ * 响应到达时间的近似（与 valueFlowEngine 同一实现语义）：
  * receiveMs 是 requestTime→receiveHeadersEnd 的累计偏移（CDP 语义），
  * startedAt + receiveMs 覆盖建连段，是响应头到达墙钟的轻微高估；
  * sendMs+waitMs 漏掉建连段。取两者较大值作为到达时间——拒绝边的保守
@@ -112,7 +112,7 @@ function deriveLoginReached(facts: WorkflowFacts): boolean {
     const setCookie = headerOf(transaction.responseHeaders, 'set-cookie');
     if (!setCookie) continue;
     for (const pair of setCookiePairs(setCookie)) {
-      // 签发时刻 = 响应到达时刻（第五轮 G4）：请求开始晚于登录请求、但
+      // 签发时刻 = 响应到达时刻：请求开始晚于登录请求、但
       // 早于登录响应到达的请求不可能持有该 cookie，不构成传播证据
       issued.push({ at: responseArrivalAt(transaction), transactionId: transaction.id, pair });
     }
@@ -161,7 +161,7 @@ function isBidirectionalChannel(
 }
 
 /**
- * 动作 target 的 Viewer 血缘集合（第 12 轮阻断 1）：自身 + 由它经
+ * 动作 target 的 Viewer 血缘集合：自身 + 由它经
  * openerTargetId 链打开的 popup 后代，以及 parentTargetId 链挂载的
  * iframe/OOPIF/Worker 后代。另一棵血缘子树 / 无血缘窗口的导航与通道
  * 不在集合内，不构成信号（宁可漏不可错）。
@@ -190,7 +190,7 @@ export function viewerLineageOf(
 }
 
 /**
- * §7.3 第 2 组事实（五轮 G1）：动作后在动作 target 血缘集合内新建的
+ * §7.3 第 2 组事实：动作后在动作 target 血缘集合内新建的
  * Canvas / Video / OffscreenCanvas / Worker / 持续渲染表面（页面观察脚本
  * 上报，钩子失败时该观察面不可信），或 WASM 事务（CDP Network 域观察，
  * 不受页面钩子影响）。登录跳转 Dashboard 后的后台告警 WS 没有任何表面
@@ -275,7 +275,7 @@ export function deriveWorkflowStatus(facts: WorkflowFacts): DerivedWorkflowStatu
 }
 
 /**
- * 事实快照的变化签名（第 11 轮审核 P3-R11-4）。
+ * 事实快照的变化签名。
  *
  * 只投影派生引擎读取、且可能随采集推进原位变更的字段（事务 status /
  * 响应 Set-Cookie / 请求 Cookie 头、通道帧计数、target attachedAt 等；
@@ -292,9 +292,9 @@ export function workflowFactsSignature(facts: WorkflowFacts): string {
       `tx:${transaction.id}:${transaction.method}:${transaction.requestBody ? 1 : 0}:` +
         `${transaction.status ?? ''}:${headerOf(transaction.responseHeaders, 'set-cookie') ?? ''}:` +
         `${headerOf(transaction.requestHeaders, 'cookie') ?? ''}:${transaction.startedAt}:` +
-        // WASM 表面证据读取面（五轮 G1）：归属/资源类型可翻转派生结果
+        // WASM 表面证据读取面：归属/资源类型可翻转派生结果
         `${transaction.resourceType}:${transaction.targetId ?? ''}:` +
-        // 响应到达时刻读取面（五轮 G4）：timing 在 responseReceived 原位补齐，
+        // 响应到达时刻读取面：timing 在 responseReceived 原位补齐，
         // LOGIN_REACHED 的签发时刻随之变化，漏投影会给过期状态
         `${transaction.timing?.sendMs ?? ''}/${transaction.timing?.waitMs ?? ''}/${transaction.timing?.receiveMs ?? ''}`,
     );

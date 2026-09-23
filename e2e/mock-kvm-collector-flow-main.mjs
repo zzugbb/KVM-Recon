@@ -94,7 +94,7 @@ async function run() {
     await wc.loadURL('about:blank');
     await session.attachCdp(wrapDebugger(wc.debugger), { targetId: 'target-root', windowId: String(wc.id) });
 
-    // 阶段 3 第 3 刀：真实看门狗驱动会话级自动收尾（§7.4：只 stop，不导出）
+    // 真实看门狗驱动会话级自动收尾（§7.4：只 stop，不导出）
     const autoStopState = { stopped: false };
     const watchdog = createViewerAutoStopWatchdog({
       getFacts: () => session.workflowFacts(),
@@ -204,7 +204,7 @@ async function run() {
       async () => handle.capturedFrames().filter(frame => frame.direction === 'up').length >= 1,
     );
 
-    // 阶段 3 第 3 刀：Viewer 活动信号（§7.3）必须从会话事实识别出来。
+    // Viewer 活动信号（§7.3）必须从会话事实识别出来。
     // 服务端先看到上行帧、会话通道事实稍后落齐，按会话事实等待（不按服务端观察）
     let signals = [];
     await waitFor('Viewer 活动信号识别（点击 → 导航/popup → WS 双向帧）', async () => {
@@ -328,7 +328,7 @@ async function run() {
       );
     }
 
-    // —— 第 2 刀 / 第 3 刀新增工件的对照断言 ——
+    // —— 阶段 3 新增工件的对照断言 ——
 
     const timeline = jsonl(await readFile(join(dir, 'raw/browser/timeline.jsonl'), 'utf8'));
     const navigations = timeline.filter(row => row.kind === 'navigation').map(row => String(row.url));
@@ -434,7 +434,7 @@ async function run() {
       throw new Error('采集器未在首次导航前就绪');
     }
 
-    // 阶段 3 第 2 刀：证据图必须从真实观察派生——value-flow 节点/边
+    // 证据图必须从真实观察派生——value-flow 节点/边
     // （Set-Cookie → storage cookie → 后续 Cookie 头；摘要输出 ⊆ 登录正文；
     // viewerToken 响应 → WS 握手查询参数）与 relations 结构关系行（initiated /
     // created / opened / value-flow），空图即为派生失败
@@ -507,7 +507,7 @@ async function run() {
       );
     }
 
-    // 第 11 轮审核测试缺口：§20 验收场景 1 端到端闭环——完整会话经
+    // §20 验收场景 1 端到端闭环——完整会话经
     // exportJobWorkspaceZip（含包一致性门禁与流式校验）导出后，
     // 必须得到 COMPLETE + KVM_REACHED（样例包的 COMPLETE 是手工装配，
     // 不构成该场景的证据）

@@ -1,5 +1,5 @@
 /**
- * 阶段 3 第 1 刀：workflowStatus 派生引擎反例集。
+ * workflowStatus 派生引擎反例集。
  *
  * 通用规则（规范 §6 / §7.3，不依赖厂商 URL / 页面语义）：
  * - LOGIN_REACHED：POST + 请求正文 + 2xx/3xx + 响应 Set-Cookie，且之后的
@@ -294,7 +294,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  // 第五轮 G4：Set-Cookie 的签发时刻是响应到达时刻（startedAt + max(receiveMs,
+  // Set-Cookie 的签发时刻是响应到达时刻（startedAt + max(receiveMs,
   // sendMs+waitMs)），不是登录请求开始时刻——响应未到达前页面不可能持有该
   // cookie，开始时刻与到达时刻之间携带 name=value 的请求不是观察到的传播。
   it('反例：请求开始晚于登录请求、但早于登录响应到达（携带 cookie）→ 不构成传播', () => {
@@ -430,7 +430,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('KVM_REACHED');
   });
 
-  it('反例：登录后 Dashboard 后台告警 WS（无任何渲染/执行表面）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+  it('反例：登录后 Dashboard 后台告警 WS（无任何渲染/执行表面）→ 不派生 KVM_REACHED', () => {
     // §7.3 四组事实合取：点击 + 导航/打开 + **新建 Canvas/Video/Worker/WASM/持续渲染表面**
     // + 持续双向通道。登录跳转 Dashboard 后建立的后台告警 WS 满足「动作→导航→双向
     // 通道」但没有任何表面证据——不是 KVM。
@@ -441,7 +441,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('反例：渲染表面属无关窗口（targetId 不在血缘集合）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+  it('反例：渲染表面属无关窗口（targetId 不在血缘集合）→ 不派生 KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       renderSurfaces: [renderSurface({ targetId: 'target-other', occurredAt: at(1500) })],
@@ -466,7 +466,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('反例：渲染表面早于动作（登录前就存在的 Canvas）→ 不派生 KVM_REACHED（五轮 G1）', () => {
+  it('反例：渲染表面早于动作（登录前就存在的 Canvas）→ 不派生 KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       renderSurfaces: [renderSurface({ occurredAt: at(-1000) })],
@@ -474,7 +474,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('反例：render-surface 钩子失败 → 页面侧表面证据不可信，不派生 KVM_REACHED（五轮 G1）', () => {
+  it('反例：render-surface 钩子失败 → 页面侧表面证据不可信，不派生 KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       hookFailures: [hookFailure({ hook: 'render-surface', stage: 'install' })],
@@ -482,7 +482,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('正例：render-surface 钩子失败但血缘内 WASM 事务（CDP 观察，不受页面钩子影响）→ KVM_REACHED（五轮 G1）', () => {
+  it('正例：render-surface 钩子失败但血缘内 WASM 事务（CDP 观察，不受页面钩子影响）→ KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       renderSurfaces: [],
@@ -492,7 +492,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('KVM_REACHED');
   });
 
-  it('反例：WASM 事务属无关窗口 → 不派生 KVM_REACHED（五轮 G1）', () => {
+  it('反例：WASM 事务属无关窗口 → 不派生 KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       renderSurfaces: [],
@@ -535,7 +535,7 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
   });
 });
 
-describe('workflowFactsSignature（P3-R11-4 派生缓存签名）', () => {
+describe('workflowFactsSignature（派生缓存签名）', () => {
   it('派生引擎读取面内的原位变更必须改变签名（缓存不得给出过期状态）', () => {
     // 事务行原位变更：status null → 200、响应头补 Set-Cookie（responseReceived
     // 在 requestWillBeSent 之后到达，行数不变）
@@ -568,7 +568,7 @@ describe('workflowFactsSignature（P3-R11-4 派生缓存签名）', () => {
       workflowFactsSignature(facts({ targets: [target({ id: 't-1', attached: true, attachedAt: at(500) })] })),
     );
 
-    // 血缘投影原位变更（第 12 轮新增读取面：targetId 归属变化可翻转派生结果，行数不变）
+    // 血缘投影原位变更（targetId 归属变化可翻转派生结果，行数不变）
     const lineage = viewerActivityFacts();
     expect(workflowFactsSignature(lineage)).not.toBe(
       workflowFactsSignature({ ...lineage, actions: [{ ...lineage.actions[0]!, targetId: 'target-other' }] }),
@@ -590,7 +590,7 @@ describe('workflowFactsSignature（P3-R11-4 派生缓存签名）', () => {
       }),
     );
 
-    // 渲染表面投影（五轮 G1 新读取面：targetId 归属 / 时刻可翻转派生结果，行数不变）
+    // 渲染表面投影（targetId 归属 / 时刻可翻转派生结果，行数不变）
     const surfaced = viewerActivityFacts();
     expect(workflowFactsSignature(surfaced)).not.toBe(
       workflowFactsSignature({ ...surfaced, renderSurfaces: [{ ...surfaced.renderSurfaces[0]!, targetId: 'target-other' }] }),

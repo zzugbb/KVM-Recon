@@ -1,5 +1,5 @@
 /**
- * Viewer 自动收尾看门狗（规范 §7.4，阶段 3 第 3 刀）。
+ * Viewer 自动收尾看门狗（规范 §7.4）。
  *
  * 采集期间每 2s 轮询会话事实快照，检测到 Viewer 活动（§7.3 信号）后
  * 启动稳定窗口：新 target / 通道 / 导航 / 用户动作（活动指纹变化）重置
@@ -167,7 +167,7 @@ export function createViewerAutoStopWatchdog(deps: ViewerAutoStopDeps): ViewerAu
       `Viewer 活动稳定 ${VIEWER_STABLE_WINDOW_MS}ms 无新 target/通道/导航/动作，自动收尾（导出仍由用户决定）`,
     );
     stop();
-    // 自动收尾失败必须显式记账（P3-R11-2）：stop() 拒绝 / 同步抛错只记
+    // 自动收尾失败必须显式记账：stop() 拒绝 / 同步抛错只记
     // viewer-auto-stop-failed 诊断——workspace 保持 active，下次启动走
     // 恢复导出；绝不产生未处理 Promise 拒绝，也绝不重抛中断轮询调用方。
     try {

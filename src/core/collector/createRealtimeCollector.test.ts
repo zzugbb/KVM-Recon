@@ -1,6 +1,6 @@
 /**
  * 实时通道 journal 写失败记账（规范 §3「缺失必须显式」）。
- * 反例（P2-1）：raw/realtime/downloads.jsonl append 抛错（模拟非 ENOSPC
+ * 反例：raw/realtime/downloads.jsonl append 抛错（模拟非 ENOSPC
  * 磁盘故障）时只有进程内 droppedEvent 计数，包内证据摘要无作证，
  * derivePackIntegrity 派生假 COMPLETE。
  */

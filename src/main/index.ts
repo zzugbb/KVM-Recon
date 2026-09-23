@@ -410,7 +410,7 @@ function createMainWindow() {
 }
 
 /**
- * 启动时崩溃恢复（规范 §4.2；第 12 轮：只提示不自动写 ZIP）。
+ * 启动时崩溃恢复（规范 §4.2：只提示不自动写 ZIP）。
  * 恢复止步于 finalize：finalized-unexported 挂起为待导出，由用户在
  * 恢复卡上手动选择目录导出（capture:exportRecovered）。
  */

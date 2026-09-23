@@ -1,5 +1,5 @@
 /**
- * valueFlowEngine 反例测试（阶段 3 第 2 刀，规范 §8.6 / §16）。
+ * valueFlowEngine 反例测试（规范 §8.6 / §16）。
  *
  * 只记有字节级观察背书的边：cookie 传播链（Set-Cookie → storage → 后续
  * 请求 / WS 握手 Cookie 头）、crypto 输出（原始字节 / hex / base64 编码
@@ -347,10 +347,10 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     expect(derivedFrom[0]?.to).toBe(outputNode?.id);
   });
 
-  // 第 11 轮审核 P3-R11-1：crypto 调用发生在请求开始与响应到达之间
+  // crypto 调用发生在请求开始与响应到达之间
   // （startedAt + max(receiveMs, sendMs + waitMs) 窗口内）时，页面尚不可能
   // 读到该响应正文，字节包含不构成「响应 → crypto 输入」的时间证据，不得成边。
-  it('crypto 输入 ⊆ 响应正文但调用早于响应到达 → 零边（P3-R11-1）', async () => {
+  it('crypto 输入 ⊆ 响应正文但调用早于响应到达 → 零边', async () => {
     const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
     const mkFacts = (cryptoAt: string) =>
       factsOf({
@@ -389,10 +389,10 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     expect(after.valueFlow.edges.some(edge => edge.relation === 'derived-from')).toBe(true);
   });
 
-  // 第五轮 G4：响应正文的存在时刻是响应到达时刻（startedAt +
+  // 响应正文的存在时刻是响应到达时刻（startedAt +
   // max(receiveMs, sendMs+waitMs)），不是请求开始时刻——关系行的
   // occurredAt 不得把「响应正文 → 消费者」边记成在请求开始时就已发生。
-  it('响应正文 → crypto 输入的 derived-from 边：关系行 occurredAt 是响应到达时刻，不是请求开始（第五轮 G4）', async () => {
+  it('响应正文 → crypto 输入的 derived-from 边：关系行 occurredAt 是响应到达时刻，不是请求开始', async () => {
     const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
     const result = await deriveValueFlow(
       factsOf({
@@ -427,10 +427,10 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     expect(relationRow?.occurredAt).toBe('2026-09-21T02:00:02.600Z');
   });
 
-  // 第 12 轮附加项：sendMs+waitMs 漏掉建连段（sendEnd 前的连接建立），
+  // sendMs+waitMs 漏掉建连段（sendEnd 前的连接建立），
   // 只有 receiveMs（累计偏移）覆盖完整 requestTime→响应头窗口。
   // 消费发生在 sendMs+waitMs 之后、receiveMs 之前时，页面仍不可能读到正文。
-  it('crypto 调用晚于 startedAt+sendMs+waitMs 但早于 startedAt+receiveMs → 零边（第 12 轮）', async () => {
+  it('crypto 调用晚于 startedAt+sendMs+waitMs 但早于 startedAt+receiveMs → 零边', async () => {
     const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
     const mkFacts = (cryptoAt: string) =>
       factsOf({
@@ -467,9 +467,9 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     expect(after.valueFlow.edges.some(edge => edge.relation === 'derived-from')).toBe(true);
   });
 
-  // 第 11 轮审核 P3-R11-1（同根因）：WS 握手发生在请求开始与响应到达
+  // WS 握手发生在请求开始与响应到达
   // 之间时，查询参数值不构成「响应正文 → 握手参数」的传播证据。
-  it('WS 握手查询参数值 ⊆ 响应正文但通道建于响应到达之前 → 零边（P3-R11-1）', async () => {
+  it('WS 握手查询参数值 ⊆ 响应正文但通道建于响应到达之前 → 零边', async () => {
     const token = 'viewer-token-0123456789';
     const mkFacts = (createdAt: string) =>
       factsOf({
@@ -502,9 +502,9 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     expect(after.valueFlow.edges[0]?.relation).toBe('propagated-to');
   });
 
-  // 第 11 轮审核 P3-R11-1（同根因）：Set-Cookie 签发事务的响应未到达时，
+  // Set-Cookie 签发事务的响应未到达时，
   // 页面尚不可能持有该 cookie，更早开始的携带请求不构成传播证据。
-  it('Set-Cookie 响应未到达时携带同 cookie 的请求 → 零边（P3-R11-1）', async () => {
+  it('Set-Cookie 响应未到达时携带同 cookie 的请求 → 零边', async () => {
     const mkFacts = (carrierAt: string) =>
       factsOf({
         transactions: [

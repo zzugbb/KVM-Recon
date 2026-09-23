@@ -1009,7 +1009,7 @@ export async function createSampleCapturePackV2(
     ];
 
     // §7.3 第 2 组事实样例：动作后在血缘内新建的渲染/执行表面
-    //（canvas-context / Worker 构造 / 持续渲染，五轮 G1）
+    //（canvas-context / Worker 构造 / 持续渲染）
     const renderSurfaces: PackV2RenderSurfaceRow[] = [
       {
         id: 'render-0001',
@@ -1198,7 +1198,7 @@ export async function createSampleCapturePackV2(
       },
       // 注：页面脚本分别创建 Worker 与 WebSocket，采集事实无法证明二者绑定，
       // 因此不编造 target-worker-0001 → ws-0001 的 attached 关系。
-      // value-flow 关系行与 ai/value-flow.json 的边一一对应（阶段 3 第 2 刀派生契约），
+      // value-flow 关系行与 ai/value-flow.json 的边一一对应（派生契约），
       // occurredAt 取传播被观察到的一侧（to 节点证据时间）。
       { from: 'value-0001', to: 'value-0002', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
       { from: 'value-0002', to: 'value-0003', relation: 'value-flow', occurredAt: isoAt(startedAt, 4), evidencePath: 'ai/value-flow.json' },

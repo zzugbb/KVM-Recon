@@ -1,5 +1,5 @@
 /**
- * 阶段 3 第 3 刀：Viewer 自动收尾看门狗反例集（规范 §7.4）。
+ * Viewer 自动收尾看门狗反例集（规范 §7.4）。
  *
  * 行为契约：
  * - 2s 轮询事实快照，检测到 Viewer 活动 → 记 viewer-activity-detected 诊断；
@@ -233,9 +233,9 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     expect(harness.autoStop).not.toHaveBeenCalled();
   });
 
-  // 第 11 轮审核 P3-R11-2：自动收尾失败必须显式记账（viewer-auto-stop-failed），
+  // 自动收尾失败必须显式记账（viewer-auto-stop-failed），
   // 绝不产生未处理 Promise 拒绝；workspace 保持 active，下次启动走恢复导出。
-  it('自动收尾 stop() 拒绝：记 viewer-auto-stop-failed 诊断，不产生未处理拒绝（P3-R11-2）', async () => {
+  it('自动收尾 stop() 拒绝：记 viewer-auto-stop-failed 诊断，不产生未处理拒绝', async () => {
     const harness = setupDeps(viewerFacts());
     const failing = vi.fn(() => Promise.reject(new Error('收尾失败：workspace 损坏')));
     const deps = { ...harness.deps, autoStop: () => failing() };
@@ -253,7 +253,7 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     );
   });
 
-  it('自动收尾 autoStop 同步抛错：同样记 viewer-auto-stop-failed 诊断（P3-R11-2）', async () => {
+  it('自动收尾 autoStop 同步抛错：同样记 viewer-auto-stop-failed 诊断', async () => {
     const harness = setupDeps(viewerFacts());
     const throwing = vi.fn(() => {
       throw new Error('同步抛错');
@@ -272,7 +272,7 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     );
   });
 
-  // 第五轮 G2（规范 §7.4「非持续响应正文全部落盘」）：稳定窗口静默通过但
+  // （规范 §7.4「非持续响应正文全部落盘」）：稳定窗口静默通过但
   // 仍有在途非持续 HTTP 请求时不得自动收尾——stop 会把未完成请求按
   // 'unfinished' 提交并记 missingBodies 缺口，等于把「还在落盘」错记成
   // 「应有而未有」；必须推迟到在途请求完成。
@@ -324,7 +324,7 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     expect(harness.autoStop).not.toHaveBeenCalled();
   });
 
-  // 第五轮 G3（规范 §7.4「至少完成 Viewer 初始与稳定阶段截图」）：检测到
+  // （规范 §7.4「至少完成 Viewer 初始与稳定阶段截图」）：检测到
   // Viewer 活动时对 viewer target 补 viewer-initial 阶段截图；同一 target
   // 只截一次（每轮轮询重复检测不得重复截图）。
   it('检出 Viewer 活动 → 对 viewer target 补 viewer-initial 阶段截图，同 target 只截一次', () => {

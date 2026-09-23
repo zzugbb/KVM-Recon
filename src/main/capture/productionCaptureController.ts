@@ -1,5 +1,5 @@
 /**
- * 生产采集 Controller（规范 §4 / §7，阶段 2 第 4 刀）。
+ * 生产采集 Controller（规范 §4 / §7）。
  *
  * 把 Electron 壳接到 core 采集会话与 Pack 2.0 装配导出：
  * - 分区窗口（partition / contextIsolation / webSecurity 关闭）；
@@ -104,7 +104,7 @@ export async function createProductionCapture(
   let probeResult: ProbeBmcTargetResult | null = null;
   let stopped = false;
   let stoppedAt: string | null = null;
-  // 幂等：并发/重入 stop 共享同一次收尾（五轮 G6）。与 createCaptureSession
+  // 幂等：并发/重入 stop 共享同一次收尾。与 createCaptureSession
   // 同一形态——收尾序列不可重放（认证 probe 是带会话 Cookie 的网络副作用），
   // 失败也复用同一 promise：调用方拿到同一拒绝，重试入口在 discard/恢复链路
   let stopPromise: Promise<void> | null = null;
@@ -117,7 +117,7 @@ export async function createProductionCapture(
     recordDiagnostic: (kind, detail) => recordDiagnostic(kind, detail),
     pendingNonStreamingRequests: () => captureSession.pendingNonStreamingRequests(),
     captureViewerInitialState: targetId => captureSession.captureViewerInitialScreenshot(targetId),
-    // 返回 Promise 本体：拒绝由看门狗记 viewer-auto-stop-failed 诊断（P3-R11-2）
+    // 返回 Promise 本体：拒绝由看门狗记 viewer-auto-stop-failed 诊断
     autoStop: () => stop(),
   });
 
@@ -217,8 +217,7 @@ export async function createProductionCapture(
       callback(true);
       recordDiagnostic('cert-trusted', `${error} ${url}`);
     });
-    // Electron 44：console-message 是单事件对象签名（旧五参数形式已弃用，
-    // 五轮 G9）。旧数字 level 的 2/3（warning/error）对应新字符串枚举
+    // Electron 44：console-message 是单事件对象签名（旧五参数形式已弃用）。旧数字 level 的 2/3（warning/error）对应新字符串枚举
     contents.on('console-message', event => {
       if (event.level !== 'warning' && event.level !== 'error') return;
       // 页面 console 全文已在包内（CDP Log → raw/browser/console.jsonl）；

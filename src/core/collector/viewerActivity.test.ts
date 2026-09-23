@@ -1,5 +1,5 @@
 /**
- * 阶段 3 第 3 刀：Viewer 活动识别纯模块反例集（规范 §7.3 / §7.4）。
+ * Viewer 活动识别纯模块反例集（规范 §7.3 / §7.4）。
  *
  * 信号规则与 workflowStatusEngine 的 KVM_REACHED 派生保持同一事实组合：
  * 用户动作（click / form-submit）的 target 血缘集合（动作 target + 经
@@ -146,7 +146,7 @@ describe('detectViewerActivity（§7.3 信号）', () => {
     });
   });
 
-  it('反例：无渲染/执行表面（登录后 Dashboard 后台告警 WS）→ 零信号（五轮 G1）', () => {
+  it('反例：无渲染/执行表面（登录后 Dashboard 后台告警 WS）→ 零信号', () => {
     const snapshot = facts({
       ...viewerActivityFacts(),
       renderSurfaces: [],
@@ -155,7 +155,7 @@ describe('detectViewerActivity（§7.3 信号）', () => {
     expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(false);
   });
 
-  it('反例：渲染表面属无关窗口 → 零信号（五轮 G1）', () => {
+  it('反例：渲染表面属无关窗口 → 零信号', () => {
     const snapshot = facts({
       ...viewerActivityFacts(),
       renderSurfaces: [renderSurface({ targetId: 'target-other' })],
@@ -182,7 +182,7 @@ describe('detectViewerActivity（§7.3 信号）', () => {
     expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(false);
   });
 
-  it('反例：render-surface 钩子失败 → 页面侧表面不可信，零信号；WASM 事务（CDP 观察）仍可（五轮 G1）', () => {
+  it('反例：render-surface 钩子失败 → 页面侧表面不可信，零信号；WASM 事务（CDP 观察）仍可', () => {
     const broken = facts({
       ...viewerActivityFacts(),
       hookFailures: [hookFailure({ hook: 'render-surface' })],
@@ -340,7 +340,7 @@ describe('detectViewerActivity（§7.3 信号）', () => {
     expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(false);
   });
 
-  it('无关 target 的双向 WS → 零信号（第 12 轮阻断 1 反例：通道须属血缘）', () => {
+  it('无关 target 的双向 WS → 零信号（通道须属血缘）', () => {
     const snapshot = facts({
       actions: [action({ occurredAt: at(1_000) })],
       navigations: [nav({ occurredAt: at(2_000) })],
@@ -449,11 +449,11 @@ describe('activityFingerprint（稳定窗口重置依据）', () => {
     expect(
       activityFingerprint({ ...base, channels: [...base.channels, channel({ id: 'ws-9' })] }),
     ).not.toBe(first);
-    // 新导航重置稳定窗口（§7.4「新的关键资源」，第 12 轮阻断 1）
+    // 新导航重置稳定窗口（§7.4「新的关键资源」）
     expect(
       activityFingerprint({ ...base, navigations: [...base.navigations, nav()] }),
     ).not.toBe(first);
-    // 新渲染表面重置稳定窗口（§7.4「新的关键资源」，五轮 G1）
+    // 新渲染表面重置稳定窗口（§7.4「新的关键资源」）
     expect(
       activityFingerprint({
         ...base,

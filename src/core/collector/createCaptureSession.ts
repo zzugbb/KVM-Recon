@@ -108,8 +108,7 @@ export interface CaptureSession {
   /** 在途非持续 HTTP 请求视图（规范 §7.4：自动收尾等待其落盘）。 */
   pendingNonStreamingRequests(): ReadonlyArray<{ id: string; url: string }>;
   /**
-   * viewer-initial 阶段截图（§7.4「至少完成 Viewer 初始与稳定阶段截图」；
-   * 第五轮 G3）：检出 Viewer 活动时由看门狗对 viewer 所在根 target 调用。
+   * viewer-initial 阶段截图（§7.4「至少完成 Viewer 初始与稳定阶段截图」）：检出 Viewer 活动时由看门狗对 viewer 所在根 target 调用。
    * 未知根 target 或截图失败 → 显式记账并返回 false（识别失败不停采集）。
    */
   captureViewerInitialScreenshot(targetId: string): Promise<boolean>;
@@ -133,7 +132,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   const browser = createBrowserStateCollector(workspace, evidence);
   const realtime = createRealtimeCollector(workspace, evidence);
   let attachments: AttachedCapture[] = [];
-  // 根 target → 附件（第五轮 G3）：viewer-initial 阶段截图与 popup 根收尾
+  // 根 target → 附件：viewer-initial 阶段截图与 popup 根收尾
   // 快照按根 target 路由，不再只从主根采集。
   const rootAttachments = new Map<string, AttachedCapture>();
   // 挂载中途失败的根 target 补行（attached=false）：事件监听在 enable 序列
@@ -169,7 +168,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   // 挂载后即采集一次——硬崩溃后恢复导出仍能装配出带真实环境的 manifest。
   const targetFacts = parseCaptureTarget(init.targetUrl ?? null);
   let pageEnvironment: PageEnvironment | null = null;
-  // 派生引擎只读事实快照与派生入口（阶段 3 第 1 刀）：
+  // 派生引擎只读事实快照与派生入口：
   // 派生失败绝不阻断收尾——退回诚实下限 TARGET_OPENED 并显式记账。
   const collectWorkflowFacts = (): WorkflowFacts => ({
     transactions: http.transactionRows(),
@@ -180,7 +179,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     renderSurfaces: browser.renderSurfaceRows(),
     hookFailures: [...evidence.diagnostics().observerHookFailures],
   });
-  // 派生结果签名缓存（P3-R11-4）：renderer 2s 轮询 / 看门狗轮询在事实
+  // 派生结果签名缓存：renderer 2s 轮询 / 看门狗轮询在事实
   // 未变化时直接复用，不重跑 O(actions×navigations) 派生配对；签名由
   // workflowFactsSignature 投影派生引擎读取的全部字段（含原位变更），
   // 事实一变即失效——不会给出过期状态。
@@ -277,7 +276,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
           step => !steps[step],
         );
         for (const step of failedSteps) {
-          // 第 12 轮阻断 4：步骤失败（内部已记账为 droppedEvent）不得
+          // 步骤失败（内部已记账为 droppedEvent）不得
           // 伪装成「已写入」——browserStateGaps 缺口 → INCOMPLETE_BROWSER_STATE
           evidence.recordGap('browserState', step, '浏览器状态快照步骤失败（详见 droppedEventByMethod）');
         }
@@ -424,7 +423,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     await safeStep('channels-catalog', () =>
       workspace.writeArtifact('catalog/channels.json', json2(channelsFile)),
     );
-    // 观察脚本钩子失败的表面条件映射（阶段 3 第 1 刀）：只有对应观察面
+    // 观察脚本钩子失败的表面条件映射：只有对应观察面
     // 真实在场（webrtc/webtransport/sse 通道行存在）才构成 channelGaps
     // 缺口；必须在终态 facts 写入前记账，才能进证据摘要。
     const hookFailures = evidence.diagnostics().observerHookFailures;
@@ -435,10 +434,10 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       }
     }
 
-    // 证据图（阶段 3 第 2 刀）：从观察事实派生 ai/value-flow.json 与
+    // 证据图：从观察事实派生 ai/value-flow.json 与
     // catalog/relations.jsonl。只记字节级观察背书的边；storage 快照读取
     // 失败只丢 cookie 链（显式记账），crypto / WS 参数链继续派生。
-    // 第 12 轮阻断 5：派生/写盘失败（含 storage 读取降级）不得伪装成
+    // 派生/写盘失败（含 storage 读取降级）不得伪装成
     // 「已闭环」——evidenceGraphOk=false 时 referencesClosed 不置位。
     let evidenceGraphOk = false;
     await safeStep('evidence-graph', async () => {
@@ -617,7 +616,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       return http.pendingNonStreamingHops();
     },
     async captureViewerInitialScreenshot(targetId: string) {
-      // 第五轮 G3（§7.4）：viewer-initial 阶段截图按根 target 路由；未知
+      // （§7.4）：viewer-initial 阶段截图按根 target 路由；未知
       // target（未挂载 / 已 detach / 收尾后）显式记账返回 false，识别与
       // 采集照常继续——缺截图由一致性验证器如实报缺口。
       // Viewer 可以在 iframe/OOPIF 子 target 中。截图仍从其所属根

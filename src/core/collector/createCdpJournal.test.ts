@@ -10,7 +10,7 @@ import { createCollectorEvidence } from './collectorEvidence';
 import { createCdpJournal } from './createCdpJournal';
 
 /**
- * 反例先行（多根挂载并发写入）：主窗口 + popup 并发 recordEvent/recordCommand
+ * 反例（多根挂载并发写入）：主窗口 + popup 并发 recordEvent/recordCommand
  * 时，seq 赋值顺序必须与落盘顺序一致——否则包一致性门禁以
  * RAW_JOURNAL_INVALID（seq 不严格递增）拒绝导出。
  */
@@ -74,7 +74,7 @@ describe('createCdpJournal（并发 seq 顺序）', () => {
   });
 
   it('事件行写入失败持久记账：粘性丢列逐条作证，派生 INCOMPLETE_RAW_JOURNAL', async () => {
-    // 反例（P2-1）：appendJsonl 抛错（模拟非 ENOSPC 磁盘故障）时，
+    // 反例：appendJsonl 抛错（模拟非 ENOSPC 磁盘故障）时，
     // 粘性链把第一条失败放大为后续全部事件丢行——只有进程内 droppedEvent
     // 计数，包内证据摘要无作证，derivePackIntegrity 派生假 COMPLETE。
     const evidence = createCollectorEvidence();

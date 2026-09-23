@@ -55,7 +55,7 @@ export interface BrowserStateCollector {
   writeFrameTree(file: Omit<PackV2BrowserFrameTreeFile, 'schemaVersion'>): Promise<void>;
   /** 派生引擎只读快照：全部用户动作行浅拷贝（阶段 3 workflowStatus 派生）。 */
   actionRows(): PackV2BrowserActionRow[];
-  /** 派生引擎只读快照：全部渲染/执行表面行浅拷贝（§7.3 第 2 组事实，五轮 G1）。 */
+  /** 派生引擎只读快照：全部渲染/执行表面行浅拷贝（§7.3 第 2 组事实）。 */
   renderSurfaceRows(): PackV2RenderSurfaceRow[];
 }
 

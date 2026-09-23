@@ -168,7 +168,7 @@ export function createCollectorEvidence(): CollectorEvidence {
 }
 
 /**
- * 观察脚本钩子失败的表面条件映射（阶段 3 第 1 刀）：只有对应观察面
+ * 观察脚本钩子失败的表面条件映射：只有对应观察面
  * （webrtc / webtransport / sse 通道）真实在场时，钩子失败才构成
  * channelGaps 缺口——无使用的面不记缺口，不编造（规范 §3）。
  */
