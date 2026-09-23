@@ -443,11 +443,17 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
     await safeStep('evidence-graph', async () => {
       let storageReadFailed = false;
       let storageCookies: Array<{ name: string; value: string }> = [];
+      let storageValues: Array<{ key: string; value: string }> = [];
       let storageCapturedAt = now();
       try {
         const raw = JSON.parse(
           (await workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
-        ) as { capturedAt?: unknown; cookies?: unknown };
+        ) as {
+          capturedAt?: unknown;
+          cookies?: unknown;
+          sessionStorage?: unknown;
+          localStorage?: unknown;
+        };
         if (typeof raw.capturedAt === 'string') storageCapturedAt = raw.capturedAt;
         if (Array.isArray(raw.cookies)) {
           storageCookies = raw.cookies.filter(
@@ -457,13 +463,21 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
               typeof (cookie as { value?: unknown }).value === 'string',
           );
         }
+        // sessionStorage / localStorage：键值为字符串的对象（storage 快照步产物）
+        for (const source of [raw.sessionStorage, raw.localStorage]) {
+          if (!source || typeof source !== 'object' || Array.isArray(source)) continue;
+          for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+            if (typeof value !== 'string') continue;
+            storageValues.push({ key, value });
+          }
+        }
       } catch (error) {
         // storage.json 是快照步产物；读取失败不牵连其余派生链
         evidence.droppedEvent('value-flow-storage-read', error);
         evidence.recordGap(
           'evidenceGraph',
           'value-flow-storage-read',
-          'storage 快照读取失败：cookie 链边丢弃',
+          'storage 快照读取失败：cookie / storage 值链边丢弃',
         );
         storageReadFailed = true;
       }
@@ -480,6 +494,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
           cryptoRows: crypto.rows(),
           wsChannels: webSockets.handshakeFacts(),
           storageCookies,
+          storageValues,
           storageCapturedAt,
         },
         { readBody },

@@ -30,13 +30,15 @@
     "http-000002"
   ],
   "kvmLaunchCandidateRequestIds": [
-    "http-000004"
+    "http-000004",
+    "http-000002"
   ],
   "viewerTargetIds": [
     "target-page-0001",
     "target-worker-0001"
   ],
   "dynamicScriptIds": [
+    "script-inline-0000",
     "script-inline-0001"
   ],
   "workerIds": [

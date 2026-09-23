@@ -7,6 +7,9 @@
  * - cookie 链：响应 Set-Cookie 的 name=value → storage cookie → 后续请求 /
  *   WS 握手 Cookie 头（逐字节相同；时间有序；storage 缺该 cookie 时退化为
  *   Set-Cookie → Cookie 头直连边）；
+ * - storage 值链：响应正文 ⊇ storage 值（sessionStorage / localStorage）→
+ *   storage 节点 → 后续请求 / WS 握手头（值逐字节相同）与查询参数（时间
+ *   以最早包含该值的响应到达为锚）；
  * - crypto 链：调用输入字节（原始 / hex / base64 编码形态）⊆ 先前响应正文
  *   → derived-from；调用输出字节（同样三种编码形态）⊆ 后续请求正文 →
  *   used-in + derived-from；
@@ -54,12 +57,20 @@ export interface ValueFlowCookieFact {
   value: string;
 }
 
+/** raw/browser/storage.json 的 sessionStorage / localStorage 键值（逐字节）。 */
+export interface ValueFlowStorageValueFact {
+  key: string;
+  value: string;
+}
+
 export interface ValueFlowFacts {
   transactions: ReadonlyArray<PackV2HttpTransactionRow>;
   cryptoRows: ReadonlyArray<PackV2CryptoCallRow>;
   wsChannels: ReadonlyArray<ValueFlowWsChannelFact>;
   /** raw/browser/storage.json 的 cookie 快照（name/value 逐字节）。 */
   storageCookies: ReadonlyArray<ValueFlowCookieFact>;
+  /** raw/browser/storage.json 的 sessionStorage / localStorage 快照（逐字节）。 */
+  storageValues: ReadonlyArray<ValueFlowStorageValueFact>;
   storageCapturedAt: string;
 }
 
@@ -359,6 +370,35 @@ export async function deriveValueFlow(
     }
   }
 
+  // ---- storage 值（sessionStorage / localStorage）条目 ----
+  // 值短于 MIN_CONTAINED_BYTES 字节不构成传播证据（与包含匹配同限）。
+  interface StorageEntry {
+    nodeKey: string;
+    buffer: Buffer;
+    /** 最早包含该值的响应正文节点；未观察到来源响应时保持 null（无出边）。 */
+    sourceKey: string | null;
+    sourceAt: number;
+  }
+  const storageEntries: StorageEntry[] = [];
+  for (const item of facts.storageValues) {
+    if (!item.key || !item.value) continue;
+    const buffer = Buffer.from(item.value, 'utf8');
+    if (buffer.byteLength < MIN_CONTAINED_BYTES) continue;
+    const nodeKey = addNode({
+      key: `storage:${item.key}=${item.value}`,
+      kind: 'storage',
+      name: `${item.key}（storage 值）`,
+      evidencePath: STORAGE_PATH,
+      occurredAt: facts.storageCapturedAt,
+    });
+    storageEntries.push({
+      nodeKey,
+      buffer,
+      sourceKey: null,
+      sourceAt: Number.POSITIVE_INFINITY,
+    });
+  }
+
   // ---- 响应正文：逐份读，测试全部输入 needle 与 WS 查询参数值 ----
   for (const transaction of facts.transactions) {
     if (!transaction.responseBody) continue;
@@ -406,6 +446,87 @@ export async function deriveValueFlow(
         param.channel.createdAt,
       );
     }
+    for (const entry of storageEntries) {
+      if (body.indexOf(entry.buffer) < 0) continue;
+      const responseKey = addNode({
+        key: `response-body:${transaction.id}`,
+        kind: 'http-response',
+        name: `响应正文（${transaction.url}）`,
+        evidencePath: TX_PATH,
+        evidenceId: transaction.id,
+        occurredAt: arrivedAtIso,
+      });
+      addPropagationEdge(responseKey, entry.nodeKey, TX_PATH, arrivedAtIso);
+      if (arrivedAt < entry.sourceAt) {
+        entry.sourceKey = responseKey;
+        entry.sourceAt = arrivedAt;
+      }
+    }
+  }
+
+  // ---- storage 值 → 后续请求 / WS 握手头与 WS 查询参数（值逐字节相同）----
+  // 头值逐字节等于 storage 值、且发送时刻不早于该值最早出现的响应到达
+  // 时刻，才记传播边；Cookie 头由 cookie 链负责，这里跳过。
+  for (const transaction of facts.transactions) {
+    const at = timeOf(transaction.startedAt);
+    for (const [name, value] of Object.entries(transaction.requestHeaders)) {
+      if (!value || name.toLowerCase() === 'cookie') continue;
+      const entry = storageEntries.find(
+        candidate =>
+          candidate.sourceKey !== null &&
+          at >= candidate.sourceAt &&
+          candidate.buffer.equals(Buffer.from(value, 'utf8')),
+      );
+      if (!entry) continue;
+      const nodeKey = addNode({
+        key: `tx-header-value:${transaction.id}:${name}=${value}`,
+        kind: 'header',
+        name: `${name}（请求头）`,
+        evidencePath: TX_PATH,
+        evidenceId: transaction.id,
+        occurredAt: transaction.startedAt,
+      });
+      addPropagationEdge(entry.nodeKey, nodeKey, TX_PATH, transaction.startedAt);
+    }
+  }
+
+  for (const channel of facts.wsChannels) {
+    const at = timeOf(channel.createdAt);
+    for (const [name, value] of Object.entries(channel.requestHeaders)) {
+      if (!value || name.toLowerCase() === 'cookie') continue;
+      const entry = storageEntries.find(
+        candidate =>
+          candidate.sourceKey !== null &&
+          at >= candidate.sourceAt &&
+          candidate.buffer.equals(Buffer.from(value, 'utf8')),
+      );
+      if (!entry) continue;
+      const nodeKey = addNode({
+        key: `ws-header-value:${channel.channelId}:${name}=${value}`,
+        kind: 'header',
+        name: `${name}（WS 握手头）`,
+        evidencePath: channel.metadataPath,
+        evidenceId: channel.channelId,
+        occurredAt: channel.createdAt,
+      });
+      addPropagationEdge(entry.nodeKey, nodeKey, channel.metadataPath, channel.createdAt);
+    }
+  }
+
+  for (const param of wsParams) {
+    const entry = storageEntries.find(
+      candidate =>
+        candidate.sourceKey !== null &&
+        timeOf(param.channel.createdAt) >= candidate.sourceAt &&
+        candidate.buffer.equals(param.value),
+    );
+    if (!entry) continue;
+    addPropagationEdge(
+      entry.nodeKey,
+      `url-param:${param.channel.channelId}:${param.name}=${param.value.toString('utf8')}`,
+      param.channel.metadataPath,
+      param.channel.createdAt,
+    );
   }
 
   // ---- 请求正文：逐份读，测试全部 crypto 输出 needle ----

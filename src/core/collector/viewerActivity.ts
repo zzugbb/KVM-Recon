@@ -21,10 +21,12 @@ export interface ViewerActivitySignal {
   actionId: string;
   actionKind: string;
   actionAt: string;
-  /** 动作后的目标打开证据：popup target 或主框架导航。 */
+  /** 打开证据：popup target 或主框架导航。 */
   openedVia: 'popup' | 'navigation';
   /** popup target id（openedVia=popup）或导航 URL（openedVia=navigation）。 */
   openedDetail: string;
+  /** 打开证据的发生时刻（popup attachedAt / 导航 occurredAt）。 */
+  openedAt: string;
   /** Viewer 所在根 target（popup target id 或导航 target id）：viewer-initial 阶段截图路由用（§7.4）。 */
   viewerTargetId: string;
   /** §7.3 第 2 组事实：动作后血缘内新建的渲染/执行表面（页面侧或 WASM 事务）。 */
@@ -113,6 +115,7 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
 
     let openedVia: 'popup' | 'navigation' | null = null;
     let openedDetail = '';
+    let openedAtIso = '';
     let viewerTargetId = '';
     let openedAt = Number.POSITIVE_INFINITY;
     for (const target of facts.targets) {
@@ -122,6 +125,7 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
       if (at < actionAt || at >= openedAt) continue;
       openedVia = 'popup';
       openedDetail = target.id;
+      openedAtIso = target.attachedAt;
       viewerTargetId = target.id;
       openedAt = at;
     }
@@ -131,6 +135,7 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
       if (at < actionAt || at > openedAt) continue;
       openedVia = 'navigation';
       openedDetail = navigation.url ?? '';
+      openedAtIso = navigation.occurredAt;
       viewerTargetId = navigation.targetId;
       openedAt = at;
     }
@@ -158,6 +163,7 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
       actionAt: action.occurredAt,
       openedVia,
       openedDetail,
+      openedAt: openedAtIso,
       viewerTargetId,
       surfaceKind: surface.kind,
       surfaceAt: surface.at,

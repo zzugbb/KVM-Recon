@@ -2,9 +2,11 @@
  * valueFlowEngine 反例测试（规范 §8.6 / §16）。
  *
  * 只记有字节级观察背书的边：cookie 传播链（Set-Cookie → storage → 后续
- * 请求 / WS 握手 Cookie 头）、crypto 输出（原始字节 / hex / base64 编码
- * 形态）⊆ 请求正文、crypto 输入 ⊆ 先前响应正文、WS 握手查询参数值 ⊆
- * 先前响应正文。字节不匹配 / 时间倒序 / 过短值 → 零边（空图是诚实形态）。
+ * 请求 / WS 握手 Cookie 头）、storage 值链（响应正文 ⊇ storage 值 →
+ * storage 节点 → 后续请求 / WS 握手头与查询参数，值逐字节相同）、
+ * crypto 输出（原始字节 / hex / base64 编码形态）⊆ 请求正文、
+ * crypto 输入 ⊆ 先前响应正文、WS 握手查询参数值 ⊆ 先前响应正文。
+ * 字节不匹配 / 时间倒序 / 过短值 → 零边（空图是诚实形态）。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -102,6 +104,7 @@ function factsOf(parts: Partial<ValueFlowFacts>): ValueFlowFacts {
     cryptoRows: parts.cryptoRows ?? [],
     wsChannels: parts.wsChannels ?? [],
     storageCookies: parts.storageCookies ?? [],
+    storageValues: parts.storageValues ?? [],
     storageCapturedAt: parts.storageCapturedAt ?? '2026-09-21T02:00:04.000Z',
   };
 }
@@ -658,6 +661,180 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     );
 
     expect(result.valueFlow.edges).toHaveLength(0);
+  });
+
+  // ---- storage 值链（sessionStorage / localStorage，规范 §8.6）----
+
+  it('响应正文 ⊇ storage 值 → storage 节点 → 后续请求头（逐字节相同）成两段传播边', async () => {
+    const csrf = 'csrf-token-0123456789';
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
+          }),
+          tx({
+            id: 'http-0002',
+            startedAt: T3,
+            requestHeaders: { 'x-csrf': csrf },
+          }),
+        ],
+        storageValues: [{ key: 'csrf', value: csrf }],
+      }),
+      readerOf({ 'raw/http/bodies/0001': Buffer.from(`{"csrfToken":"${csrf}"}`, 'utf8') }),
+    );
+
+    expect(result.valueFlow.edges).toHaveLength(2);
+    const storageNode = result.valueFlow.nodes.find(node => node.kind === 'storage');
+    const headerNode = result.valueFlow.nodes.find(node => node.kind === 'header');
+    const responseNode = result.valueFlow.nodes.find(node => node.kind === 'http-response');
+    expect(storageNode?.evidencePath).toBe('raw/browser/storage.json');
+    expect(headerNode?.evidenceId).toBe('http-0002');
+    for (const edge of result.valueFlow.edges) {
+      expect(edge.relation).toBe('propagated-to');
+      expect(edge.replaySubstitution).toBe(true);
+    }
+    // 响应正文 → storage → 请求头 两段边方向正确
+    const toStorage = result.valueFlow.edges.find(edge => edge.to === storageNode?.id);
+    expect(toStorage?.from).toBe(responseNode?.id);
+    const toHeader = result.valueFlow.edges.find(edge => edge.to === headerNode?.id);
+    expect(toHeader?.from).toBe(storageNode?.id);
+  });
+
+  it('WS 握手头逐字节等于 storage 值 → storage → WS 头传播边（Cookie 头除外）', async () => {
+    const token = 'viewer-token-0123456789';
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+          }),
+        ],
+        wsChannels: [
+          wsChannel({
+            channelId: 'ws-0001',
+            createdAt: T3,
+            requestHeaders: { cookie: `session=${token}`, 'x-viewer': token },
+          }),
+        ],
+        storageValues: [{ key: 'viewerToken', value: token }],
+      }),
+      readerOf({ 'raw/http/bodies/0001': Buffer.from(`{"token":"${token}"}`, 'utf8') }),
+    );
+
+    const headerNodes = result.valueFlow.nodes.filter(node => node.kind === 'header');
+    // Cookie 头由 cookie 链负责，storage 值链只认 x-viewer 头
+    expect(headerNodes).toHaveLength(1);
+    expect(headerNodes[0]?.evidenceId).toBe('ws-0001');
+    expect(headerNodes[0]?.name).toContain('x-viewer');
+    const toHeader = result.valueFlow.edges.find(edge => edge.to === headerNodes[0]?.id);
+    expect(toHeader?.replaySubstitution).toBe(true);
+    const storageNode = result.valueFlow.nodes.find(node => node.kind === 'storage');
+    expect(toHeader?.from).toBe(storageNode?.id);
+  });
+
+  it('WS 握手查询参数逐字节等于 storage 值 → storage → 查询参数中继边', async () => {
+    const token = 'viewer-token-0123456789';
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+          }),
+        ],
+        wsChannels: [
+          wsChannel({
+            channelId: 'ws-0001',
+            url: `wss://kvm.example.test/ws?t=${token}`,
+            createdAt: T3,
+          }),
+        ],
+        storageValues: [{ key: 'viewerToken', value: token }],
+      }),
+      readerOf({ 'raw/http/bodies/0001': Buffer.from(`{"token":"${token}"}`, 'utf8') }),
+    );
+
+    const paramNode = result.valueFlow.nodes.find(node => node.kind === 'url-param');
+    const storageNode = result.valueFlow.nodes.find(node => node.kind === 'storage');
+    expect(paramNode).toBeDefined();
+    expect(storageNode).toBeDefined();
+    // 响应正文 → url-param 直连边 + 响应正文 → storage → url-param 中继边都在
+    const toParam = result.valueFlow.edges.filter(edge => edge.to === paramNode?.id);
+    expect(toParam.map(edge => edge.from)).toContain(storageNode?.id);
+    for (const edge of toParam) {
+      expect(edge.replaySubstitution).toBe(true);
+    }
+  });
+
+  it('storage 值链反例：头值不匹配 / 头先于来源响应到达 / 过短值 / 无来源响应 → 零边或无中继边', async () => {
+    const csrf = 'csrf-token-0123456789';
+    const mkFacts = (headerValueAt: string, header: string) =>
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 64),
+            timing: { sendMs: 500, waitMs: 2000, receiveMs: 2600 },
+          }),
+          tx({ id: 'http-0002', startedAt: headerValueAt, requestHeaders: { 'x-csrf': header } }),
+        ],
+        storageValues: [{ key: 'csrf', value: csrf }],
+      });
+    const reader = readerOf({ 'raw/http/bodies/0001': Buffer.from(`{"csrfToken":"${csrf}"}`, 'utf8') });
+
+    // 头值与 storage 值逐字节不同：storage → 头边不成（只剩响应 → storage 一段）
+    const mismatch = await deriveValueFlow(mkFacts(T3, 'other-token-0123456789'), reader);
+    expect(mismatch.valueFlow.edges).toHaveLength(1);
+    expect(mismatch.valueFlow.nodes.some(node => node.kind === 'header')).toBe(false);
+
+    // 头发送早于来源响应到达（T0+2.6s）：时间倒序，中继边不成
+    const reversed = await deriveValueFlow(mkFacts(T1, csrf), reader);
+    expect(reversed.valueFlow.edges).toHaveLength(1);
+    expect(reversed.valueFlow.nodes.some(node => node.kind === 'header')).toBe(false);
+
+    // 短值（< 8 字节）不构成传播证据：storage 节点都不建
+    const tooShort = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 8),
+          }),
+          tx({ id: 'http-0002', startedAt: T3, requestHeaders: { 'x-csrf': 'abc123' } }),
+        ],
+        storageValues: [{ key: 'csrf', value: 'abc123' }],
+      }),
+      readerOf({ 'raw/http/bodies/0001': Buffer.from('{"csrfToken":"abc123"}', 'utf8') }),
+    );
+    expect(tooShort.valueFlow.edges).toHaveLength(0);
+    expect(tooShort.valueFlow.nodes).toHaveLength(0);
+
+    // 值不在任何响应正文：无来源响应，storage 节点无出边（空图是诚实形态）
+    const noSource = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', 16),
+          }),
+          tx({ id: 'http-0002', startedAt: T3, requestHeaders: { 'x-csrf': csrf } }),
+        ],
+        storageValues: [{ key: 'csrf', value: csrf }],
+      }),
+      readerOf({ 'raw/http/bodies/0001': Buffer.from('{"other":"value"}', 'utf8') }),
+    );
+    expect(noSource.valueFlow.edges).toHaveLength(0);
+    expect(noSource.valueFlow.nodes).toHaveLength(0);
   });
 });
 

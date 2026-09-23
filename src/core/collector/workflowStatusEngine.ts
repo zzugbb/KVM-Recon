@@ -103,7 +103,31 @@ export function setCookiePairs(value: string): string[] {
     });
 }
 
-function deriveLoginReached(facts: WorkflowFacts): boolean {
+/**
+ * 观察到的登录链证据明细（LOGIN_REACHED 的判定依据；适配候选链派生用，
+ * 规范 §12）。
+ */
+export interface LoginChainEvidence {
+  /** 锚点：最早响应到达且签发的 cookie 被传播的签发事务。 */
+  loginTransactionId: string;
+  /** 锚点事务签发且被后续请求逐字节携带的 cookie name=value 对。 */
+  propagatedPairs: string[];
+  /** 登录响应到达时刻（ms；cookie 签发时刻）。 */
+  issuedAt: number;
+  /** 全部「签发且被传播」的签发事务 ID（登录候选，规范 §12；含锚点）。 */
+  propagatedIssuerTransactionIds: string[];
+  /** 观察到携带被传播 cookie 的后续事务 ID（排序去重）。 */
+  propagatedTransactionIds: string[];
+}
+
+/**
+ * 登录链证据（单一事实源：deriveLoginReached 与适配候选链共用同一判定，
+ * 不出现两套定义）。
+ * - 签发：POST + 请求正文 + 2xx/3xx 响应 Set-Cookie（签发时刻 = 响应到达时刻）；
+ * - 传播：之后的请求逐字节携带该 name=value（观察到的 cookie 传播）；
+ * 任一签发对的传播成立即返回证据；无传播返回 null。
+ */
+export function loginChainOf(facts: WorkflowFacts): LoginChainEvidence | null {
   const issued: Array<{ at: number; transactionId: string; pair: string }> = [];
   for (const transaction of facts.transactions) {
     if (transaction.method.toUpperCase() !== 'POST') continue;
@@ -117,7 +141,9 @@ function deriveLoginReached(facts: WorkflowFacts): boolean {
       issued.push({ at: responseArrivalAt(transaction), transactionId: transaction.id, pair });
     }
   }
-  if (issued.length === 0) return false;
+  if (issued.length === 0) return null;
+  const propagated = new Set<number>();
+  const carriers = new Set<string>();
   for (const transaction of facts.transactions) {
     const cookieHeader = headerOf(transaction.requestHeaders, 'cookie');
     if (!cookieHeader) continue;
@@ -126,18 +152,43 @@ function deriveLoginReached(facts: WorkflowFacts): boolean {
       const pair = token.trim();
       if (!pair) continue;
       // 之后 = 严格更晚，或同毫秒内的不同事务（CDP 事件因果序先于时间戳精度）
-      if (
-        issued.some(
-          entry =>
-            entry.pair === pair &&
-            (at > entry.at || (at === entry.at && entry.transactionId !== transaction.id)),
-        )
-      ) {
-        return true;
-      }
+      issued.forEach((entry, index) => {
+        if (entry.pair !== pair) return;
+        if (at > entry.at || (at === entry.at && entry.transactionId !== transaction.id)) {
+          propagated.add(index);
+          carriers.add(transaction.id);
+        }
+      });
     }
   }
-  return false;
+  if (propagated.size === 0) return null;
+  // 锚点 = 被传播的签发中响应最早到达者（最早的 Session 建立证据）
+  let anchorIndex = -1;
+  for (const index of propagated) {
+    if (anchorIndex === -1 || issued[index].at < issued[anchorIndex].at) anchorIndex = index;
+  }
+  const anchor = issued[anchorIndex];
+  const propagatedPairs = [
+    ...new Set(
+      issued
+        .filter((entry, index) => propagated.has(index) && entry.transactionId === anchor.transactionId)
+        .map(entry => entry.pair),
+    ),
+  ];
+  const propagatedIssuerTransactionIds = [
+    ...new Set(issued.filter((_, index) => propagated.has(index)).map(entry => entry.transactionId)),
+  ].sort();
+  return {
+    loginTransactionId: anchor.transactionId,
+    propagatedPairs,
+    issuedAt: anchor.at,
+    propagatedIssuerTransactionIds,
+    propagatedTransactionIds: [...carriers].sort(),
+  };
+}
+
+function deriveLoginReached(facts: WorkflowFacts): boolean {
+  return loginChainOf(facts) !== null;
 }
 
 function isBidirectionalChannel(

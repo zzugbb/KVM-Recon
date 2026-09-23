@@ -101,6 +101,21 @@ async function main() {
       js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
     },
   });
+  // 阶段 4 断言从导出 ZIP（回放客户端消费的交付物）读取派生物：
+  // readZipEntries 复用生产采集 E2E 的 ZIP 读取器
+  await build({
+    entryPoints: [join(rootDir, 'src/main/capture/runProductionCaptureE2e.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    logLevel: 'silent',
+    outfile: join(appDir, 'production-capture-e2e.mjs'),
+    external: ['electron'],
+    banner: {
+      js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
+    },
+  });
   writeFileSync(join(appDir, 'main.mjs'), readFileSync(join(here, 'mock-kvm-collector-flow-main.mjs')));
   writeFileSync(
     join(appDir, 'package.json'),

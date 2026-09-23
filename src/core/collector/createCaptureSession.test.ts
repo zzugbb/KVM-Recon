@@ -2137,6 +2137,93 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(factsLogin?.responseHeaders['set-cookie']).toBe('sid=abc123; Path=/');
   });
 
+  it('真实 Chromium 竞态：responseReceivedExtraInfo 晚于 loadingFinished 数毫秒到达，宽限内合并后才提交', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-extra-info-after-finish',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    // e2e 实测事件序（raw/cdp/events.jsonl）：requestWillBeSent → … →
+    // responseReceived → dataReceived → loadingFinished → responseReceivedExtraInfo
+    // （Set-Cookie 只在晚到的 extraInfo 里）
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'Fetch',
+      request: { method: 'POST', url: 'http://bmc.test/api/login', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      response: { status: 200, headers: { 'content-type': 'application/json' } },
+    });
+    fake.emit('Network.dataReceived', { requestId: 'req-login', dataLength: 4 });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    // loadingFinished 之后数毫秒 extraInfo 才到（宽限窗口内）：头必须合并进提交行
+    fake.emit('Network.responseReceivedExtraInfo', {
+      requestId: 'req-login',
+      statusCode: 200,
+      headers: { 'set-cookie': 'sid=abc123; Path=/' },
+    });
+    await session.stop();
+
+    const diskRows = (await session.workspace.readArtifact('raw/http/transactions.jsonl'))
+      .toString('utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line) as { url: string; responseHeaders: Record<string, string> });
+    const diskLogin = diskRows.find(row => row.url.includes('/api/login'));
+    expect(diskLogin?.responseHeaders['set-cookie']).toBe('sid=abc123; Path=/');
+    // 宽限内到达不是丢弃：extraInfo 不进 droppedEvent 记账
+    const dropped = session.evidence().diagnostics().droppedEventByMethod;
+    expect(dropped['Network.responseReceivedExtraInfo']).toBeUndefined();
+  });
+
+  it('反例：extraInfo 晚于提交宽限到达 → 头不合并，按 droppedEvent 显式记账（诚实降级不编造）', async () => {
+    const rootDir = await newRootDir();
+    let clockMs = Date.parse('2026-09-21T01:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-collector-extra-info-late',
+      rootDir,
+      safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-login',
+      type: 'Fetch',
+      request: { method: 'POST', url: 'http://bmc.test/api/login', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-login',
+      response: { status: 200, headers: { 'content-type': 'application/json' } },
+    });
+    fake.emit('Network.dataReceived', { requestId: 'req-login', dataLength: 4 });
+    fake.emit('Network.loadingFinished', { requestId: 'req-login', encodedDataLength: 4 });
+    // 宽限（50ms）过期后才到达：行已提交，头无法合并——显式记账而非静默丢弃
+    await new Promise(resolve => setTimeout(resolve, 90));
+    fake.emit('Network.responseReceivedExtraInfo', {
+      requestId: 'req-login',
+      statusCode: 200,
+      headers: { 'set-cookie': 'sid=abc123; Path=/' },
+    });
+    await session.stop();
+
+    const diskRows = (await session.workspace.readArtifact('raw/http/transactions.jsonl'))
+      .toString('utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line) as { url: string; responseHeaders: Record<string, string> });
+    const diskLogin = diskRows.find(row => row.url.includes('/api/login'));
+    expect(diskLogin?.responseHeaders['set-cookie']).toBeUndefined();
+    const dropped = session.evidence().diagnostics().droppedEventByMethod;
+    expect(dropped['Network.responseReceivedExtraInfo']).toBeGreaterThanOrEqual(1);
+  });
+
   it('workflowStatus 派生：点击 + 主框架导航 + 渲染表面 + WS 双向帧 → KVM_REACHED；缺表面（后台告警 WS）→ TARGET_OPENED', async () => {
     const rootDir = await newRootDir();
     let clockMs = Date.parse('2026-09-21T01:00:00.000Z');

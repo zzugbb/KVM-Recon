@@ -79,6 +79,14 @@ const DRAIN_METHODS = new Set([
   'Network.responseReceivedExtraInfo',
 ]);
 
+/**
+ * loadingFinished 后等待 responseReceivedExtraInfo 的有界提交宽限：Chromium 不
+ * 保证 extraInfo 先于 loadingFinished 到达（e2e 实测可晚数毫秒，Set-Cookie /
+ * Cookie 头只在该事件里）。宽限内到达的头合并后才提交事务行；计时到点自行
+ * 提交，晚于宽限到达的头由 extraInfo 分支按 droppedEvent 显式记账。
+ */
+const RESPONSE_EXTRA_INFO_COMMIT_GRACE_MS = 50;
+
 /** 观察脚本上报的 render-surface 种类全集（§7.3 第 2 组事实）。 */
 const RENDER_SURFACE_KINDS = new Set<RenderSurfaceKind>([
   'canvas',
@@ -443,6 +451,11 @@ export async function attachProtocolAgnosticCapture(
   // URL 为空期间已有完成事件按未命中显式丢弃的 Worker session：
   // URL 经 targetInfoChanged 补齐后对这些 session 触发入口脚本补读
   const salvagePendingWorkerSessions = new Set<string>();
+  // 已合并 responseReceivedExtraInfo 的 hop：loadingFinished 时据此决定是否延迟提交
+  const responseExtraInfoHops = new Set<string>();
+  // loadingFinished 已处理、在 extraInfo 提交宽限中的延迟提交计时器
+  // （drain 收尾要等它们触发后再置 closed）
+  const pendingFinishCommits = new Map<string, ReturnType<typeof setTimeout>>();
   let eventQueue = Promise.resolve();
   let sourceQueue = Promise.resolve();
   let phase: 'live' | 'drain' | 'closed' = 'live';
@@ -1348,8 +1361,21 @@ export async function attachProtocolAgnosticCapture(
         method === 'Network.requestWillBeSentExtraInfo' ? { requestHeaders: headers } : { responseHeaders: headers },
       );
       if (!merged) {
-        // hop 已提交（redirect 链在下一跳前 commit）：journal 只追加，不改写已落盘行
+        // hop 已提交（redirect 链在下一跳前 commit / extraInfo 提交宽限已过）：
+        // journal 只追加，不改写已落盘行
         input.evidence.droppedEvent(method, new Error(`extraInfo 到达晚于 commit，头未合并：${id}`));
+        return;
+      }
+      if (method === 'Network.responseReceivedExtraInfo') {
+        responseExtraInfoHops.add(id);
+        const timer = pendingFinishCommits.get(id);
+        if (timer) {
+          // extraInfo 在提交宽限内到达（晚于 loadingFinished 的竞态序）：头已合并，
+          // 取消宽限计时器立即提交
+          pendingFinishCommits.delete(id);
+          clearTimeout(timer);
+          await input.http.commit(id);
+        }
       }
       return;
     }
@@ -1381,7 +1407,23 @@ export async function attachProtocolAgnosticCapture(
         // 字节在 BodyStore 里但行已落盘、无法再关联——显式记账，不得无痕丢弃
         input.evidence.recordGap('missingBodies', id, '响应正文晚于 commit 到达，未落进行（行已落盘）');
       }
-      await input.http.commit(id);
+      if (responseExtraInfoHops.has(id)) {
+        await input.http.commit(id);
+        return;
+      }
+      // Chromium 不保证 responseReceivedExtraInfo 先于 loadingFinished 到达
+      // （e2e 实测可晚数毫秒，Set-Cookie 只在该事件里）：延迟提交，宽限内到达
+      // 即合并提交；计时到点自行提交，晚于宽限到达的头按 droppedEvent 显式记账
+      const timer = setTimeout(() => {
+        pendingFinishCommits.delete(id);
+        void input.http.commit(id).catch(error => {
+          input.evidence.droppedEvent(
+            'Network.loadingFinished',
+            new Error(`延迟提交失败：${errorMessage(error)}（${id}）`),
+          );
+        });
+      }, RESPONSE_EXTRA_INFO_COMMIT_GRACE_MS);
+      pendingFinishCommits.set(id, timer);
       return;
     }
 
@@ -1563,6 +1605,11 @@ export async function attachProtocolAgnosticCapture(
         await events;
         await sources;
         if (eventQueue === events && sourceQueue === sources) break;
+      }
+      // loadingFinished 的延迟提交计时器收口（responseReceivedExtraInfo 竞态）：
+      // 计时器最迟一个宽限后自行提交，此处只等其触发，不引入新的等待源
+      for (let round = 0; round < 20 && pendingFinishCommits.size > 0; round += 1) {
+        await new Promise(resolve => setTimeout(resolve, 5));
       }
       phase = 'closed';
     },

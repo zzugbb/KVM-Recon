@@ -8,93 +8,92 @@
   "candidateChain": [
     {
       "role": "login-interaction",
-      "title": "操作员提交登录表单（SHA-256 摘要凭据）",
+      "title": "登录交互：签发 Session Cookie 的 POST 请求",
       "evidenceIds": [
-        "http-000001",
         "http-000002",
-        "crypto-0001",
-        "value-0007"
+        "crypto-0001"
       ],
       "evidencePaths": [
         "raw/http/transactions.jsonl",
-        "raw/runtime/crypto.jsonl"
+        "raw/runtime/crypto.jsonl",
+        "ai/value-flow.json"
       ],
       "occurredAt": "2026-09-18T14:35:24+08:00"
     },
     {
       "role": "session-established",
-      "title": "登录响应建立 Session Cookie",
+      "title": "Session 建立：签发的 Cookie 被后续请求逐字节携带",
       "evidenceIds": [
         "http-000002",
-        "value-0001"
+        "value-0001",
+        "value-0002"
       ],
       "evidencePaths": [
         "raw/http/transactions.jsonl",
         "ai/value-flow.json"
       ],
-      "occurredAt": "2026-09-18T14:35:24+08:00"
+      "occurredAt": "2026-09-18T06:35:24.007Z"
     },
     {
       "role": "kvm-click",
-      "title": "操作员点击「打开远程控制台」",
+      "title": "用户动作（form-submit）触发 Viewer 打开",
       "evidenceIds": [
-        "action-0002"
+        "action-0001"
       ],
       "evidencePaths": [
         "raw/browser/actions.jsonl"
       ],
-      "occurredAt": "2026-09-18T14:35:26+08:00"
+      "occurredAt": "2026-09-18T14:35:24+08:00"
     },
     {
       "role": "launch-request",
-      "title": "KVM 启动请求返回 viewerToken 与通道路径",
+      "title": "启动请求：动作后在血缘集合内带正文的 POST（含值传播背书来源）",
       "evidenceIds": [
-        "http-000004",
-        "value-0005"
+        "http-000002",
+        "http-000004"
       ],
       "evidencePaths": [
-        "raw/http/transactions.jsonl",
-        "ai/value-flow.json"
+        "raw/http/transactions.jsonl"
       ],
-      "occurredAt": "2026-09-18T14:35:26+08:00"
+      "occurredAt": "2026-09-18T14:35:24+08:00"
     },
     {
       "role": "viewer-opened",
-      "title": "Viewer 页面打开并创建解码 Worker",
+      "title": "Viewer 打开：动作后的主框架导航",
       "evidenceIds": [
-        "http-000005",
-        "target-worker-0001",
-        "script-inline-0001"
+        "target-page-0001",
+        "http-000003",
+        "target-worker-0001"
       ],
       "evidencePaths": [
-        "raw/http/transactions.jsonl",
-        "raw/browser/targets.json",
-        "raw/scripts/index.json"
+        "catalog/targets.json",
+        "raw/http/transactions.jsonl"
       ],
-      "occurredAt": "2026-09-18T14:35:27+08:00"
+      "occurredAt": "2026-09-18T14:35:25+08:00"
     },
     {
       "role": "script-worker-wasm",
-      "title": "Worker 入口源码与页面内联脚本完整落盘",
+      "title": "Viewer 血缘集合内的动态脚本 / Worker / WASM 源码索引",
       "evidenceIds": [
-        "http-000006",
+        "script-net-0001",
         "script-worker-0001",
+        "script-inline-0000",
         "script-inline-0001"
       ],
       "evidencePaths": [
-        "raw/http/transactions.jsonl",
         "raw/scripts/index.json"
-      ],
-      "occurredAt": "2026-09-18T14:35:28+08:00"
+      ]
     },
     {
       "role": "realtime-channel",
-      "title": "双向 WebSocket 通道建立并记录全部帧",
+      "title": "实时通道建立（websocket）",
       "evidenceIds": [
         "ws-0001",
-        "value-0006"
+        "value-0007",
+        "value-0009"
       ],
       "evidencePaths": [
+        "catalog/channels.json",
         "raw/websocket/ws-0001/metadata.json",
         "raw/websocket/ws-0001/frames.index.jsonl"
       ],

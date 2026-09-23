@@ -8,6 +8,7 @@
   "properties": {
     "schemaVersion": { "const": "2.0.0" },
     "replayable": { "type": "boolean" },
+    "notReplayableReasons": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "clockPolicy": { "enum": ["deterministic-accelerated", "realtime"] },
     "requests": {
       "type": "array",

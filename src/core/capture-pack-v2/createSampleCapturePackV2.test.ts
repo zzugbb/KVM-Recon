@@ -4,10 +4,16 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { deriveAdapterDossier } from '../collector/dossierEngine';
+import { deriveReplayPlan } from '../collector/replayEngine';
+import { deriveValueFlow } from '../collector/valueFlowEngine';
+import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
 import { checkPackStatus } from './packStatus';
 import { checkPackV2Layout, checkStartHereContent } from './packV2Layout';
 import { createSampleCapturePackV2, type SampleArtifact } from './createSampleCapturePackV2';
+import { readPackFacts } from './readPackFacts';
 import { validatePackV2Consistency } from './packV2Consistency';
+import type { PackV2ChannelRow } from './types';
 
 function walkFiles(dir: string, prefix = ''): string[] {
   return readdirSync(dir).flatMap(name => {
@@ -266,6 +272,10 @@ describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
   it('Replay 动态值语义：只引用请求发生前已存在的值，不引用本次响应产物', async () => {
     const sample = await createSampleCapturePackV2();
     const artifacts = new Map(sample.artifacts.map(artifact => [artifact.path, artifact]));
+    const valueFlow = JSON.parse(String(artifacts.get('ai/value-flow.json')!.content)) as {
+      nodes: Array<{ id: string; kind: string; name: string; evidenceId?: string }>;
+    };
+    const nodesById = new Map(valueFlow.nodes.map(node => [node.id, node]));
     const replay = JSON.parse(
       String(artifacts.get('replay/manifest.json')!.content),
     ) as {
@@ -273,17 +283,50 @@ describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
     };
     const byRequestId = new Map(replay.requests.map(request => [request.requestId, request]));
 
-    // 登录请求依赖 nonce（value-0007）与摘要输出（value-0008）；
-    // 不依赖登录响应才产生的 Session Cookie（value-0001）。
+    // 登录请求依赖摘要输出（crypto-0001 的输出字节被观察喂入登录正文）；
+    // 不依赖登录响应才签发的 Session Cookie 值（无 cookie / header 节点）。
     const login = byRequestId.get('http-000002')!;
-    expect(login.requiresDynamicValueIds).toEqual(['value-0007', 'value-0008']);
-    expect(login.requiresDynamicValueIds).not.toContain('value-0001');
+    expect(login.requiresDynamicValueIds).toHaveLength(1);
+    const loginValue = nodesById.get(login.requiresDynamicValueIds[0])!;
+    expect(loginValue.kind).toBe('crypto-output');
+    expect(loginValue.evidenceId).toBe('crypto-0001');
+    expect(
+      login.requiresDynamicValueIds.some(id => nodesById.get(id)?.kind === 'cookie'),
+      '登录请求不得依赖登录响应才产生的 Session Cookie',
+    ).toBe(false);
 
-    // KVM 启动请求依赖已建立的 Session Cookie（value-0002）与登录响应的
-    // csrfToken（value-0010）；不依赖本次响应才产生的 viewerToken（value-0005）。
+    // KVM 启动请求依赖已建立的 Session Cookie（cookie 节点）与登录响应
+    // 存入 sessionStorage 的 csrfToken（storage 值链节点）；不依赖本次响应
+    // 才产生的 viewerToken（无 evidenceId=http-000004 的响应正文节点）。
     const launch = byRequestId.get('http-000004')!;
-    expect(launch.requiresDynamicValueIds).toEqual(['value-0002', 'value-0010']);
-    expect(launch.requiresDynamicValueIds).not.toContain('value-0005');
+    expect(launch.requiresDynamicValueIds).toHaveLength(2);
+    expect(launch.requiresDynamicValueIds.map(id => nodesById.get(id)!.kind).sort()).toEqual([
+      'cookie',
+      'storage',
+    ]);
+    const csrfStorageId = launch.requiresDynamicValueIds.find(
+      id => nodesById.get(id)?.kind === 'storage',
+    )!;
+    const storageFile = JSON.parse(String(artifacts.get('raw/browser/storage.json')!.content)) as {
+      sessionStorage: Record<string, string>;
+    };
+    const csrfStorageKey = nodesById.get(csrfStorageId)!.name.split('（')[0];
+    // storage 节点对应页面真实写入的 sessionStorage 条目，其值逐字节等于
+    // 启动请求实际携带的 CSRF 头值（同一事实，不是两份手写数据）。
+    expect(storageFile.sessionStorage[csrfStorageKey]).toBeTruthy();
+    const transactions = jsonLinesOf(artifacts, 'raw/http/transactions.jsonl') as Array<{
+      id: string;
+      requestHeaders: Record<string, string>;
+    }>;
+    const launchTx = transactions.find(row => row.id === 'http-000004')!;
+    const csrfHeader = Object.entries(launchTx.requestHeaders).find(([name]) =>
+      name.endsWith('-csrf'),
+    )!;
+    expect(storageFile.sessionStorage[csrfStorageKey]).toBe(csrfHeader[1]);
+    expect(
+      launch.requiresDynamicValueIds.some(id => nodesById.get(id)?.evidenceId === 'http-000004'),
+      '启动请求不得依赖本次响应才产生的 viewerToken',
+    ).toBe(false);
 
     // crypto 调用绑定登录页内联脚本（脚本本体在脚本索引中可解析）。
     const cryptoRows = jsonLinesOf(artifacts, 'raw/runtime/crypto.jsonl') as Array<{
@@ -342,33 +385,165 @@ describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
     }>;
     expect(relations.some(relation => relation.relation === 'attached')).toBe(false);
 
-    // value-flow：viewerToken 经 WS 握手查询参数 t 真实使用（value-0005 → value-0012）。
+    // value-flow：viewerToken 有两条被观察的传播路径——启动响应正文直接
+    // 进 WS 握手查询参数 t，以及先存 sessionStorage 再进查询参数（中转跳）。
     const valueFlow = JSON.parse(String(artifacts.get('ai/value-flow.json')!.content)) as {
-      nodes: Array<{ id: string; kind: string }>;
+      nodes: Array<{ id: string; kind: string; name: string; evidenceId?: string }>;
       edges: Array<{ from: string; to: string; relation: string }>;
     };
-    expect(valueFlow.nodes.some(node => node.id === 'value-0012' && node.kind === 'url-param')).toBe(true);
-    expect(
-      valueFlow.edges.some(
-        edge => edge.from === 'value-0005' && edge.to === 'value-0012' && edge.relation === 'propagated-to',
-      ),
-    ).toBe(true);
-
-    // 页面脚本实际写入 sessionStorage 的 csrfToken / viewerToken 已采集。
-    const storage = JSON.parse(String(artifacts.get('raw/browser/storage.json')!.content)) as {
+    const nodesById = new Map(valueFlow.nodes.map(node => [node.id, node]));
+    const urlParamNode = valueFlow.nodes.find(
+      node => node.kind === 'url-param' && node.evidenceId === 'ws-0001',
+    );
+    expect(urlParamNode).toBeDefined();
+    const launchResponseNode = valueFlow.nodes.find(
+      node =>
+        node.kind === 'http-response' &&
+        node.evidenceId === 'http-000004' &&
+        valueFlow.edges.some(
+          edge =>
+            edge.from === node.id &&
+            edge.to === urlParamNode!.id &&
+            edge.relation === 'propagated-to',
+        ),
+    );
+    expect(launchResponseNode).toBeDefined();
+    const storageHopNode = valueFlow.nodes.find(
+      node =>
+        node.kind === 'storage' &&
+        valueFlow.edges.some(
+          edge =>
+            edge.from === node.id &&
+            edge.to === urlParamNode!.id &&
+            edge.relation === 'propagated-to',
+        ),
+    );
+    expect(storageHopNode).toBeDefined();
+    // 查询参数 t 的值逐字节等于 viewerToken（storage 快照里的真实条目）。
+    const urlParam = new URL(metadata.url).searchParams.get('t')!;
+    const storageFile = JSON.parse(String(artifacts.get('raw/browser/storage.json')!.content)) as {
       sessionStorage: Record<string, string>;
     };
-    expect(Object.keys(storage.sessionStorage)).toHaveLength(2);
-    for (const value of Object.values(storage.sessionStorage)) {
+    const storageKey = storageHopNode!.name.split('（')[0];
+    expect(storageFile.sessionStorage[storageKey]).toBe(urlParam);
+
+    // 页面脚本实际写入 sessionStorage 的 csrfToken / viewerToken 已采集。
+    expect(Object.keys(storageFile.sessionStorage)).toHaveLength(2);
+    for (const value of Object.values(storageFile.sessionStorage)) {
       expect(value).toBeTruthy();
     }
 
-    // Replay 通道声明 WS 握手实际依赖的动态值：Session Cookie + viewerToken。
+    // Replay 通道声明 WS 握手实际依赖的动态值：Session Cookie（cookie
+    // 节点）+ viewerToken 的两个来源（启动响应正文 + storage 值）。
     const replayManifest = JSON.parse(String(artifacts.get('replay/manifest.json')!.content)) as {
       channels: Array<{ channelId: string; requiresDynamicValueIds: string[] }>;
     };
     const wsReplay = replayManifest.channels.find(channel => channel.channelId === 'ws-0001')!;
-    expect(wsReplay.requiresDynamicValueIds).toEqual(['value-0002', 'value-0005']);
+    expect(wsReplay.requiresDynamicValueIds).toHaveLength(3);
+    expect(
+      wsReplay.requiresDynamicValueIds.map(id => nodesById.get(id)!.kind).sort(),
+    ).toEqual(['cookie', 'http-response', 'storage']);
+    expect(wsReplay.requiresDynamicValueIds).toContain(launchResponseNode!.id);
+    expect(wsReplay.requiresDynamicValueIds).toContain(storageHopNode!.id);
+  }, 30000);
+
+  it('离线再生契约（规范 §15）：只凭包内工件重新派生得到相同的 ai/ 与 replay/ 内容', async () => {
+    const sample = await createSampleCapturePackV2();
+    const artifacts = new Map(sample.artifacts.map(artifact => [artifact.path, artifact]));
+    const bufferOf = (path: string): Buffer => {
+      const artifact = artifacts.get(path);
+      if (!artifact) throw new Error(`样例包缺少 ${path}`);
+      return typeof artifact.content === 'string'
+        ? Buffer.from(artifact.content, 'utf8')
+        : Buffer.from(artifact.content);
+    };
+    // readPackFacts 只依赖 readArtifact / artifactPaths 两个只读口；
+    // 这里用包内工件构造一个最小只读工作区（离线 Analyzer 视角）。
+    const packWorkspace = {
+      readArtifact: async (path: string) => bufferOf(path),
+      artifactPaths: async () => [...artifacts.keys()],
+    } as unknown as JobWorkspace;
+
+    const channelsFile = JSON.parse(String(artifacts.get('catalog/channels.json')!.content)) as {
+      channels: PackV2ChannelRow[];
+    };
+    const packFacts = await readPackFacts(packWorkspace, { channels: channelsFile.channels });
+    // 样例包工件齐全：事实束重建无缺口。
+    expect(packFacts.gaps).toEqual([]);
+    // 主框架导航从 raw/cdp/events.jsonl 离线重放（Page.frameNavigated 且
+    // frame 无 parentId，与在线采集同一规则）。
+    expect(packFacts.facts.navigations).toHaveLength(3);
+
+    // 值传播图：storage 快照 + 通道握手事实 + 包内正文 blob 重新派生，
+    // 与生成时写入的 ai/value-flow.json 逐字节等价。
+    const storageFile = JSON.parse(String(artifacts.get('raw/browser/storage.json')!.content)) as {
+      capturedAt: string;
+      cookies: Array<Record<string, unknown>>;
+      sessionStorage: Record<string, string>;
+      localStorage: Record<string, string>;
+    };
+    const derivedFlow = await deriveValueFlow(
+      {
+        transactions: packFacts.facts.transactions,
+        cryptoRows: packFacts.cryptoRows,
+        wsChannels: packFacts.wsHandshakes.map(handshake => ({
+          channelId: handshake.channelId,
+          url: handshake.url,
+          createdAt: handshake.createdAt,
+          requestHeaders: handshake.requestHeaders,
+          metadataPath: handshake.metadataPath,
+        })),
+        storageCookies: storageFile.cookies
+          .map(cookie => ({ name: cookie.name, value: cookie.value }))
+          .filter(
+            (cookie): cookie is { name: string; value: string } =>
+              typeof cookie.name === 'string' && typeof cookie.value === 'string',
+          ),
+        storageValues: [
+          ...Object.entries(storageFile.sessionStorage),
+          ...Object.entries(storageFile.localStorage),
+        ].map(([key, value]) => ({ key, value })),
+        storageCapturedAt: storageFile.capturedAt,
+      },
+      { readBody: async ref => bufferOf(ref.path) },
+    );
+    expect(derivedFlow.valueFlow).toEqual(
+      JSON.parse(String(artifacts.get('ai/value-flow.json')!.content)),
+    );
+
+    // 适配候选链与 ai/index 候选列表由同一引擎从包内事实派生，结果一致。
+    const dossier = deriveAdapterDossier({
+      facts: packFacts.facts,
+      cryptoRows: packFacts.cryptoRows,
+      scripts: packFacts.scripts,
+      valueFlow: derivedFlow.valueFlow,
+      wsHandshakes: packFacts.wsHandshakes,
+    });
+    expect(dossier.candidateChain).toEqual(
+      JSON.parse(String(artifacts.get('ai/adapter-dossier.json')!.content)).candidateChain,
+    );
+    const aiIndex = JSON.parse(String(artifacts.get('ai/index.json')!.content));
+    expect(dossier.loginCandidateRequestIds).toEqual(aiIndex.loginCandidateRequestIds);
+    expect(dossier.kvmLaunchCandidateRequestIds).toEqual(aiIndex.kvmLaunchCandidateRequestIds);
+    expect(dossier.viewerTargetIds).toEqual(aiIndex.viewerTargetIds);
+    expect(dossier.dynamicScriptIds).toEqual(aiIndex.dynamicScriptIds);
+    expect(dossier.workerIds).toEqual(aiIndex.workerIds);
+    expect(dossier.wasmIds).toEqual(aiIndex.wasmIds);
+
+    // Replay 三件套同样离线再生一致（§16 派生可再生）。
+    const replay = deriveReplayPlan({
+      facts: packFacts.facts,
+      dossier,
+      valueFlow: derivedFlow.valueFlow,
+      wsHandshakes: packFacts.wsHandshakes,
+    });
+    expect(replay.manifest).toEqual(
+      JSON.parse(String(artifacts.get('replay/manifest.json')!.content)),
+    );
+    expect(replay.httpRows).toEqual(jsonLinesOf(artifacts, 'replay/http.jsonl'));
+    expect(replay.channelsFile.channels).toEqual(
+      JSON.parse(String(artifacts.get('replay/channels.json')!.content)).channels,
+    );
   }, 30000);
 
   it('固定 seed 输出逐字节确定（端口无关）', async () => {

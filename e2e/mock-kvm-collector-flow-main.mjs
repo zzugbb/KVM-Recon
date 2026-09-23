@@ -15,6 +15,7 @@ import { startCaptureSession } from './capture-session.mjs';
 import { createMockKvmServer } from './mock-kvm-server.mjs';
 import { createElectronNetlogSource } from './electron-netlog-source.mjs';
 import { exportJobWorkspaceZip } from './export-job-zip.mjs';
+import { readZipEntries } from './production-capture-e2e.mjs';
 import {
   createViewerAutoStopWatchdog,
   VIEWER_POLL_INTERVAL_MS,
@@ -568,6 +569,173 @@ async function run() {
     }
     if (!existsSync(exportResult.export.zipPath)) {
       throw new Error('导出 ZIP 未落盘：' + exportResult.export.zipPath);
+    }
+    // 回放 e2e（protocol-fixture-replay）从此行解析导出包路径，回放断言
+    // 只消费导出交付物，不读工作区
+    console.log(`exported-capture-pack: ${exportResult.export.zipPath}`);
+
+    // 阶段 4：AI / Replay 派生物必须由装配时引擎从包内持久事实派生
+    // （规范 §12/§16/§19）。断言读导出 ZIP（回放客户端消费的交付物），
+    // 不读工作区文件——工作区与交付物一致由导出门禁保证，这里断言内容本身。
+    const zipEntries = await readZipEntries(exportResult.export.zipPath);
+    const zipJson = path => JSON.parse(zipEntries.get(path) || 'null');
+
+    // 已知 ID 全集：dossier / replay 引用的证据 ID 必须都能在包内定位
+    const knownIds = new Set();
+    for (const row of jsonl(zipEntries.get('catalog/resources.jsonl') || '')) knownIds.add(row.id);
+    for (const target of zipJson('catalog/targets.json')?.targets || []) knownIds.add(target.id);
+    for (const channel of zipJson('catalog/channels.json')?.channels || []) knownIds.add(channel.id);
+    for (const script of zipJson('raw/scripts/index.json')?.scripts || []) knownIds.add(script.id);
+    for (const action of jsonl(zipEntries.get('raw/browser/actions.jsonl') || '')) knownIds.add(action.id);
+    for (const crypto of jsonl(zipEntries.get('raw/runtime/crypto.jsonl') || '')) knownIds.add(crypto.id);
+    // valueFlow 已从工作区读入（与包内 ai/value-flow.json 同源，导出门禁保证一致）
+    for (const node of valueFlow?.nodes || []) knownIds.add(node.id);
+
+    // dossier 七角色链齐全，每步证据 ID / 路径在包内可解析
+    const dossier = zipJson('ai/adapter-dossier.json');
+    const dossierRoles = (dossier?.candidateChain || []).map(step => step.role);
+    const expectedRoles = [
+      'login-interaction',
+      'session-established',
+      'kvm-click',
+      'launch-request',
+      'viewer-opened',
+      'script-worker-wasm',
+      'realtime-channel',
+    ];
+    if (JSON.stringify(dossierRoles) !== JSON.stringify(expectedRoles)) {
+      throw new Error(`dossier 候选链角色不全：${JSON.stringify(dossierRoles)}`);
+    }
+    for (const step of dossier.candidateChain) {
+      if (!step.evidenceIds?.length) {
+        throw new Error(`dossier 步骤无证据 ID：${step.role}`);
+      }
+      for (const evidenceId of step.evidenceIds) {
+        if (!knownIds.has(evidenceId)) {
+          throw new Error(`dossier ${step.role} 引用包外 ID：${evidenceId}`);
+        }
+      }
+      for (const evidencePath of step.evidencePaths || []) {
+        if (!zipEntries.has(evidencePath)) {
+          throw new Error(`dossier ${step.role} 引用包外路径：${evidencePath}`);
+        }
+      }
+    }
+    const loginStep = dossier.candidateChain.find(step => step.role === 'login-interaction');
+    const launchStep = dossier.candidateChain.find(step => step.role === 'launch-request');
+    const channelStep = dossier.candidateChain.find(step => step.role === 'realtime-channel');
+    if (!loginStep.evidenceIds.includes(loginTx.id)) {
+      throw new Error(`dossier login-interaction 未引用登录事务 ${loginTx.id}：${JSON.stringify(loginStep.evidenceIds)}`);
+    }
+    if (!launchStep.evidenceIds.includes(launchTx.id)) {
+      throw new Error(`dossier launch-request 未引用启动事务 ${launchTx.id}：${JSON.stringify(launchStep.evidenceIds)}`);
+    }
+
+    // ai/index.json 候选由同一事实源派生：登录 / 启动 / Viewer / 动态脚本非空
+    const aiIndex = zipJson('ai/index.json');
+    const aiCandidateKeys = {
+      loginCandidateRequestIds: loginTx.id,
+      kvmLaunchCandidateRequestIds: launchTx.id,
+    };
+    for (const [key, expectedId] of Object.entries(aiCandidateKeys)) {
+      if (!(aiIndex?.[key] || []).includes(expectedId)) {
+        throw new Error(`ai/index.json ${key} 未包含 ${expectedId}：${JSON.stringify(aiIndex?.[key])}`);
+      }
+    }
+    for (const key of ['viewerTargetIds', 'dynamicScriptIds', 'workerIds']) {
+      if ((aiIndex?.[key] || []).length === 0) {
+        throw new Error(`ai/index.json ${key} 为空（Viewer 血缘候选缺失）`);
+      }
+    }
+    for (const candidateId of [...(aiIndex?.dynamicScriptIds || []), ...(aiIndex?.workerIds || [])]) {
+      if (!knownIds.has(candidateId)) {
+        throw new Error(`ai/index.json 候选引用包外 ID：${candidateId}`);
+      }
+    }
+
+    // replay：可回放计划 + 动态值可解析 + 正文路径与 catalog 一致
+    const replayManifest = zipJson('replay/manifest.json');
+    if (replayManifest?.replayable !== true) {
+      throw new Error(
+        `replay/manifest.json replayable=${replayManifest?.replayable}：${JSON.stringify(replayManifest?.notReplayableReasons)}`,
+      );
+    }
+    if (replayManifest.clockPolicy !== 'deterministic-accelerated') {
+      throw new Error(`replay clockPolicy 异常：${replayManifest.clockPolicy}`);
+    }
+    const replayRequestIds = (replayManifest.requests || []).map(request => request.requestId);
+    if (!replayRequestIds.includes(loginTx.id) || !replayRequestIds.includes(launchTx.id)) {
+      throw new Error(`replay 请求缺登录/启动：${JSON.stringify(replayRequestIds)}`);
+    }
+    for (const request of replayManifest.requests || []) {
+      if (!knownIds.has(request.requestId)) {
+        throw new Error(`replay 引用包外请求 ID：${request.requestId}`);
+      }
+      for (const valueId of request.requiresDynamicValueIds || []) {
+        if (!knownIds.has(valueId)) {
+          throw new Error(`replay 请求 ${request.requestId} 引用包外动态值：${valueId}`);
+        }
+      }
+    }
+    const replayLogin = replayManifest.requests.find(request => request.requestId === loginTx.id);
+    const replayLaunch = replayManifest.requests.find(request => request.requestId === launchTx.id);
+    // 登录正文带摘要输出、启动请求带会话 Cookie：两者的动态值替换清单非空
+    if (!replayLogin?.requiresDynamicValueIds?.length) {
+      throw new Error(`replay 登录请求动态值清单为空：${JSON.stringify(replayLogin)}`);
+    }
+    if (!replayLaunch?.requiresDynamicValueIds?.length) {
+      throw new Error(`replay 启动请求动态值清单为空：${JSON.stringify(replayLaunch)}`);
+    }
+
+    // replay/http.jsonl：正文路径与 catalog 资源行 BodyRef 完全一致
+    const resourceRows = jsonl(zipEntries.get('catalog/resources.jsonl') || '');
+    const resourceById = new Map(resourceRows.map(row => [row.id, row]));
+    const replayHttp = jsonl(zipEntries.get('replay/http.jsonl') || '');
+    if (replayHttp.length !== replayRequestIds.length) {
+      throw new Error(`replay/http.jsonl 行数 ${replayHttp.length} != manifest 请求数 ${replayRequestIds.length}`);
+    }
+    for (const row of replayHttp) {
+      const resource = resourceById.get(row.requestId);
+      if (!resource) {
+        throw new Error(`replay/http.jsonl 引用未知请求：${row.requestId}`);
+      }
+      if ((row.requestBodyPath ?? null) !== (resource.requestBody?.path ?? null)) {
+        throw new Error(`replay 请求正文路径与 catalog 不一致：${row.requestId}`);
+      }
+      if ((row.responseBodyPath ?? null) !== (resource.responseBody?.path ?? null)) {
+        throw new Error(`replay 响应正文路径与 catalog 不一致：${row.requestId}`);
+      }
+    }
+
+    // replay 通道：manifest 与 channels.json 同源，帧索引在包内，动态值可解析
+    const replayChannelsFile = zipJson('replay/channels.json');
+    if (JSON.stringify(replayChannelsFile?.channels) !== JSON.stringify(replayManifest.channels)) {
+      throw new Error('replay/channels.json 与 manifest.channels 不一致');
+    }
+    if (!channelStep || (replayManifest.channels || []).length === 0) {
+      throw new Error('replay 缺少 Viewer 实时通道');
+    }
+    for (const channel of replayManifest.channels) {
+      if (!knownIds.has(channel.channelId)) {
+        throw new Error(`replay 引用包外通道 ID：${channel.channelId}`);
+      }
+      if (channel.framesIndexPath && !zipEntries.has(channel.framesIndexPath)) {
+        throw new Error(`replay 通道帧索引不在包内：${channel.framesIndexPath}`);
+      }
+      if (channel.framesIndexPath == null) {
+        throw new Error('replay WS 通道缺帧索引路径（frames.index.jsonl 应在包内）');
+      }
+      for (const valueId of channel.requiresDynamicValueIds || []) {
+        if (!knownIds.has(valueId)) {
+          throw new Error(`replay 通道 ${channel.channelId} 引用包外动态值：${valueId}`);
+        }
+      }
+      if (!channelStep.evidenceIds.includes(channel.channelId)) {
+        throw new Error(`dossier realtime-channel 未引用通道 ${channel.channelId}`);
+      }
+      if (!channel.requiresDynamicValueIds?.length) {
+        throw new Error(`replay 通道动态值清单为空：${channel.channelId}`);
+      }
     }
 
     console.log(successMarker);

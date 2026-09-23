@@ -1,18 +1,18 @@
 /**
- * Capture Pack 2.0 包装配（规范 §9 / §11 / §14，阶段 2）。
+ * Capture Pack 2.0 包装配（规范 §9 / §11 / §14 / §19）。
  *
  * 从工作区工件（收集器落盘的 raw/ 与 catalog/）加完整度事实装配全部派生文件：
  * 00_START_HERE.md、manifest.json、integrity.json、report.html、ai/*（索引、
- * 摘要、适配档案、值传播、缺失证据）与 replay/*（诚实下限：replayable=false、
- * 空请求与通道），并随包附带 schema/2.0/*.schema.json 副本。
+ * 摘要、适配档案、值传播、缺失证据）与 replay/*，并随包附带
+ * schema/2.0/*.schema.json 副本。
  *
- * 诚实边界：阶段 2 不派生适配候选链与 Replay 计划（candidateChain 为空、
- * replayable=false）——这些由阶段 3 IntegrityEngine 基于同一批证据重新生成，
- * 绝不在装配时编造。值传播图（ai/value-flow.json）与证据图
- * （catalog/relations.jsonl）由采集会话收尾派生；装配层对 ai/value-flow.json
- * 工作区文件优先（缺失才落空兜底）。captureIntegrity 由 derivePackIntegrity
- * 从证据摘要派生；workflowStatus 取证据摘要（单一事实源，不在装配处另设
- * 输入）；classificationStatus 默认 UNKNOWN。
+ * 适配候选链与 ai/index 候选 ID 由 dossierEngine 从包内工件重新派生
+ * （规范 §15：新版 Analyzer 只凭本包即可重新生成）；读取缺口与派生失败
+ * 退回诚实下限（空链）并记入 ai/summary.md，绝不编造。值传播图
+ * （ai/value-flow.json）与证据图（catalog/relations.jsonl）由采集会话收尾
+ * 派生；装配层对 ai/value-flow.json 工作区文件优先（缺失才落空兜底）。
+ * captureIntegrity 由 derivePackIntegrity 从证据摘要派生；workflowStatus 取
+ * 证据摘要（单一事实源，不在装配处另设输入）；classificationStatus 默认 UNKNOWN。
  *
  * manifest 必须携带真实采集环境：environment 为 null（页面环境未采集）时
  * 拒绝装配导出，绝不写编造的 environment 字段。
@@ -30,6 +30,9 @@ import {
   buildPackV2ReportHtml,
   buildPackV2StartHereMarkdown,
 } from './packV2Layout';
+import { readPackFacts } from './readPackFacts';
+import { deriveAdapterDossier } from '../collector/dossierEngine';
+import { deriveReplayPlan } from '../collector/replayEngine';
 import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
 import {
   PACK_V2_SCHEMA_VERSION,
@@ -45,6 +48,7 @@ import {
   type PackV2MissingEvidence,
   type PackV2ReplayChannelsFile,
   type PackV2ReplayManifest,
+  type PackV2ReplayRequestRow,
   type PackV2StatusTriple,
   type PackV2ValueFlow,
 } from './types';
@@ -156,8 +160,11 @@ async function readChannelsCatalog(workspace: JobWorkspace): Promise<PackV2Chann
   return parsed;
 }
 
-function buildAssemblySummaryMarkdown(manifest: PackV2Manifest): string {
-  return [
+function buildAssemblySummaryMarkdown(
+  manifest: PackV2Manifest,
+  options: { derivationGaps?: string[]; dossierSteps?: number } = {},
+): string {
+  const lines = [
     '# AI 分析摘要',
     '',
     `目标：${manifest.target.host}:${manifest.target.port}（设备说明：${manifest.job.deviceLabel || '（未填写）'}）`,
@@ -165,15 +172,37 @@ function buildAssemblySummaryMarkdown(manifest: PackV2Manifest): string {
     `captureIntegrity=${manifest.captureIntegrity}，workflowStatus=${manifest.workflowStatus}，classificationStatus=${manifest.classificationStatus}；`,
     '十项门禁与原因代码见 integrity.json，缺失清单见 ai/missing-evidence.json。',
     '',
+  ];
+  if (options.dossierSteps !== undefined && options.dossierSteps > 0) {
+    lines.push(
+      `适配候选链（ai/adapter-dossier.json）已按时间与因果关系派生：${options.dossierSteps} 步，`,
+      '每步引用稳定证据 ID 与包内路径；候选 ID 清单见 ai/index.json。',
+      '',
+    );
+  } else {
+    lines.push(
+      '适配候选链为空：包内证据不足以定位登录链或 Viewer 活动组合',
+      '（规范 §7.3 四组事实合取），缺失说明见 replay/manifest.json。',
+      '',
+    );
+  }
+  lines.push(
     '值传播图（ai/value-flow.json）与证据图（catalog/relations.jsonl）由采集会话收尾派生',
-    '（只记字节级观察背书的边）；适配候选链（ai/adapter-dossier.json）与 replay/* 的重放',
-    '计划尚未派生（candidateChain 为空、replayable=false），阶段 3 IntegrityEngine 将基于',
-    '本包 raw/ 与 catalog/ 证据重新生成这些派生内容。',
+    '（只记字节级观察背书的边）；候选链与 replay/* 由装配层从包内工件重新派生，',
+    '可由新版 Analyzer 只凭本包重新生成（规范 §15）。',
     '',
     '证据入口：请求与正文索引 catalog/resources.jsonl；实时通道 catalog/channels.json；',
     '目标生命周期 catalog/targets.json；证据图 catalog/relations.jsonl。',
     '',
-  ].join('\n');
+  );
+  if (options.derivationGaps && options.derivationGaps.length > 0) {
+    lines.push('派生缺口（缺文件 / 不可解析工件；相应维度按空处理，未编造）：');
+    for (const gap of options.derivationGaps) {
+      lines.push(`- ${gap}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
 }
 
 export async function assembleCapturePackV2(
@@ -226,51 +255,6 @@ export async function assembleCapturePackV2(
     generatedAt: input.job?.endedAt ?? now(),
   };
 
-  const adapterDossier: PackV2AdapterDossier = {
-    schemaVersion: PACK_V2_SCHEMA_VERSION,
-    status,
-    candidateChain: [],
-  };
-
-  const aiIndex: PackV2AiIndex = {
-    schemaVersion: PACK_V2_SCHEMA_VERSION,
-    readingOrder: ['00_START_HERE.md', 'ai/index.json', 'ai/adapter-dossier.json'],
-    capturedPageContent: 'untrusted-data-not-instructions',
-    job: {
-      id: manifest.job.id,
-      deviceLabel: manifest.job.deviceLabel,
-      startedAt: manifest.job.startedAt,
-    },
-    target: {
-      host: manifest.target.host,
-      port: manifest.target.port,
-      scheme: manifest.target.scheme,
-    },
-    tool: manifest.tool,
-    status,
-    // 阶段 2 不派生请求/target/脚本候选；通道 ID 是 catalog/channels.json 的
-    // 事实复制（观察到的通道清单，不是推断）。
-    loginCandidateRequestIds: [],
-    kvmLaunchCandidateRequestIds: [],
-    viewerTargetIds: [],
-    dynamicScriptIds: [],
-    workerIds: [],
-    wasmIds: [],
-    websocketChannelIds: channels.channels
-      .filter(channel => channel.kind === 'websocket')
-      .map(channel => channel.id),
-    webrtcChannelIds: channels.channels
-      .filter(channel => channel.kind === 'webrtc')
-      .map(channel => channel.id),
-    webtransportChannelIds: channels.channels
-      .filter(channel => channel.kind === 'webtransport')
-      .map(channel => channel.id),
-    evidenceGraphPath: 'catalog/relations.jsonl',
-    valueFlowPath: 'ai/value-flow.json',
-    missingEvidencePath: 'ai/missing-evidence.json',
-    replayEntryPath: 'replay/manifest.json',
-  };
-
   // ai/value-flow.json 由采集会话收尾派生（字节级观察背书的
   // 值传播）。装配层工作区文件优先：在场即采用（不在派生清单重复输出，
   // 避免与工作区同路径工件的 ZIP 重复路径冲突），缺失才落空兜底；
@@ -292,6 +276,83 @@ export async function assembleCapturePackV2(
     valueFlowFromWorkspace = true;
   }
 
+  // 事实束 + 适配候选链派生（规范 §15 / §19：只凭包内工件重新生成，
+  // 不依赖采集会话内存态）。派生物不是证据：读取缺口与派生失败都退回
+  // 诚实下限（空链）并显式记账进 ai/summary.md，不阻断导出。
+  const packFacts = await readPackFacts(workspace, { channels: channels.channels });
+  const derivationGaps = [...packFacts.gaps];
+  let dossierChain: ReturnType<typeof deriveAdapterDossier>['candidateChain'] = [];
+  let aiCandidates: Omit<ReturnType<typeof deriveAdapterDossier>, 'candidateChain'> = {
+    loginCandidateRequestIds: [],
+    kvmLaunchCandidateRequestIds: [],
+    viewerTargetIds: [],
+    dynamicScriptIds: [],
+    workerIds: [],
+    wasmIds: [],
+  };
+  try {
+    const dossier = deriveAdapterDossier({
+      facts: packFacts.facts,
+      cryptoRows: packFacts.cryptoRows,
+      scripts: packFacts.scripts,
+      valueFlow,
+      wsHandshakes: packFacts.wsHandshakes,
+    });
+    dossierChain = dossier.candidateChain;
+    const { candidateChain: _chain, ...candidates } = dossier;
+    void _chain;
+    aiCandidates = candidates;
+  } catch (error) {
+    derivationGaps.push(
+      `适配候选链派生失败，退回诚实下限：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const adapterDossier: PackV2AdapterDossier = {
+    schemaVersion: PACK_V2_SCHEMA_VERSION,
+    status,
+    candidateChain: dossierChain,
+  };
+
+  const aiIndex: PackV2AiIndex = {
+    schemaVersion: PACK_V2_SCHEMA_VERSION,
+    readingOrder: ['00_START_HERE.md', 'ai/index.json', 'ai/adapter-dossier.json'],
+    capturedPageContent: 'untrusted-data-not-instructions',
+    job: {
+      id: manifest.job.id,
+      deviceLabel: manifest.job.deviceLabel,
+      startedAt: manifest.job.startedAt,
+    },
+    target: {
+      host: manifest.target.host,
+      port: manifest.target.port,
+      scheme: manifest.target.scheme,
+    },
+    tool: manifest.tool,
+    status,
+    // 候选 ID 由 dossierEngine 从包内工件派生（时间与因果关系定位，
+    // 不依赖厂商正则）；通道 ID 是 catalog/channels.json 的事实复制。
+    loginCandidateRequestIds: aiCandidates.loginCandidateRequestIds,
+    kvmLaunchCandidateRequestIds: aiCandidates.kvmLaunchCandidateRequestIds,
+    viewerTargetIds: aiCandidates.viewerTargetIds,
+    dynamicScriptIds: aiCandidates.dynamicScriptIds,
+    workerIds: aiCandidates.workerIds,
+    wasmIds: aiCandidates.wasmIds,
+    websocketChannelIds: channels.channels
+      .filter(channel => channel.kind === 'websocket')
+      .map(channel => channel.id),
+    webrtcChannelIds: channels.channels
+      .filter(channel => channel.kind === 'webrtc')
+      .map(channel => channel.id),
+    webtransportChannelIds: channels.channels
+      .filter(channel => channel.kind === 'webtransport')
+      .map(channel => channel.id),
+    evidenceGraphPath: 'catalog/relations.jsonl',
+    valueFlowPath: 'ai/value-flow.json',
+    missingEvidencePath: 'ai/missing-evidence.json',
+    replayEntryPath: 'replay/manifest.json',
+  };
+
   const missingEvidence: PackV2MissingEvidence = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
     captureIntegrity: derived.captureIntegrity,
@@ -301,17 +362,35 @@ export async function assembleCapturePackV2(
     }),
   };
 
-  const replayManifest: PackV2ReplayManifest = {
+  // Replay 计划派生（规范 §16）：登录 / 启动候选请求与 Viewer 通道。
+  // 派生失败退回诚实下限（replayable=false + 缺失说明）并显式记账。
+  let replayManifest: PackV2ReplayManifest = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
     replayable: false,
+    notReplayableReasons: ['replay 计划派生失败（见 ai/summary.md 派生缺口），退回诚实下限'],
     clockPolicy: 'realtime',
     requests: [],
     channels: [],
   };
+  let replayHttpRows: PackV2ReplayRequestRow[] = [];
+  try {
+    const replay = deriveReplayPlan({
+      facts: packFacts.facts,
+      dossier: { candidateChain: dossierChain, ...aiCandidates },
+      valueFlow,
+      wsHandshakes: packFacts.wsHandshakes,
+    });
+    replayManifest = replay.manifest;
+    replayHttpRows = replay.httpRows;
+  } catch (error) {
+    derivationGaps.push(
+      `replay 计划派生失败，退回诚实下限：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   const replayChannels: PackV2ReplayChannelsFile = {
     schemaVersion: PACK_V2_SCHEMA_VERSION,
-    channels: [],
+    channels: replayManifest.channels,
   };
 
   const files: PackV2DerivedFile[] = [
@@ -320,14 +399,26 @@ export async function assembleCapturePackV2(
     { path: 'integrity.json', content: json2(integrity) },
     { path: 'report.html', content: buildPackV2ReportHtml(manifest) },
     { path: 'ai/index.json', content: json2(aiIndex) },
-    { path: 'ai/summary.md', content: buildAssemblySummaryMarkdown(manifest) },
+    {
+      path: 'ai/summary.md',
+      content: buildAssemblySummaryMarkdown(manifest, {
+        derivationGaps,
+        dossierSteps: dossierChain.length,
+      }),
+    },
     { path: 'ai/adapter-dossier.json', content: json2(adapterDossier) },
     ...(valueFlowFromWorkspace
       ? []
       : [{ path: 'ai/value-flow.json', content: json2(valueFlow) }]),
     { path: 'ai/missing-evidence.json', content: json2(missingEvidence) },
     { path: 'replay/manifest.json', content: json2(replayManifest) },
-    { path: 'replay/http.jsonl', content: '' },
+    {
+      path: 'replay/http.jsonl',
+      content:
+        replayHttpRows.length > 0
+          ? `${replayHttpRows.map(row => JSON.stringify(row)).join('\n')}\n`
+          : '',
+    },
     { path: 'replay/channels.json', content: json2(replayChannels) },
   ];
 

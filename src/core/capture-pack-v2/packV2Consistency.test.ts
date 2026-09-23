@@ -406,9 +406,15 @@ describe('validatePackV2Consistency（独立一致性验证器）', () => {
 
   it('replay 引用未知动态值节点 → REPLAY_UNKNOWN_ID', async () => {
     const sample = await createSampleCapturePackV2();
+    // 登录请求的动态值数组（manifest 里第一个 requiresDynamicValueIds）
+    // 替换为未知节点；正则不依赖具体引擎分配的 value ID。
     const replayText = String(
       sample.artifacts.find(artifact => artifact.path === 'replay/manifest.json')!.content,
-    ).replace('"requiresDynamicValueIds": [\n        "value-0007",\n        "value-0008"\n      ]', '"requiresDynamicValueIds": [\n        "value-9999"\n      ]');
+    ).replace(
+      /"requiresDynamicValueIds": \[[^\]]*\]/,
+      '"requiresDynamicValueIds": [\n        "value-9999"\n      ]',
+    );
+    expect(replayText).toContain('value-9999');
     const mutated = withRecomputedChecksums(
       withArtifact(sample.artifacts, 'replay/manifest.json', replayText),
     );

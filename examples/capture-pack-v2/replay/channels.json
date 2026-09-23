@@ -7,7 +7,8 @@
       "framesIndexPath": "raw/websocket/ws-0001/frames.index.jsonl",
       "requiresDynamicValueIds": [
         "value-0002",
-        "value-0005"
+        "value-0013",
+        "value-0011"
       ]
     }
   ]

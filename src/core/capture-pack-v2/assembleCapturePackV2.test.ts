@@ -13,8 +13,8 @@ import type { PackIntegrityEvidenceSummary } from './types';
 /**
  * 包装配反例：environment 缺失拒绝；schema 目录缺失显式报错；
  * TARGET_OPENED 恒 INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED；
- * 通道 ID 从 catalog/channels.json 事实复制；派生候选链/值传播/Replay 为空
- * （阶段 3 才派生，装配不编造）。
+ * 通道 ID 从 catalog/channels.json 事实复制；工作区无派生事实时候选链 /
+ * 值传播 / Replay 退回诚实下限，派生缺口显式记入 ai/summary.md。
  */
 
 const roots: string[] = [];
@@ -94,7 +94,7 @@ describe('assembleCapturePackV2（阶段 2 包装配）', () => {
     await workspace.close();
   });
 
-  it('通道 ID 从 catalog/channels.json 事实复制进 ai/index.json；候选链 / 值传播 / Replay 为空', async () => {
+  it('通道 ID 从 catalog/channels.json 事实复制；无派生事实时候选链 / 值传播 / Replay 退回下限且缺口显式', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({ jobId: 'job-asm-channels', rootDir });
     await workspace.writeArtifact(
@@ -153,6 +153,155 @@ describe('assembleCapturePackV2（阶段 2 包装配）', () => {
     expect(replay.replayable).toBe(false);
     expect(replay.requests).toEqual([]);
     expect(fileOf(result, 'replay/http.jsonl')).toBe('');
+    // 无事实工作区的派生缺口显式进 summary（缺失记账红线）
+    const summary = fileOf(result, 'ai/summary.md');
+    expect(summary).toContain('适配候选链为空');
+    expect(summary).toContain('派生缺口');
+    expect(summary).toContain('raw/http/transactions.jsonl 不在包内');
+    await workspace.close();
+  });
+
+  it('正向：工作区含登录链与 Viewer 活动事实 → 装配派生候选链与候选 ID（规范 §12 / §19）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-asm-derived', rootDir });
+    await workspace.writeArtifact(
+      'catalog/channels.json',
+      JSON.stringify({
+        schemaVersion: '2.0.0',
+        channels: [
+          {
+            id: 'ws-0001',
+            kind: 'websocket',
+            url: 'wss://10.10.8.111/stream?t=token-value',
+            targetId: 'target-page-0001',
+            createdAt: '2026-09-21T10:00:09.000Z',
+            closedAt: null,
+            frameCounts: { up: 2, down: 3 },
+            payloadPath: 'raw/websocket/ws-0001/frames.bin',
+          },
+        ],
+      }),
+    );
+    const txRow = (id: string, seconds: number, overrides: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        id,
+        targetId: 'target-page-0001',
+        startedAt: `2026-09-21T10:00:0${seconds}.000Z`,
+        method: 'GET',
+        url: `https://10.10.8.111/${id}`,
+        resourceType: 'Other',
+        requestHeaders: {},
+        status: 200,
+        responseHeaders: {},
+        ...overrides,
+      });
+    await workspace.writeArtifact(
+      'raw/http/transactions.jsonl',
+      [
+        txRow('http-000001', 0, { resourceType: 'Document' }),
+        txRow('http-000002', 2, {
+          method: 'POST',
+          requestBody: { sha256: 'a'.repeat(64), bytes: 8, path: 'raw/http/bodies/aaa' },
+          responseHeaders: { 'set-cookie': 'session=abc123; Path=/' },
+        }),
+        txRow('http-000003', 3, { requestHeaders: { cookie: 'session=abc123' } }),
+        txRow('http-000004', 4, {
+          method: 'POST',
+          requestBody: { sha256: 'b'.repeat(64), bytes: 8, path: 'raw/http/bodies/bbb' },
+          requestHeaders: { cookie: 'session=abc123' },
+        }),
+        txRow('http-000005', 5, { resourceType: 'Document' }),
+      ].join('\n') + '\n',
+    );
+    await workspace.writeArtifact(
+      'raw/browser/actions.jsonl',
+      JSON.stringify({
+        id: 'action-0002',
+        occurredAt: '2026-09-21T10:00:04.000Z',
+        kind: 'click',
+        targetId: 'target-page-0001',
+        elementSummary: '#console-open',
+      }) + '\n',
+    );
+    await workspace.writeArtifact(
+      'catalog/targets.json',
+      JSON.stringify({
+        schemaVersion: '2.0.0',
+        targets: [
+          { id: 'target-page-0001', type: 'page', attached: true, url: 'https://10.10.8.111/login', attachedAt: '2026-09-21T10:00:00.000Z' },
+        ],
+      }),
+    );
+    await workspace.writeArtifact(
+      'raw/browser/render-surfaces.jsonl',
+      JSON.stringify({
+        id: 'render-0001',
+        occurredAt: '2026-09-21T10:00:06.000Z',
+        targetId: 'target-page-0001',
+        surface: 'canvas-context',
+        detail: '2d',
+      }) + '\n',
+    );
+    await workspace.writeArtifact(
+      'raw/cdp/events.jsonl',
+      JSON.stringify({
+        seq: 1,
+        timestamp: '2026-09-21T10:00:05.000Z',
+        method: 'Page.frameNavigated',
+        targetId: 'target-page-0001',
+        params: { frame: { id: 'frame-0001', url: 'https://10.10.8.111/viewer' } },
+      }) + '\n',
+    );
+    await workspace.writeArtifact(
+      'raw/scripts/index.json',
+      JSON.stringify({
+        schemaVersion: '2.0.0',
+        scripts: [{ id: 'script-inline-0001', kind: 'inline', url: null, targetId: 'target-page-0001' }],
+      }),
+    );
+    await workspace.writeArtifact(
+      'raw/websocket/ws-0001/metadata.json',
+      JSON.stringify({
+        channelId: 'ws-0001',
+        url: 'wss://10.10.8.111/stream?t=token-value',
+        createdAt: '2026-09-21T10:00:09.000Z',
+        requestHeaders: { cookie: 'session=abc123' },
+      }),
+    );
+
+    const result = await assembleCapturePackV2({
+      workspace,
+      tool: { version: '0.3.0-dev', buildId: 'test-build' },
+      environment: { ...ENVIRONMENT },
+      evidenceSummary: evidence('KVM_REACHED'),
+      target: { host: '10.10.8.111', port: 443, scheme: 'https' },
+    });
+
+    const aiIndex = JSON.parse(fileOf(result, 'ai/index.json')) as {
+      loginCandidateRequestIds: string[];
+      kvmLaunchCandidateRequestIds: string[];
+      viewerTargetIds: string[];
+      dynamicScriptIds: string[];
+    };
+    expect(aiIndex.loginCandidateRequestIds).toEqual(['http-000002']);
+    expect(aiIndex.kvmLaunchCandidateRequestIds).toEqual(['http-000004']);
+    expect(aiIndex.viewerTargetIds).toEqual(['target-page-0001']);
+    expect(aiIndex.dynamicScriptIds).toEqual(['script-inline-0001']);
+
+    const dossier = JSON.parse(fileOf(result, 'ai/adapter-dossier.json')) as {
+      candidateChain: Array<{ role: string; evidenceIds: string[] }>;
+    };
+    expect(dossier.candidateChain.map(step => step.role)).toEqual([
+      'login-interaction',
+      'session-established',
+      'kvm-click',
+      'launch-request',
+      'viewer-opened',
+      'script-worker-wasm',
+      'realtime-channel',
+    ]);
+    const summary = fileOf(result, 'ai/summary.md');
+    expect(summary).toContain('已按时间与因果关系派生：7 步');
     await workspace.close();
   });
 

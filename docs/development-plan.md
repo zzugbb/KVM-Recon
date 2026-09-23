@@ -16,20 +16,21 @@
 - 厂商/型号只作设备说明铭牌，不能覆盖采集桶；`unknown-h5` / `not-h5` 不能当网关 registry 名。下游裁定见 `docs/kvm-family.md`。
 - 未知族只导出资料包，不自动生成 Adapter。
 
-## 3. 当前状态（2026-09-21）
+## 3. 当前状态（2026-09-23）
 
-**0.3.0 阶段 0–3 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
+**0.3.0 阶段 0–4 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
 
 - 阶段 0（契约）：Capture Pack 2.0 类型与三正交状态、`schema/2.0/`（33 个 Schema，包内自校验）、随机 URL Mock KVM、完整度失败 Fixture 与样例包一致性验证器。
 - 阶段 1（工作区）：单作业 `JobWorkspace`（跨进程互斥、磁盘水位、finalize 不可变）、SHA-256 内容寻址 `BodyStore`、流式 ZIP64 导出。
 - 阶段 2（采集）：`src/core/collector/` 协议无关全量采集（CDP journal、HTTP/HAR、WS 全帧、WebCrypto、脚本/Worker/WASM、NetLog、截图/DOM 快照/时间线、Storage、实时通道）；生产 Controller + 单作业 Electron 壳 + 崩溃恢复（保守证据摘要；恢复只提示不自动导出，恢复卡手动选择目录导出，成功才 markExported）。
 - 阶段 3（证据图与完整度）：`workflowStatusEngine` 从只读事实快照派生三态（`LOGIN_REACHED` 要求观察到的 Set-Cookie 传播、`KVM_REACHED` 要求“动作 → 打开/导航 → 新渲染/执行表面 → 双向通道”的严格时序）；popup 与 iframe/OOPIF/Worker 均按 opener/parent target 血缘归属，初始截图与手动/自动收尾无竞态，popup 的 sessionStorage/IndexedDB/CacheStorage 独立留存；脚本源码取不到时仅允许用相同 CDP hash 的已采正文补全，否则降级完整度，采集器自身带 `kvm-recon-internal://` 标记的探针不进入目标脚本门禁。`valueFlowEngine` + `catalog/relations.jsonl` 只记字节级观察背书的值传播边与结构关系（knownIds 闭环门禁，响应到达时间含 `receiveMs`）；浏览器状态与证据图失败显式记入缺口；Viewer 检出后的 15s 稳定窗口只自动 `controller.stop()`，绝不自动导出/关窗。
+- 阶段 4（AI/Replay 生成器）：`readPackFacts` 装配时从包内工件重建 `WorkflowFacts`（主框架导航从 `raw/cdp/events.jsonl` 重放 `Page.frameNavigated`，缺文件记派生缺口不阻断导出）；`dossierEngine` 七角色候选链与 `ai/index.json` 候选（复用 loginChainOf / detectViewerActivity 同一判定）；`replayEngine` 派生 `replay/manifest.json` + `http.jsonl` + `channels.json`（`requiresDynamicValueIds` 引用值传播图 replaySubstitution 边来源值，不可回放时 `notReplayableReasons` 逐条说明缺什么）；值传播图新增 storage 值链（响应正文 ⊇ sessionStorage/localStorage 值 → 后续头/查询参数）；协议 Fixture 回放 E2E（全新实例按 manifest 动态值替换重放，服务端接受 + 4 组陈旧值负向对照）；样例包 dossier/replay/value-flow 全部换真实引擎，附离线再生契约测试（§15 只凭包内工件重新派生结果相等）。
 - 0.2.x 运行链路与五项大小上限已删除；新链路无上限、不脱敏；workflowStatus 由阶段 3 派生引擎从观察事实给出（可达 `KVM_REACHED`），完整度由十项门禁从证据摘要派生——`COMPLETE` 只与 `KVM_REACHED` 组合，未到达 KVM 时 `INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED`。
-- 验证：vitest + E2E 全绿，含 Mock KVM 真实浏览器对照与现场 HAR 回放（`KVM_RECON_FIELD_COLLECTION_2` 指向语料目录，只读）；真机验收按产品安排最后统一进行。
+- 验证：vitest + E2E 全绿，含 Mock KVM 真实浏览器对照、协议 Fixture 回放与现场 HAR 回放（`KVM_RECON_FIELD_COLLECTION_2` 指向语料目录，只读）；真机验收按产品安排最后统一进行。
 
-未开始：阶段 4（AI/Replay 生成器）、阶段 5（界面收口）、阶段 6（全量验收）。
+未开始：阶段 5（界面收口）、阶段 6（全量验收）。
 
-**下一步：** 阶段 4——AI/Replay 生成器（`00_START_HERE.md`、`ai/index.json`、Adapter dossier、Replay manifest 与协议 Fixture）。
+**下一步：** 阶段 5——界面收口（单屏单作业工作台，删除多作业/包对比入口）。
 
 安装包由 GitHub Actions 构建：macOS 为 ad-hoc 签名，Windows 无 Authenticode。
 

@@ -14,10 +14,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import yauzl from 'yauzl';
-
 import { parseChecksumsManifest, sha256OfContent } from '../../core/export/checksumsManifest';
 import { PACK_V2_CHECKSUMS_PATH, verifyPackV2Zip } from '../../core/export/exportPackV2Zip';
+import { readZipEntries } from '../../core/export/readZipEntries';
 import type { ProbeBmcTargetResult } from '../../core/probe/probeBmcTarget';
 import { createProductionCapture } from './productionCaptureController';
 import { createElectronNetlogSource } from './electronNetlogSource';
@@ -50,30 +49,7 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-/** E2E 内读取 ZIP 全部条目（页面很小，内存断言可接受；生产链路不走这里）。 */
-export async function readZipEntries(zipPath: string): Promise<Map<string, string>> {
-  const zipfile = await yauzl.openPromise(zipPath, { lazyEntries: true, decodeStrings: true });
-  const entries = new Map<string, string>();
-  return new Promise<Map<string, string>>((resolve, reject) => {
-    zipfile.readEntry();
-    zipfile.on('entry', (entry: yauzl.Entry) => {
-      zipfile.openReadStream(entry, (error, stream) => {
-        if (error || !stream) {
-          reject(error ?? new Error(`打开条目失败：${entry.fileName}`));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        stream.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-        stream.on('end', () => {
-          entries.set(entry.fileName, Buffer.concat(chunks).toString('utf8'));
-          zipfile.readEntry();
-        });
-      });
-    });
-    zipfile.on('end', () => resolve(entries));
-    zipfile.on('error', reject);
-  });
-}
+export { readZipEntries };
 
 export async function runProductionCaptureE2e() {
   const workspacesRoot = await mkdtemp(join(tmpdir(), 'kvm-recon-e2e-ws-'));

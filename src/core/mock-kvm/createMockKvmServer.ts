@@ -74,6 +74,13 @@ export interface MockKvmOptions {
   seed?: string;
   host?: string;
   port?: number;
+  /**
+   * 固定 seed 下仍让 token 值（sessionToken / csrfToken / viewerToken /
+   * nonce）走 OS 随机：路径、字段名、头名保持 seed 复现，凭证每次实例
+   * 不同——用于回放 e2e 模拟「同一台设备上的全新会话」：包内模板的
+   * 路径与字段名仍然有效，但携带的旧 token 必须替换成新鲜值。
+   */
+  perInstanceTokens?: boolean;
 }
 
 function randomHexFromSeed(seed: string, index: number, bytes: number): Buffer {
@@ -138,10 +145,12 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
   const paths = buildUrlSet(randomTag, segments);
 
   const sessionCookieName = `m${hex(randomSource(8, 4))}`;
-  const sessionToken = hex(randomSource(9, 16));
-  const csrfToken = hex(randomSource(10, 16));
-  const viewerToken = hex(randomSource(11, 16));
-  const nonceValue = hex(randomSource(12, 12));
+  const tokenSource =
+    seeded && options.perInstanceTokens ? randomHexFromOs : randomSource;
+  const sessionToken = hex(tokenSource(9, 16));
+  const csrfToken = hex(tokenSource(10, 16));
+  const viewerToken = hex(tokenSource(11, 16));
+  const nonceValue = hex(tokenSource(12, 12));
 
   const loginFieldNames = {
     user: `f${hex(randomSource(13, 4))}u`,

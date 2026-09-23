@@ -889,6 +889,8 @@ export interface PackV2ReplayManifest {
   schemaVersion: typeof PACK_V2_SCHEMA_VERSION;
   /** 无法生成 Replay Fixture 时必须列出缺失证据（规范 §16）。 */
   replayable: boolean;
+  /** replayable=false 时的缺失证据说明（逐条列出缺什么，不静默降级）。 */
+  notReplayableReasons?: string[];
   clockPolicy: 'deterministic-accelerated' | 'realtime';
   requests: PackV2ReplayRequest[];
   channels: PackV2ReplayChannel[];

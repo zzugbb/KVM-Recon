@@ -17,8 +17,12 @@ import {
 import { buildPackV2ReportHtml, buildPackV2StartHereMarkdown } from './packV2Layout';
 import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 import { harContentOf, harEntry, harPostDataOf, headerOf } from '../collector/harBuilder';
+import { deriveAdapterDossier } from '../collector/dossierEngine';
+import { deriveReplayPlan } from '../collector/replayEngine';
+import { deriveRelations, deriveValueFlow } from '../collector/valueFlowEngine';
+import type { WorkflowFacts, WorkflowNavigationFact } from '../collector/workflowStatusEngine';
+import type { PackWsHandshakeFact } from './readPackFacts';
 import type {
-  AdapterDossierStep,
   PackV2AdapterDossier,
   PackV2AiIndex,
   PackV2BodyRef,
@@ -35,21 +39,15 @@ import type {
   PackV2Integrity,
   PackV2Manifest,
   PackV2NetLogFile,
-  PackV2RelationRow,
   PackV2RenderSurfaceRow,
   PackV2ReplayChannelsFile,
-  PackV2ReplayManifest,
-  PackV2ReplayRequestRow,
   PackV2ResourceRow,
   PackV2ScriptEntry,
   PackV2ScriptsIndex,
   PackV2TargetRow,
   PackV2TargetsFile,
-  PackV2ValueFlow,
   PackV2WsFrameIndexRow,
   PackV2WsMetadata,
-  ValueFlowEdge,
-  ValueFlowNode,
 } from './types';
 import { UNTRUSTED_PAGE_CONTENT_MARKER } from './types';
 
@@ -576,7 +574,6 @@ export async function createSampleCapturePackV2(
     }));
 
     const loginExchange = transactions[1];
-    const launchExchange = transactions[3];
     const viewerPageExchange = transactions[4];
     const workerExchange = transactions[5];
 
@@ -716,264 +713,9 @@ export async function createSampleCapturePackV2(
       outputRef: runtimeBodyRef(call.output),
     }));
 
-    // ---- 值传播（规范 §8.6 / §16） ----
-    const valueNodes: ValueFlowNode[] = [
-      {
-        id: 'value-0001',
-        kind: 'http-response',
-        name: `${sessionCookieName}（登录响应 Set-Cookie）`,
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: loginExchange.id,
-      },
-      {
-        id: 'value-0002',
-        kind: 'cookie',
-        name: sessionCookieName,
-        evidencePath: 'raw/browser/storage.json',
-      },
-      {
-        id: 'value-0003',
-        kind: 'header',
-        name: 'cookie',
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: launchExchange.id,
-      },
-      {
-        id: 'value-0004',
-        kind: 'header',
-        name: 'cookie',
-        evidencePath: 'raw/websocket/ws-0001/metadata.json',
-        evidenceId: 'ws-0001',
-      },
-      {
-        id: 'value-0005',
-        kind: 'http-response',
-        name: 'viewerToken（KVM 启动响应）',
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: launchExchange.id,
-      },
-      {
-        id: 'value-0006',
-        kind: 'ws-frame',
-        name: '首条上行控制帧',
-        evidencePath: 'raw/websocket/ws-0001/frames.index.jsonl',
-        evidenceId: 'ws-0001',
-      },
-      {
-        id: 'value-0007',
-        kind: 'http-response',
-        name: '登录挑战 nonce（登录页隐藏字段）',
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: 'http-000001',
-      },
-      {
-        id: 'value-0008',
-        kind: 'crypto-output',
-        name: 'SHA-256 摘要凭据（crypto-0001 输出）',
-        evidencePath: 'raw/runtime/crypto.jsonl',
-        evidenceId: 'crypto-0001',
-      },
-      {
-        id: 'value-0009',
-        kind: 'http-request-body',
-        name: '登录请求凭据字段',
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: 'http-000002',
-      },
-      {
-        id: 'value-0010',
-        kind: 'http-response',
-        name: 'csrfToken（登录响应）',
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: 'http-000002',
-      },
-      {
-        id: 'value-0011',
-        kind: 'header',
-        name: `${handle.csrfHeaderName}（KVM 启动请求 CSRF 头）`,
-        evidencePath: 'raw/http/transactions.jsonl',
-        evidenceId: 'http-000004',
-      },
-      {
-        id: 'value-0012',
-        kind: 'url-param',
-        name: 'WS 握手查询参数 t（viewerToken）',
-        evidencePath: 'raw/websocket/ws-0001/metadata.json',
-        evidenceId: 'ws-0001',
-      },
-    ];
-    const valueEdges: ValueFlowEdge[] = [
-      {
-        from: 'value-0001',
-        to: 'value-0002',
-        relation: 'propagated-to',
-        evidencePath: 'raw/http/transactions.jsonl',
-        replaySubstitution: true,
-      },
-      {
-        from: 'value-0002',
-        to: 'value-0003',
-        relation: 'propagated-to',
-        evidencePath: 'raw/http/transactions.jsonl',
-        replaySubstitution: true,
-      },
-      {
-        from: 'value-0002',
-        to: 'value-0004',
-        relation: 'propagated-to',
-        evidencePath: 'raw/websocket/ws-0001/metadata.json',
-        replaySubstitution: true,
-      },
-      // viewerToken 经 WS 握手查询参数 t 传递（服务端在升级握手时校验）。
-      {
-        from: 'value-0005',
-        to: 'value-0012',
-        relation: 'propagated-to',
-        evidencePath: 'raw/websocket/ws-0001/metadata.json',
-        replaySubstitution: true,
-      },
-      {
-        from: 'value-0007',
-        to: 'value-0008',
-        relation: 'derived-from',
-        evidencePath: 'raw/runtime/crypto.jsonl',
-        replaySubstitution: true,
-      },
-      {
-        from: 'value-0008',
-        to: 'value-0009',
-        relation: 'used-in',
-        evidencePath: 'raw/http/transactions.jsonl',
-        replaySubstitution: true,
-      },
-      {
-        from: 'value-0010',
-        to: 'value-0011',
-        relation: 'propagated-to',
-        evidencePath: 'raw/http/transactions.jsonl',
-        replaySubstitution: true,
-      },
-    ];
-
-    const valueFlow: PackV2ValueFlow = {
-      schemaVersion: '2.0.0',
-      nodes: valueNodes,
-      edges: valueEdges,
-    };
-
-    // ---- Adapter dossier 候选链（规范 §12） ----
-    const dossierSteps: AdapterDossierStep[] = [
-      {
-        role: 'login-interaction',
-        title: '操作员提交登录表单（SHA-256 摘要凭据）',
-        evidenceIds: ['http-000001', 'http-000002', 'crypto-0001', 'value-0007'],
-        evidencePaths: ['raw/http/transactions.jsonl', 'raw/runtime/crypto.jsonl'],
-        occurredAt: isoAt(startedAt, 2),
-      },
-      {
-        role: 'session-established',
-        title: '登录响应建立 Session Cookie',
-        evidenceIds: ['http-000002', 'value-0001'],
-        evidencePaths: ['raw/http/transactions.jsonl', 'ai/value-flow.json'],
-        occurredAt: isoAt(startedAt, 2),
-      },
-      {
-        role: 'kvm-click',
-        title: '操作员点击「打开远程控制台」',
-        evidenceIds: ['action-0002'],
-        evidencePaths: ['raw/browser/actions.jsonl'],
-        occurredAt: isoAt(startedAt, 4),
-      },
-      {
-        role: 'launch-request',
-        title: 'KVM 启动请求返回 viewerToken 与通道路径',
-        evidenceIds: ['http-000004', 'value-0005'],
-        evidencePaths: ['raw/http/transactions.jsonl', 'ai/value-flow.json'],
-        occurredAt: isoAt(startedAt, 4),
-      },
-      {
-        role: 'viewer-opened',
-        title: 'Viewer 页面打开并创建解码 Worker',
-        evidenceIds: ['http-000005', 'target-worker-0001', 'script-inline-0001'],
-        evidencePaths: ['raw/http/transactions.jsonl', 'raw/browser/targets.json', 'raw/scripts/index.json'],
-        occurredAt: isoAt(startedAt, 5),
-      },
-      {
-        role: 'script-worker-wasm',
-        title: 'Worker 入口源码与页面内联脚本完整落盘',
-        evidenceIds: ['http-000006', 'script-worker-0001', 'script-inline-0001'],
-        evidencePaths: ['raw/http/transactions.jsonl', 'raw/scripts/index.json'],
-        occurredAt: isoAt(startedAt, 6),
-      },
-      {
-        role: 'realtime-channel',
-        title: '双向 WebSocket 通道建立并记录全部帧',
-        evidenceIds: ['ws-0001', 'value-0006'],
-        evidencePaths: [
-          'raw/websocket/ws-0001/metadata.json',
-          'raw/websocket/ws-0001/frames.index.jsonl',
-        ],
-        occurredAt: isoAt(startedAt, 9),
-      },
-    ];
-
-    // ---- Replay（规范 §16）----
-    // 动态值语义：requiresDynamicValueIds 只能引用请求发生前已存在、需要在
-    // Replay 中替换的值（登录请求依赖 nonce 与摘要输出；启动请求依赖已建立的
-    // Session Cookie 与登录响应的 csrfToken——不是本次请求响应才产生的值）。
-    const replayManifest: PackV2ReplayManifest = {
-      schemaVersion: '2.0.0',
-      replayable: true,
-      clockPolicy: 'deterministic-accelerated',
-      requests: [
-        {
-          requestId: 'http-000002',
-          url: loginExchange.url,
-          method: 'POST',
-          requiresDynamicValueIds: ['value-0007', 'value-0008'],
-        },
-        {
-          requestId: 'http-000004',
-          url: launchExchange.url,
-          method: 'POST',
-          requiresDynamicValueIds: ['value-0002', 'value-0010'],
-        },
-      ],
-      channels: [
-        // WS 握手实际依赖：Session Cookie（value-0002，服务端严格比对签发值）
-        // 与 viewerToken（value-0005，查询参数 t）。
-        {
-          channelId: 'ws-0001',
-          kind: 'websocket',
-          framesIndexPath: 'raw/websocket/ws-0001/frames.index.jsonl',
-          requiresDynamicValueIds: ['value-0002', 'value-0005'],
-        },
-      ],
-    };
-
-    const replayHttpRows: PackV2ReplayRequestRow[] = [
-      {
-        requestId: 'http-000002',
-        url: loginExchange.url,
-        method: 'POST',
-        requestBodyPath: loginExchange.requestBody?.path || null,
-        responseBodyPath: loginExchange.responseBody?.path || null,
-        occurredAt: loginExchange.startedAt,
-      },
-      {
-        requestId: 'http-000004',
-        url: launchExchange.url,
-        method: 'POST',
-        requestBodyPath: launchExchange.requestBody?.path || null,
-        responseBodyPath: launchExchange.responseBody?.path || null,
-        occurredAt: launchExchange.startedAt,
-      },
-    ];
-
-    const replayChannels: PackV2ReplayChannelsFile = {
-      schemaVersion: '2.0.0',
-      channels: replayManifest.channels,
-    };
+    // 值传播图（ai/value-flow.json）由 deriveValueFlow 从以下真实观察事实派生
+    //（见下方「派生引擎接线」块）：cookie 链、storage 值链、crypto 链与
+    // WS 握手查询参数，与装配层 / 离线 Analyzer 同一引擎同一事实形状。
 
     // ---- raw/browser ----
     const timeline: PackV2BrowserTimelineRow[] = [
@@ -1066,10 +808,107 @@ export async function createSampleCapturePackV2(
       },
     ];
 
+    // ---- 派生引擎接线（规范 §15 / §19）----
+    // ai/value-flow.json、catalog/relations.jsonl、ai/adapter-dossier.json、
+    // ai/index.json 候选与 replay 三件套全部由真实引擎（deriveValueFlow /
+    // deriveRelations / deriveAdapterDossier / deriveReplayPlan）从上述真实
+    // 观察事实派生——与装配层（assembleCapturePackV2）同一引擎、同一事实
+    // 形状。样例包因此就是引擎输出契约样例：离线 Analyzer 只凭包内工件
+    // 可逐字节再生全部派生物（契约对照测试见 createSampleCapturePackV2.test）。
+    const navigations: WorkflowNavigationFact[] = [
+      { occurredAt: isoAt(startedAt, 1), targetId: 'target-page-0001', url: urls.loginPage },
+      { occurredAt: isoAt(startedAt, 3), targetId: 'target-page-0001', url: urls.consoleEntry },
+      { occurredAt: isoAt(startedAt, 5), targetId: 'target-page-0001', url: urls.viewerPage },
+    ];
+    const wsHandshakes: PackWsHandshakeFact[] = [
+      {
+        channelId: 'ws-0001',
+        url: websocketConnectUrl,
+        createdAt: wsChannel.createdAt,
+        requestHeaders: { cookie: sessionCookie },
+        metadataPath: 'raw/websocket/ws-0001/metadata.json',
+        framesIndexPath: 'raw/websocket/ws-0001/frames.index.jsonl',
+      },
+    ];
+    const facts: WorkflowFacts = {
+      transactions,
+      actions,
+      targets,
+      channels,
+      navigations,
+      renderSurfaces,
+      hookFailures: [],
+    };
+    // 正文逐份读取（读一份放一份）：http 正文与 crypto 输入/输出都在内存
+    // blob store 里，与采集会话的 workspace 读取语义一致。
+    const readBody = async (ref: PackV2BodyRef): Promise<Buffer | null> => {
+      const content = httpBodies.get(ref.sha256) ?? runtimeBodies.get(ref.sha256);
+      return content === undefined ? null : Buffer.from(content, 'utf8');
+    };
+    const derivedFlow = await deriveValueFlow(
+      {
+        transactions,
+        cryptoRows,
+        wsChannels: wsHandshakes.map(handshake => ({
+          channelId: handshake.channelId,
+          url: handshake.url,
+          createdAt: handshake.createdAt,
+          requestHeaders: handshake.requestHeaders,
+          metadataPath: handshake.metadataPath,
+        })),
+        // storage.json 的 cookies 行是宽松键值（未识别字段透传），
+        // 派生事实只收结构完整的 name/value 对
+        storageCookies: storage.cookies
+          .map(cookie => ({ name: cookie.name, value: cookie.value }))
+          .filter(
+            (cookie): cookie is { name: string; value: string } =>
+              typeof cookie.name === 'string' && typeof cookie.value === 'string',
+          ),
+        storageValues: [
+          ...Object.entries(storage.sessionStorage),
+          ...Object.entries(storage.localStorage),
+        ].map(([key, value]) => ({ key, value })),
+        storageCapturedAt: storage.capturedAt,
+      },
+      { readBody },
+    );
+    const valueFlow = derivedFlow.valueFlow;
+
+    // 结构关系行与 value-flow 关系行由 deriveRelations 统一派生；
+    // 页面分别创建 Worker 与 WS，采集事实无法证明 attached 关系，
+    // 引擎只记有观察背书的 initiated / created / opened / value-flow。
+    const relations = deriveRelations({ transactions, targets, channels }, derivedFlow.relations);
+
+    const dossier = deriveAdapterDossier({ facts, cryptoRows, scripts, valueFlow, wsHandshakes });
+
+    // 动态值语义（规范 §16）：requiresDynamicValueIds 引用值传播图里
+    // replaySubstitution 边的来源值节点（会话 Cookie、crypto 摘要输出、
+    // 启动响应 token 等），回放客户端以新鲜值替换后重放。
+    const replay = deriveReplayPlan({ facts, dossier, valueFlow, wsHandshakes });
+    const replayManifest = replay.manifest;
+    const replayHttpRows = replay.httpRows;
+    const replayChannels: PackV2ReplayChannelsFile = {
+      schemaVersion: '2.0.0',
+      channels: replay.channelsFile.channels,
+    };
+
     // ---- raw/cdp journal（协议无关原始事件样例） ----
     const cdpEvents: PackV2CdpEventRow[] = [];
     let cdpSeq = 0;
     for (const transaction of transactions) {
+      // 主框架导航（无 parentId 的 frame）：与在线采集同一规则落 raw/cdp/
+      // events.jsonl，readPackFacts 离线重放可重建 navigations 事实（§15）。
+      if (transaction.resourceType === 'document') {
+        cdpSeq += 1;
+        cdpEvents.push({
+          seq: cdpSeq,
+          timestamp: transaction.startedAt,
+          method: 'Page.frameNavigated',
+          sessionId: 'session-page-0001',
+          targetId: 'target-page-0001',
+          params: { frame: { id: 'frame-0001', url: transaction.url } },
+        });
+      }
       cdpSeq += 1;
       cdpEvents.push({
         seq: cdpSeq,
@@ -1172,42 +1011,6 @@ export async function createSampleCapturePackV2(
       frameCounts: wsChannel.frameCounts || { up: 0, down: 0 },
       framesBinPath: 'raw/websocket/ws-0001/frames.bin',
     };
-
-    // ---- catalog/relations ----
-    const relations: PackV2RelationRow[] = [
-      ...transactions.map(transaction => ({
-        from: 'target-page-0001',
-        to: transaction.id,
-        relation: 'initiated' as const,
-        occurredAt: transaction.startedAt,
-        evidencePath: 'raw/http/transactions.jsonl',
-      })),
-      {
-        from: 'target-page-0001',
-        to: 'script-worker-0001',
-        relation: 'created',
-        occurredAt: isoAt(startedAt, 7),
-        evidencePath: 'raw/scripts/index.json',
-      },
-      {
-        from: 'target-page-0001',
-        to: 'ws-0001',
-        relation: 'opened',
-        occurredAt: isoAt(startedAt, 9),
-        evidencePath: 'raw/websocket/ws-0001/metadata.json',
-      },
-      // 注：页面脚本分别创建 Worker 与 WebSocket，采集事实无法证明二者绑定，
-      // 因此不编造 target-worker-0001 → ws-0001 的 attached 关系。
-      // value-flow 关系行与 ai/value-flow.json 的边一一对应（派生契约），
-      // occurredAt 取传播被观察到的一侧（to 节点证据时间）。
-      { from: 'value-0001', to: 'value-0002', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0002', to: 'value-0003', relation: 'value-flow', occurredAt: isoAt(startedAt, 4), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0002', to: 'value-0004', relation: 'value-flow', occurredAt: isoAt(startedAt, 9), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0005', to: 'value-0012', relation: 'value-flow', occurredAt: isoAt(startedAt, 9), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0007', to: 'value-0008', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0008', to: 'value-0009', relation: 'value-flow', occurredAt: isoAt(startedAt, 2), evidencePath: 'ai/value-flow.json' },
-      { from: 'value-0010', to: 'value-0011', relation: 'value-flow', occurredAt: isoAt(startedAt, 4), evidencePath: 'ai/value-flow.json' },
-    ];
 
     // ---- 阶段 A：内容 artifacts（不含状态文件与 checksums） ----
     const contentArtifacts: SampleArtifact[] = [
@@ -1399,7 +1202,8 @@ export async function createSampleCapturePackV2(
         workflowStatus: manifest.workflowStatus,
         classificationStatus: manifest.classificationStatus,
       },
-      candidateChain: dossierSteps,
+      // 候选链由 deriveAdapterDossier 派生（时间与因果关系定位）。
+      candidateChain: dossier.candidateChain,
     };
 
     const aiIndex: PackV2AiIndex = {
@@ -1414,13 +1218,17 @@ export async function createSampleCapturePackV2(
         workflowStatus: manifest.workflowStatus,
         classificationStatus: manifest.classificationStatus,
       },
-      loginCandidateRequestIds: ['http-000002'],
-      kvmLaunchCandidateRequestIds: ['http-000004'],
-      viewerTargetIds: ['target-page-0001', 'target-worker-0001'],
-      dynamicScriptIds: ['script-inline-0001'],
-      workerIds: ['script-worker-0001'],
-      wasmIds: [],
-      websocketChannelIds: ['ws-0001'],
+      // 候选 ID 由 dossierEngine 派生；通道 ID 是 catalog/channels.json 的事
+      // 实复制（与装配层 assembleCapturePackV2 同一接线）。
+      loginCandidateRequestIds: dossier.loginCandidateRequestIds,
+      kvmLaunchCandidateRequestIds: dossier.kvmLaunchCandidateRequestIds,
+      viewerTargetIds: dossier.viewerTargetIds,
+      dynamicScriptIds: dossier.dynamicScriptIds,
+      workerIds: dossier.workerIds,
+      wasmIds: dossier.wasmIds,
+      websocketChannelIds: channels
+        .filter(channel => channel.kind === 'websocket')
+        .map(channel => channel.id),
       webrtcChannelIds: [],
       webtransportChannelIds: [],
       evidenceGraphPath: 'catalog/relations.jsonl',
