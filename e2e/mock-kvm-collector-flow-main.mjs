@@ -81,7 +81,8 @@ async function run() {
     win = new BrowserWindow({
       width: 1024,
       height: 768,
-      show: false,
+      // COMPLETE 要求真实画面截图；隐藏窗口在 Linux/Xvfb 下可能没有可截图表面。
+      show: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -362,9 +363,13 @@ async function run() {
     if (!lastDom.includes('<')) {
       throw new Error('DOM 快照内容为空');
     }
-    // 截图在隐藏窗口下可能失败（droppedEvent 记账）；存在则必须是合法 PNG
+    // 可见窗口应留下真实截图；否则不能宣称浏览器状态完整。
     const screenshotDir = join(dir, 'raw/browser/screenshots');
-    for (const name of await readdir(screenshotDir).catch(() => [])) {
+    const screenshotNames = await readdir(screenshotDir).catch(() => []);
+    if (screenshotNames.length === 0) {
+      throw new Error('工作区缺少页面截图');
+    }
+    for (const name of screenshotNames) {
       const png = await readFile(join(screenshotDir, name));
       if (!png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
         throw new Error(`截图不是合法 PNG：${name}`);
@@ -550,6 +555,9 @@ async function run() {
             sourceLength: script.sourceLength,
           })),
         missingWorkerSources: session.integrityEvidence().missingWorkerSources,
+        browserStateWritten: session.integrityEvidence().browserStateWritten,
+        browserStateGaps: session.integrityEvidence().browserStateGaps,
+        droppedEventByMethod: session.evidence().diagnostics().droppedEventByMethod,
       }));
       throw new Error(
         `导出包完整度 ${exportResult.status.captureIntegrity}（期望 COMPLETE）：${(exportResult.derived.reasons || []).join(', ')}`,
