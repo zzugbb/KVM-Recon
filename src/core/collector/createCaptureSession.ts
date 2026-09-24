@@ -1,6 +1,6 @@
 /**
- * 阶段 2 采集会话：一份 JobWorkspace + 协议无关 CDP 采集。
- * 不接 0.2.x 生产 Controller，不实现完整度引擎。
+ * 采集会话：一份 JobWorkspace + 协议无关 CDP 采集。
+ * 管理采集生命周期与原始事实；完整度由导出前的证据门禁派生。
  *
  * stop() 收尾顺序（规范 §7.4）：停止接收 → 排空事件链 → 浏览器状态快照
  * （含 IndexedDB / CacheStorage / 截图 / DOM 快照）→ 页面环境 → NetLog 包装
@@ -105,7 +105,7 @@ export interface CaptureSession {
   environment(): PackV2Environment | null;
   /** 采集失败记账（缺口分类计数与丢弃事件诊断）。 */
   evidence(): CollectorEvidence;
-  /** 派生引擎只读事实快照（阶段 3；采集期随时可调，stop 后为终态事实）。 */
+  /** 派生引擎只读事实快照（采集期随时可调，stop 后为终态事实）。 */
   workflowFacts(): WorkflowFacts;
   /** 在途非持续 HTTP 请求视图（规范 §7.4：自动收尾等待其落盘）。 */
   pendingNonStreamingRequests(): ReadonlyArray<{ id: string; url: string }>;
@@ -114,7 +114,7 @@ export interface CaptureSession {
    * 未知根 target 或截图失败 → 显式记账并返回 false（识别失败不停采集）。
    */
   captureViewerInitialScreenshot(targetId: string): Promise<boolean>;
-  /** 阶段 3 派生的证据摘要（workflowStatus 由引擎从观察事实派生，不再由调用方指定）。 */
+  /** 从观察事实派生的证据摘要（workflowStatus 由引擎从观察事实派生，不再由调用方指定）。 */
   integrityEvidence(): PackIntegrityEvidenceSummary;
 }
 

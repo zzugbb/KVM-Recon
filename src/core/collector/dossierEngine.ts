@@ -1,5 +1,5 @@
 /**
- * 适配候选链派生引擎（规范 §12 / §19，阶段 4）。
+ * 适配候选链派生引擎（规范 §12）。
  *
  * 从装配时事实束（readPackFacts 重建 + 装配层已解析的 value-flow）派生
  * ai/adapter-dossier.json 的候选链与 ai/index.json 的候选 ID 列表。

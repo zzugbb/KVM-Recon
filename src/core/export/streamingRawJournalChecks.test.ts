@@ -7,7 +7,7 @@ import { createSampleCapturePackV2 } from '../capture-pack-v2/createSampleCaptur
 import type { ZipArtifact } from './exportPackV2Zip';
 
 /**
- * 流式 raw journal 校验（阶段 1 门禁）：样例包正向零问题（与元数据校验
+ * 流式 raw journal 校验：样例包正向零问题（与元数据校验
  * 双通道覆盖一致），以及每类领域反例必须在流式通道被独立抓出——
  * cdp seq 递增、空 journal、NetLog 字段/元素、帧偏移、BodyRef、通道关联。
  */

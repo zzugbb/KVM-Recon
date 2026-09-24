@@ -14,10 +14,6 @@ The main branch is developing 0.3.0. The published 0.2.10 release uses an older 
 
 The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
-## Screenshots
-
-The current development UI is a single-job capture workbench; historical screenshots may not match it.
-
 ## What this project is
 
 - An offline capture tool. It is **not** a production KVM gateway and does not provide a remote console for operators.
@@ -45,7 +41,7 @@ Development-version field instructions (Chinese) are in [docs/field-guide.md](do
 3. Start capture. The tool opens an isolated browser and records optional TLS/Redfish facts.
 4. An embedded browser opens the BMC. On-site staff **manually** log in if needed.
 5. Open HTML5 KVM and wait for the Viewer picture; keep any popup open.
-6. The tool records browser-visible HTTP, scripts/Workers, state, screenshots, and realtime channels.
+6. The tool records Chromium-observable HTTP, scripts/Workers, state, screenshots, and realtime channels. The pack includes `raw/http/session.har` with captured bodies, so no separate Chrome HAR export is needed. Missing bodies or sources are reported; HAR is not a wire-level packet capture.
 7. Manually export the pack. Start with `00_START_HERE.md` inside the ZIP.
 
 The main window shows the current tool version (`vX.Y.Z`). Exported packs also include `manifest.tool.buildId` so a field package can be traced to the exact build.

@@ -32,7 +32,7 @@ afterEach(async () => {
   }
 });
 
-describe('createMockKvmServer（规范 §19 阶段 0 / §20）', () => {
+describe('createMockKvmServer（规范 §20）', () => {
   it('每次启动随机生成不同 URL；固定 seed 时可复现', async () => {
     const first = await bootMock();
     const second = await bootMock();
@@ -64,7 +64,7 @@ describe('createMockKvmServer（规范 §19 阶段 0 / §20）', () => {
     const loginPageHtml = await loginPage.text();
     expect(loginPageHtml).toContain(handle.paths.loginApi);
     expect(loginPageHtml).not.toContain('api/session');
-    // 登录页内联脚本真正执行 WebCrypto 摘要（阶段 2 Collector 必须捕获该运行时链）。
+    // 登录页内联脚本真正执行 WebCrypto 摘要（采集器 必须捕获该运行时链）。
     expect(loginPageHtml).toContain('crypto.subtle.digest("SHA-256"');
 
     // 错误摘要凭据被服务端拒绝。

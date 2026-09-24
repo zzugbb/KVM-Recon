@@ -9,7 +9,7 @@ import { recoverCrashedJob } from '../../core/export/recoverCrashedJob';
 import { finalizeFailedStart, type FailedStartController } from './failedStartFinalizer';
 
 /**
- * capture:start 失败收尾（P2-4）：start 中途失败不得把作业滞留在
+ * capture:start 失败收尾：start 中途失败不得把作业滞留在
  * active + 租约被持有（stop/export/discard 全拒绝的死状态）。
  * 用真实采集会话（core，无 Electron）+ 结构 Controller 替身注入失败：
  * - 收尾成功：finalize 落盘 + capture-facts（真实摘要）+ UI 可接管；

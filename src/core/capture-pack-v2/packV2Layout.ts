@@ -84,7 +84,7 @@ export interface PackV2LayoutCheck {
    * §11 列出但包内没有任何文件的目录。ZIP 内不存在空目录，内容相关目录
    * （bodies / websocket / dom-snapshots / screenshots / scripts/files / probe）
    * 只在存在对应事实时出现，因此目录缺失是提示信息，不单独判定布局非法；
-   * 「该有却没有」的缺失由证据图与完整度门禁（阶段 3）负责。
+   * 「该有却没有」的缺失由证据图与完整度门禁负责。
    */
   missingDirs: string[];
   unexpectedTopLevelEntries: string[];

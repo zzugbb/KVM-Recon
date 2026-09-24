@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 
 /**
- * 完全未知、随机 URL 的本地 Mock KVM（规范 §19 阶段 0）。
+ * 完全未知、随机 URL 的本地 Mock KVM（规范 §20）。
  *
  * 用于验证「清空所有厂商和协议签名后，随机 URL 的 Mock KVM 仍得到
  * COMPLETE + KVM_REACHED」（规范 §20）：
@@ -200,7 +200,7 @@ export function createMockKvmServer(options: MockKvmOptions = {}): Promise<MockK
       '<button type="submit" id="login-submit">登录</button>',
       '</form>',
       // 登录页真正执行 WebCrypto 摘要：密码字段提交的是 SHA-256(passphrase:nonce)。
-      // 登录接口验证摘要，错误凭据返回 401；阶段 2 的 Collector 必须从真实浏览器
+      // 登录接口验证摘要，错误凭据返回 401；采集器 必须从真实浏览器
       // 捕获这条运行时加密链才能复现登录。登录成功后把 csrfToken 存入
       // sessionStorage 并跳转控制台入口——真实浏览器无需任何手工步骤即可走完整链。
       '<script id="login-digest">',

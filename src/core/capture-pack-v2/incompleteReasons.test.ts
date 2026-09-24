@@ -7,7 +7,7 @@ import {
 } from './incompleteReasons';
 
 describe('incompleteReasons（规范 §14 稳定代码）', () => {
-  it('十一个稳定代码与规范 §14 顺序一致（前 8 个为规范典型代码，后 3 个为阶段 0 门禁补充）', () => {
+  it('十一个稳定代码与规范 §14 顺序一致', () => {
     expect(INCOMPLETE_REASON_CODES).toEqual([
       'INCOMPLETE_BODY_MISSING',
       'INCOMPLETE_TARGET_ATTACH',

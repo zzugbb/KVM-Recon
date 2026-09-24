@@ -1,5 +1,5 @@
 /**
- * raw/browser/storage.json 的流式事实提取（规范 §8.3，阶段 6 刀 1）。
+ * raw/browser/storage.json 的流式事实提取（规范 §8.3）。
  *
  * storage.json 的 indexedDb records 内联无上界（零截断红线不允许写盘裁剪），
  * 而证据图只消费 cookie 对、sessionStorage / localStorage 值与 capturedAt

@@ -1,5 +1,5 @@
 /**
- * 阶段 2：Mock KVM + 协议无关采集落盘对照 E2E 运行器。
+ * Mock KVM + 协议无关采集落盘对照 E2E 运行器。
  */
 
 import { spawn } from 'node:child_process';
@@ -101,7 +101,7 @@ async function main() {
       js: "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);",
     },
   });
-  // 阶段 4 断言从导出 ZIP（回放客户端消费的交付物）读取派生物：
+  // 断言从导出 ZIP（回放客户端消费的交付物）读取派生物：
   // readZipEntries 复用生产采集 E2E 的 ZIP 读取器
   await build({
     entryPoints: [join(rootDir, 'src/main/capture/runProductionCaptureE2e.ts')],

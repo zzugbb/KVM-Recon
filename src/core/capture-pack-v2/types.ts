@@ -19,8 +19,7 @@ export type WorkflowStatus = 'KVM_REACHED' | 'LOGIN_REACHED' | 'TARGET_OPENED';
 
 /**
  * 完整度原因稳定代码（规范 §14）。
- * 前 8 个为规范 §14 列出的典型代码；后 3 个是 0.3.0 阶段 0 为
- * raw journal 关闭、浏览器状态写入与证据引用闭环三类门禁失败补充的稳定代码，
+ * 包括 raw journal 关闭、浏览器状态写入与证据引用闭环的失败代码，
  * 保证任何门禁失败都必须有显式原因（规范 §3：缺失必须显式）。
  */
 export type IncompleteReasonCode =
@@ -138,7 +137,7 @@ export interface PackV2Integrity {
   generatedAt: string;
 }
 
-// ---------- 完整度证据摘要与派生结果（阶段 3 IntegrityEngine 的契约骨架） ----------
+// ---------- 完整度证据摘要与派生结果 ----------
 
 export interface IntegrityEvidenceGap {
   id: string;
@@ -146,8 +145,7 @@ export interface IntegrityEvidenceGap {
 }
 
 /**
- * 完整度证据摘要。阶段 0 只固化字段语义；阶段 3 的 IntegrityEngine
- * 负责从真实采集事实填充本结构，再交给 derivePackIntegrity。
+ * 完整度证据摘要由采集事实填充，再交给 derivePackIntegrity。
  */
 export interface PackIntegrityEvidenceSummary {
   /** 采集器在第一次导航前已挂载（规范 §14 条件 1）。 */

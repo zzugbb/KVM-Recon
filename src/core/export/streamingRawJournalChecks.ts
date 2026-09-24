@@ -1,5 +1,5 @@
 /**
- * 无界 raw journal 的流式内容校验（阶段 1 导出门禁，规范 §9 磁盘优先）。
+ * 无界 raw journal 的流式内容校验（规范 §9 的磁盘优先导出门禁）。
  *
  * 元数据/索引规模的结构化文件（catalog、replay、ai、状态、Schema 副本）
  * 由 validatePackV2Consistency 在内存校验；CDP journal、NetLog、HTTP 事务、
@@ -13,7 +13,7 @@
  * 集合（O(不同 ID) 而非 O(行数)），问题列表上限 200 项并明确截断。
  * 仍驻留内存的跨文件闭包索引（catalog/resources、catalog/relations、
  * replay/http、ai/value-flow）是 O(不同事实数) 的元数据——磁盘化跨文件
- * 索引属于阶段 3 证据图（规范 §18/§19），不在阶段 1 范围。
+ * 跨文件索引由证据图负责，本流式器只验证原始日志。
  * path→Schema 映射复用 packV2Consistency 的同一事实源（单一实现）。
  */
 

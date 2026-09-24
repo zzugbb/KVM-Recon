@@ -11,7 +11,7 @@ import { PACK_V2_INTEGRITY_GATE_IDS } from './types';
 
 /**
  * 采集完整度与工作流状态（规范 §6）以及完整度门禁（规范 §14）。
- * 阶段 0 固化契约；阶段 3 的 IntegrityEngine 负责从真实采集事实填充证据摘要。
+ * 证据摘要由采集器的真实观察事实填充。
  */
 
 export interface PackStatusCheck {

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { readStorageSnapshotFacts } from './storageSnapshotFacts';
 
 /**
- * 阶段 6 刀 1：storage.json 流式事实提取。
+ * storage.json 流式事实提取。
  * 反例先行：空输入 / 非法 JSON / 多根必须抛错（读取失败显式记账，
  * 不允许静默当作空快照）；被消费字段的语义与整读 JSON.parse 等价。
  */

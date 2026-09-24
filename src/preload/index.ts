@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { APP_VERSION } from '../version';
 
 /**
- * 单作业模型 IPC 面（规范 §4.2，阶段 2）：
+ * 单作业 IPC 面（规范 §4.2）：
  * start（地址 + 设备说明）/ status / stop / export / discard，
  * + 恢复作业手动导出 exportRecovered（恢复只提示不自动写 ZIP）
  * 与恢复作业零观察事实丢弃 discardRecovered

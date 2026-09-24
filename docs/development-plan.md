@@ -15,7 +15,7 @@ Capture Pack 2.0 的详细契约见 [0.3 开发规范](v0.3-development-spec.md)
 - 不实现生产 KVM 网关，不实现浏览器插件。
 - 设备说明是自由文本，不参与采集或完整度判断。采集器不做协议族或厂商分类，也不生成 Adapter。
 
-## 3. 当前状态（2026-09-23）
+## 3. 当前状态
 
 **0.3.0 阶段 0–5 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
 
@@ -26,8 +26,8 @@ Capture Pack 2.0 的详细契约见 [0.3 开发规范](v0.3-development-spec.md)
 - 阶段 4（证据导航与 Replay）：`readPackFacts` 从包内工件重建事实；`dossierEngine`、`valueFlowEngine` 与 `replayEngine` 派生适配研究所需的候选请求、值传播、缺口与回放计划。它们不输出协议族或厂商判定；回放不可执行时逐条说明缺失资料。
 - 阶段 5（界面收口）：`stage.ts` 八阶段纯函数派生（idle/launching/capturing-login/capturing-viewer/finalizing/complete/incomplete/exported + 四步阶段条三态；已收尾但未派生 COMPLETE 一律按 incomplete，不主张未验证的完整）；界面重排为规范 §5 单屏单作业工作台（深石墨色板、稳定宽度计数器、最近事实 feed、高级诊断 `<details>` 默认折叠、lucide-react 图标）；`capture:status` 载荷扩展（计数器 / 包工件字节记账 / 收尾后预导出完整度 / 最近事实 / 磁盘余量与日志尾部）；导出收口（INCOMPLETE 按钮明确「导出未完整包」、「打开所在文件夹」路径由主进程决定、「采集下一台」丢弃清理）；删除 0.2.x 死 CSS 选择器。
 - 阶段 5 之后的修正：原始日志与正文流式读取，Replay 动态值闭环，启动失败和崩溃恢复的证据保留；曾加入的离线协议分类 Analyzer 已移除，协议分类不属于采集器职责。
-- 0.2.x 运行链路与五项大小上限已删除；新链路无上限、不脱敏；workflowStatus 由阶段 3 派生引擎从观察事实给出（可达 `KVM_REACHED`），完整度由十项门禁从证据摘要派生——`COMPLETE` 只与 `KVM_REACHED` 组合，未到达 KVM 时 `INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED`。
-- 当前分支需要重新跑完整门禁；现场 HAR 回放依赖 `KVM_RECON_FIELD_COLLECTION_2`，未设置则跳过。真机与安装包验收仍属阶段 6，尚未执行。
+- 0.2.x 运行链路与五项人为大小上限已删除；新链路不脱敏，大小受磁盘容量与 Chromium/CDP 可观察能力约束。`workflowStatus` 从观察事实派生，完整度由十项门禁判断；`COMPLETE` 只与 `KVM_REACHED` 组合。
+- 现场 HAR 回放依赖 `KVM_RECON_FIELD_COLLECTION_2`，未设置则跳过。真机与安装包验收仍属阶段 6，尚未执行。
 
 未开始：阶段 6（全量验收）。
 

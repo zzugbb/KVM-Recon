@@ -23,7 +23,7 @@ import { createSampleCapturePackV2 } from '../capture-pack-v2/createSampleCaptur
 import { validatePackV2Consistency } from '../capture-pack-v2/packV2Consistency';
 
 /**
- * 阶段 1 流式 ZIP64 导出测试（规范 §9）。一致性门禁无条件生效：
+ * 流式 ZIP64 导出测试（规范 §9）。一致性门禁无条件生效：
  * 机制类测试使用完整合法的样例包；verifyPackV2Zip 单元测试用 yazl
  * 直写 ZIP（不经导出器）；门禁负例验证悬空引用 / 损坏状态包在写 ZIP
  * 之前即被拒绝，不产生任何文件。
@@ -403,7 +403,7 @@ describe('verifyPackV2Zip（重开校验）', () => {
   }, 30000);
 });
 
-describe('样例包导出集成（阶段 1 验收）', () => {
+describe('样例包导出集成', () => {
   it('样例包导出 → 读回 → checksums 与样例一致 → 通过独立一致性验证器', async () => {
     const dir = await newTempDir();
     const zipPath = join(dir, 'pack.zip');

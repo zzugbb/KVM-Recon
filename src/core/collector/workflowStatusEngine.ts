@@ -36,7 +36,7 @@ export interface WorkflowNavigationFact {
   url: string | null;
 }
 
-/** 派生引擎的只读事实快照（stop 前 collector 内存态；阶段 3 Viewer 识别共用）。 */
+/** 派生引擎的只读事实快照（stop 前 collector 内存态；Viewer 识别共用）。 */
 export interface WorkflowFacts {
   transactions: ReadonlyArray<PackV2HttpTransactionRow>;
   actions: ReadonlyArray<PackV2BrowserActionRow>;

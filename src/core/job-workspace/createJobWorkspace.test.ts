@@ -22,7 +22,7 @@ import {
 import { createBodyStore } from '../body-store/createBodyStore';
 
 /**
- * 阶段 1 单作业磁盘工作区测试：OS 内核独占互斥、workspaceId 实例身份、
+ * 单作业磁盘工作区测试：OS 内核独占互斥、workspaceId 实例身份、
  * finalized-unexported 可恢复、内部路径含 .owner。
  */
 

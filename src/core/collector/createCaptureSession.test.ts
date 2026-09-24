@@ -9,7 +9,7 @@ import { startCaptureSession, type CaptureSession, type CdpSession } from './cre
 import { derivePackIntegrity } from '../capture-pack-v2/packStatus';
 
 /**
- * 阶段 2 采集会话：协议无关采集把 CDP 事实落到 JobWorkspace。
+ * 采集会话：协议无关采集把 CDP 事实落到 JobWorkspace。
  * 不接 0.2.x recorder，不截断，不脱敏。
  */
 
@@ -211,7 +211,7 @@ function createFakeCdp(options?: {
   };
 }
 
-describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态）', () => {
+describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态）', () => {
   it('CDP journal 记录命令与事件，未知 params 字段原样保留', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
@@ -1925,7 +1925,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
 
     const diagnostics = session.evidence().diagnostics();
     expect(diagnostics.droppedEventByMethod['observer-hook-failed']).toBe(1);
-    // 阶段 3：明细（hook/stage）保留在 diagnostics，供派生折扣与表面条件映射
+    // 明细（hook/stage）保留在 diagnostics，供派生折扣与表面条件映射
     expect(diagnostics.observerHookFailures).toEqual([
       { hook: 'crypto', stage: 'install', detail: 'subtle is not extensible' },
     ]);
@@ -2878,7 +2878,7 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
     expect(session.evidence().diagnostics().droppedEventByMethod['netlog-wrap']).toBe(1);
   });
 
-  it('HAR 互操作副本：文本正文内嵌，二进制正文记 size + bodyRef 注释', async () => {
+  it('HAR 互操作副本：文本和二进制正文均可还原', async () => {
     const rootDir = await newRootDir();
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const session = await startSession({
@@ -2924,17 +2924,17 @@ describe('阶段 2 采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览�
         version: string;
         entries: Array<{
           request: { url: string; postData?: { text: string } };
-          response: { content: { size: number; mimeType: string; text?: string; comment?: string } };
+          response: { content: { size: number; mimeType: string; text?: string; encoding?: string } };
         }>;
       };
     };
     expect(har.log.version).toBe('1.2');
     expect(har.log.entries).toHaveLength(2);
     const [binary, text] = har.log.entries;
-    expect(binary.response.content.comment).toContain('raw/http/bodies/');
     expect(binary.response.content.size).toBe(pngBytes.byteLength);
     expect(binary.response.content.mimeType).toBe('image/png');
-    expect(binary.response.content.text).toBe('');
+    expect(binary.response.content.encoding).toBe('base64');
+    expect(Buffer.from(binary.response.content.text ?? '', 'base64')).toEqual(pngBytes);
     expect(text.request.postData?.text).toBe('user=operator&password=operator-passphrase');
     expect(text.response.content.text).toBe('{"rows":[1,2,3]}');
   });

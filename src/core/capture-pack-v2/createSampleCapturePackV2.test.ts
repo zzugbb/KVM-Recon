@@ -45,7 +45,7 @@ function jsonLinesOf(artifacts: Map<string, SampleArtifact>, path: string): unkn
     .map(line => JSON.parse(line));
 }
 
-describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
+describe('createSampleCapturePackV2（规范 §11 / §20）', () => {
   it('生成未知协议的 COMPLETE + KVM_REACHED 样例，并通过独立一致性验证', async () => {
     const sample = await createSampleCapturePackV2();
     expect(sample.manifest.captureIntegrity).toBe('COMPLETE');

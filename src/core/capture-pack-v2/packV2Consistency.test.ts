@@ -9,7 +9,7 @@ import {
 import { validatePackV2Consistency } from './packV2Consistency';
 
 /**
- * 阶段 0 负向一致性测试（审查要求）：删除正文、删除截图、制造悬空引用、
+ * 负向一致性测试：删除正文、删除截图、制造悬空引用、
  * 篡改哈希、篡改帧偏移、状态不一致、Schema 违约、空 journal、重复路径、
  * 非法顶层条目都必须被独立验证器抓出，不允许「声明 COMPLETE 但原始资料缺失」。
  */

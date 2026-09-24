@@ -1,5 +1,5 @@
 /**
- * 作业工作区 → Capture Pack 2.0 ZIP 导出（规范 §9 / §11 / §14，阶段 2）。
+ * 作业工作区 → Capture Pack 2.0 ZIP 导出（规范 §9 / §11 / §14）。
  *
  * 派生文件（00_START_HERE / manifest / integrity / report / ai/* / replay/* /
  * schema 副本）由 assembleCapturePackV2 从完整度事实生成；raw/ 与 catalog/

@@ -37,7 +37,7 @@ describe('derivePageStage（页面阶段派生）', () => {
   it('反例：stop 序列进行中（workspace finalizing）载荷必须仍是 capturing + finalizing，不得提前报 stopped', () => {
     // 载荷契约：完整度只在 finalized 落盘后派生，finalizing 窗口内
     // captureIntegrity 为 null——若此时 state 已是 stopped，会在判定
-    // 存在前显示「采集不完整」与「导出未完整包」（P3-2 回归钉）。
+    // 存在前显示「采集不完整」与「导出未完整包」。
     expect(derivePageStage({ job: job({ finalizing: true, captureIntegrity: null }), launching: false })).toBe('finalizing');
   });
 

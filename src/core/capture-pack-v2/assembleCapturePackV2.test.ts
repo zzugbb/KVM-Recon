@@ -65,7 +65,7 @@ function fileOf(result: Awaited<ReturnType<typeof assembleCapturePackV2>>, path:
   return typeof file.content === 'string' ? file.content : Buffer.from(file.content).toString('utf8');
 }
 
-describe('assembleCapturePackV2（阶段 2 包装配）', () => {
+describe('assembleCapturePackV2', () => {
   it('完整度从证据摘要派生：TARGET_OPENED 恒 INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED；缺口映射 missing-evidence', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({ jobId: 'job-asm-incomplete', rootDir });

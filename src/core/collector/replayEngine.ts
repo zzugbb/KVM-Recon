@@ -1,5 +1,5 @@
 /**
- * Replay 计划派生引擎（规范 §16 / §19，阶段 4）。
+ * Replay 计划派生引擎（规范 §16）。
  *
  * 从装配时事实束派生 replay/manifest.json、replay/http.jsonl 行与
  * replay/channels.json：登录候选 + 启动候选请求（带正文模板路径）与

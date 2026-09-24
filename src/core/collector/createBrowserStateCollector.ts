@@ -53,7 +53,7 @@ export interface BrowserStateCollector {
   addStorageContext(file: PackV2BrowserStorageContext): Promise<void>;
   /** 收尾 Frame Tree 快照（Page.getFrameTree 原样落盘，规范 §8.4）。 */
   writeFrameTree(file: Omit<PackV2BrowserFrameTreeFile, 'schemaVersion'>): Promise<void>;
-  /** 派生引擎只读快照：全部用户动作行浅拷贝（阶段 3 workflowStatus 派生）。 */
+  /** 派生引擎只读快照：全部用户动作行浅拷贝（供 workflowStatus 派生）。 */
   actionRows(): PackV2BrowserActionRow[];
   /** 派生引擎只读快照：全部渲染/执行表面行浅拷贝（§7.3 第 2 组事实）。 */
   renderSurfaceRows(): PackV2RenderSurfaceRow[];

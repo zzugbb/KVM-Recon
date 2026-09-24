@@ -10,8 +10,8 @@
  * - Viewer 自动收尾（规范 §7.4）：检测 Viewer 活动 → 稳定窗口静默 → 只 stop，
  *   绝不自动导出 / 关窗 / 弹保存框。
  *
- * Electron 行为从 0.2.x 适配器原样移植（采集语义不变），落盘换 2.0 链路。
- * 无人为大小上限：工作区磁盘水位是唯一物理约束。挂载/探测失败显式记账
+ * 不按厂商或协议族筛选采集内容；正文与帧没有人为大小上限。
+ * 实际范围受磁盘容量和 Chromium 可观察能力约束。挂载/探测失败显式记账
  * （targetAttachFailures / droppedEvent），绝不静默吞掉。
  */
 
@@ -409,7 +409,7 @@ export async function createProductionCapture(
     if (!environment) {
       throw new Error(`页面环境缺失（无根窗口挂载），拒绝装配导出：${init.jobId}`);
     }
-    // workflowStatus 由采集会话从观察事实派生（阶段 3），不再硬编码
+    // workflowStatus 由采集会话从观察事实派生，不由控制器硬编码
     const evidenceSummary = captureSession.integrityEvidence();
     const result = await exportJobWorkspaceZip({
       workspace: captureSession.workspace,

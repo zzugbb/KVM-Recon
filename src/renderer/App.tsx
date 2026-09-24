@@ -4,12 +4,7 @@ import { Activity, AlertTriangle, Archive, Download, FolderOpen, Play } from 'lu
 import { APP_VERSION } from '../version';
 import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageStatusText } from './stage';
 
-/**
- * 单屏单作业工作台（规范 §4 / §5，阶段 5 收口）。
- * 顶栏常驻「原始资料 · 未脱敏」；两个输入（BMC 地址 + 设备说明）；
- * 阶段条 + 稳定宽度计数器 + 最近事实（非敏感摘要）；高级诊断默认折叠；
- * 导出永远手动（COMPLETE 不自动弹保存框；INCOMPLETE 按钮明确写「导出未完整包」）。
- */
+/** 单作业采集工作台；导出始终由用户在收尾后手动触发。 */
 
 interface StatusJob {
   jobId: string;
@@ -148,8 +143,8 @@ export function App() {
   const canStart =
     !job && !busy && target.trim().length > 0 && !preloadMissing &&
     recovery?.kind !== 'recovered' && recovery?.kind !== 'refused' && recovery?.kind !== 'failed';
-  const canStop = job?.state === 'capturing' && !busy;
-  const canExport = job && job.state !== 'exported' && !busy;
+  const canStop = job?.state === 'capturing' && !job.finalizing && !busy;
+  const canExport = job?.state === 'stopped' && !busy;
   // 已导出作业可清理；零观察事实（无事务/通道/动作行）的已收尾作业也允许
   // 直接丢弃（主进程 checkUnexportedDiscard 门禁复核，界面只做宽判）
   const canDiscard =

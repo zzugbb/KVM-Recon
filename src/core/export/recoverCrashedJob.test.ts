@@ -151,7 +151,7 @@ describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
     await result.workspace.close();
   });
 
-  it('幂等再恢复：恢复覆写过的摘要是保守摘要，二次恢复不得标成真实摘要（三轮审查 T2）', async () => {
+  it('幂等再恢复：恢复覆写过的保守摘要不能在二次恢复时标成真实摘要', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({
       jobId: 'job-recover-idempotent',

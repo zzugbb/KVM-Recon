@@ -97,7 +97,7 @@ describe('derivePackIntegrity（规范 §14 门禁）', () => {
   });
 });
 
-describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
+describe('完整度失败 fixtures（规范 §14 / §20）', () => {
   it('每个 INCOMPLETE 稳定代码都有失败 fixture，且派生结果精确命中该代码', () => {
     expect(INTEGRITY_FAILURE_FIXTURES).toHaveLength(11);
     const coveredCodes = new Set(INTEGRITY_FAILURE_FIXTURES.map(fixture => fixture.reason));

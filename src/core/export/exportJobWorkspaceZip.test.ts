@@ -10,7 +10,7 @@ import { parseChecksumsManifest, sha256OfContent } from './checksumsManifest';
 import { verifyPackV2Zip } from './exportPackV2Zip';
 
 /**
- * 阶段 2 完整导出链：workspace raw/catalog 工件 + assembleCapturePackV2 派生
+ * 完整导出链：workspace raw/catalog 工件 + assembleCapturePackV2 派生
  * 文件（manifest / integrity / report / ai / replay / schema 副本）→ 流式 ZIP →
  * 重开逐条目校验。反例：缺必需工件拒绝导出且不留 ZIP；顶层额外文件拒绝；
  * environment 缺失拒绝装配。
@@ -120,7 +120,7 @@ function expectedEntries(checksums: string) {
   return expected;
 }
 
-describe('exportJobWorkspaceZip（阶段 2 完整包装配导出）', () => {
+describe('exportJobWorkspaceZip', () => {
   it('workspace 工件 + 派生文件装配导出，重开逐条目校验通过，TARGET_OPENED 恒为 INCOMPLETE', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({

@@ -5,10 +5,10 @@ import type {
 } from './types';
 
 /**
- * 完整度失败 Fixture（规范 §19 阶段 0：为每个完整度错误建立失败 Fixture）。
+ * 完整度失败 Fixture（规范 §14：为每个完整度错误建立失败 Fixture）。
  *
  * 每个 INCOMPLETE 稳定原因代码对应一个失败 fixture：除该缺失外，
- * 其余证据全部在。阶段 3 的 IntegrityEngine 必须让每个 fixture
+ * 其余证据全部在。完整度引擎 必须让每个 fixture
  * 派生出 INCOMPLETE + 对应原因代码；任何「缺失但显示完整」的回归
  * 都会在这里暴露。
  */

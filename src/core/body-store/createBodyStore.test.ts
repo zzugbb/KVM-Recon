@@ -13,7 +13,7 @@ import {
 } from '../job-workspace/createJobWorkspace';
 
 /**
- * 阶段 1 BodyStore 测试（规范 §9）：SHA-256 内容寻址、流式写入、
+ * BodyStore 测试（规范 §9）：SHA-256 内容寻址、流式写入、
  * 去重、零大小上限（>2 MiB 正文 / >8 MiB 总量 / >24 文件全部成功）、
  * 写入失败与 abort 清理。
  */

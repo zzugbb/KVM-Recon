@@ -50,7 +50,7 @@ import type {
 import { UNTRUSTED_PAGE_CONTENT_MARKER } from './types';
 
 /**
- * Capture Pack 2.0 样例包生成器（规范 §19 阶段 0）。
+ * Capture Pack 2.0 样例包生成器（规范 §11）。
  *
  * 由固定 seed 的随机 URL Mock KVM 实际驱动（fetch + WebSocket）生成，
  * 展示 §11 全部必需文件与「COMPLETE + KVM_REACHED」验收场景
@@ -143,7 +143,7 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([length, typeAndData, crc]);
 }
 
-/** 1x1 RGBA PNG（占位样例截图；真实画面由阶段 2 采集器生成）。 */
+/** 1x1 RGBA PNG（占位样例截图；真实画面由采集器生成）。 */
 function sampleViewerPng(rgba: [number, number, number, number]): Uint8Array {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(1, 0);
@@ -1032,8 +1032,8 @@ export async function createSampleCapturePackV2(
       { path: 'raw/browser/dom-snapshots/0001-login.html', content: exchanges[0].responseBody },
       { path: 'raw/browser/dom-snapshots/0002-console-entry.html', content: exchanges[2].responseBody },
       { path: 'raw/browser/dom-snapshots/0003-viewer.html', content: exchanges[4].responseBody },
-      // Viewer 初始与稳定阶段截图（规范 §7.4）。阶段 0 为两张不同的占位样例图，
-      // 真实画面截图由阶段 2 采集器生成。
+      // Viewer 初始与稳定阶段截图（规范 §7.4）。样例使用两张不同的占位图，
+      // 真实画面截图由采集器生成。
       { path: 'raw/browser/screenshots/0001-viewer-initial.png', content: sampleViewerPng([0x42, 0xc7, 0xb7, 0xff]) },
       { path: 'raw/browser/screenshots/0002-stop.png', content: sampleViewerPng([0x4b, 0xc2, 0x7a, 0xff]) },
       { path: 'raw/scripts/index.json', content: json2({ schemaVersion: '2.0.0', scripts } satisfies PackV2ScriptsIndex) },
@@ -1282,7 +1282,7 @@ function buildSampleHar(
   transactions: PackV2HttpTransactionRow[],
   httpBodies: Map<string, string>,
 ): unknown {
-  // 复用真实 harBuilder 的条目构造：HAR 形状只有一处定义，样例与真实构建不得漂移
+  // 复用 HAR 条目字段定义；样例只有文本正文，二进制流式编码由 harBuilder 测试覆盖。
   const textOf = (ref?: { sha256: string }): string | null => {
     const text = ref ? httpBodies.get(ref.sha256) : undefined;
     return text === undefined ? null : text;

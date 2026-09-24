@@ -4,7 +4,7 @@
  * 不复用 0.2.x recorder，不按 MIME/大小跳过正文。
  *
  * 失败记账：所有被捕获后继续执行的错误都进 evidence（缺口或丢弃计数），
- * 不静默吞掉；根会话第一刀失败（attach / Network.enable / 观察脚本注入）
+ * 不静默吞掉；根会话初始化失败（attach / Network.enable / 观察脚本注入）
  * 仍然抛出，调用方必须看到「采集器没有就绪」。
  */
 
@@ -44,7 +44,8 @@ import type {
 
 const DEFAULT_NETWORK_ENABLE_TIMEOUT_MS = 5000;
 const OPTIONAL_CDP_TIMEOUT_MS = 3000;
-const SCRIPT_SOURCE_TIMEOUT_MS = 5000;
+const SCRIPT_SOURCE_TIMEOUT_MS = 15000;
+const LARGE_SCRIPT_SOURCE_TIMEOUT_MS = 60000;
 const INTERNAL_SCRIPT_URL_PREFIX = 'kvm-recon-internal://';
 
 /**
@@ -904,7 +905,7 @@ export async function attachProtocolAgnosticCapture(
     }
     if (kind === 'observer-hook-failed') {
       // 观察脚本钩子安装失败：观察面缺失必须显式记账（规范 §3）；
-      // 明细（hook/stage）供派生折扣与表面条件缺口映射（阶段 3）。
+      // 明细（hook/stage）供派生折扣与表面条件缺口映射。
       input.evidence.recordObserverHookFailure(
         stringValue(parsed.hook) || 'unknown',
         stringValue(parsed.stage) || 'unknown',
@@ -1091,7 +1092,9 @@ export async function attachProtocolAgnosticCapture(
         try {
           const result = await awaitWithTimeout(
             loggedSend('Debugger.getScriptSource', { scriptId }, fetchSessionId),
-            SCRIPT_SOURCE_TIMEOUT_MS,
+            lengthBytes !== undefined && lengthBytes >= 2 * 1024 * 1024
+              ? LARGE_SCRIPT_SOURCE_TIMEOUT_MS
+              : SCRIPT_SOURCE_TIMEOUT_MS,
             `Debugger.getScriptSource timed out for ${scriptId}`,
           );
           if (isRecord(result)) {
@@ -1567,7 +1570,7 @@ export async function attachProtocolAgnosticCapture(
     });
   } catch (error) {
     // 捕获根会话 attach / Network.enable / 观察脚本注入失败
-    // 策略：第一刀失败关闭；先移除监听并 detach，绝不留活监听器与孤儿事件队列
+    // 策略：初始化失败时先移除监听并 detach，绝不留活监听器与孤儿事件队列
     try {
       input.cdp.off?.('message', onCdpMessage);
     } catch (cleanupError) {

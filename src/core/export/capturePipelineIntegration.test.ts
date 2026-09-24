@@ -14,7 +14,7 @@ import { recoverActiveJobWorkspace, startJobWorkspace } from '../job-workspace/c
 import { createSampleCapturePackV2 } from '../capture-pack-v2/createSampleCapturePackV2';
 
 /**
- * 阶段 1 端到端集成（规范 §19）：单作业工作区 + 内容寻址正文 +
+ * 端到端集成（规范 §19）：单作业工作区 + 内容寻址正文 +
  * 流式 ZIP64 导出全链路。工作区写入的是完整合法样例包（一致性门禁
  * 无条件生效），HTTP 正文经 BodyStore 落盘（内容寻址路径与样例一致），
  * 并在崩溃恢复边界前后各写一半工件，验证恢复后继续采集再导出。
@@ -32,7 +32,7 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map(root => rm(root, { recursive: true, force: true })));
 });
 
-describe('阶段 1 全链路：工作区 → 正文存储 → 流式导出', () => {
+describe('全链路：工作区 → 正文存储 → 流式导出', () => {
   it('采集 → 崩溃 → 恢复 → 继续采集 → 导出 → 读回与样例逐字节一致', async () => {
     const rootDir = await newRootDir();
     const sample = await createSampleCapturePackV2();

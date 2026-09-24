@@ -2,7 +2,7 @@
  * 采集失败记账（规范 §3「缺失必须显式」）。
  *
  * 任何被捕获后继续执行的错误（事件落盘失败、正文不可读、帧断档、无法
- * 观察的通道）都必须在这里留下计数与缺口 ID；阶段 3 的 IntegrityEngine
+ * 观察的通道）都必须在这里留下计数与缺口 ID；完整度引擎
  * 用这些事实填充 PackIntegrityEvidenceSummary 并映射 INCOMPLETE 原因。
  * 没有记账的静默丢弃等于编造「没有发生过」。
  */
@@ -46,7 +46,7 @@ export interface CollectorEvidence {
   droppedEvent(method: string, error: unknown): void;
   /**
    * 观察脚本钩子安装失败：除 droppedEvent 计数外保留有界明细（hook/stage），
-   * 供 workflowStatus 派生折扣与表面条件缺口映射（阶段 3）。
+   * 供 workflowStatus 派生折扣与表面条件缺口映射。
    */
   recordObserverHookFailure(hook: string, stage: string, detail: string): void;
   markStorageLimitReached(): void;
@@ -57,7 +57,7 @@ export interface CollectorEvidence {
     storageLimitReached: boolean;
     observerHookFailures: ReadonlyArray<ObserverHookFailure>;
   };
-  /** 汇总为阶段 3 IntegrityEngine 的证据摘要输入。 */
+  /** 汇总为完整度引擎 的证据摘要输入。 */
   summary(input: {
     collectorReadyBeforeFirstNavigation: boolean;
     rawJournalsClosed: boolean;

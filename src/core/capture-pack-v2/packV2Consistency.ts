@@ -30,8 +30,7 @@ import type {
  * - WS 帧索引偏移与 frames.bin 长度、通道计数一致；通道验证按 channel.kind 分派；
  * - relations / value-flow / dossier / replay 引用的稳定 ID 均可解析。
  *
- * 阶段 0 用于样例包与负向测试（删除正文、删除截图、悬空引用必须被抓出）；
- * 阶段 3 的 IntegrityEngine 在真实导出时复用同一验证结论。
+ * 样例与真实导出共用本验证器；删除正文、截图或留下悬空引用都会被拒绝。
  */
 
 export type PackV2ConsistencyProblemCode =

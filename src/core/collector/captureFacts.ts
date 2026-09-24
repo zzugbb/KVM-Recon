@@ -1,5 +1,5 @@
 /**
- * 采集事实落盘（规范 §3 / §4.2，阶段 2 崩溃恢复）。
+ * 采集事实落盘（规范 §3 / §4.2 的崩溃恢复）。
  *
  * `catalog/capture-facts.json` 是采集会话的生命周期事实：第一个根挂载后即
  * 写入 v1（target / 环境 / startedAt），stop() 收尾时覆写终态（完整证据
@@ -29,9 +29,9 @@ export interface CaptureFacts {
   targetUrl: string | null;
   /** 从 targetUrl 解析的目标（host/port/scheme）；解析失败为 null（恢复导出拒绝）。 */
   target: { host: string; port: number; scheme: 'http' | 'https' } | null;
-  /** 页面侧 + 主进程侧合并环境（阶段 2 在首个根挂载后即采集一次）。 */
+  /** 页面侧 + 主进程侧合并环境（首个根挂载后采集）。 */
   environment: PackV2Environment | null;
-  /** 阶段 2 恒为 TARGET_OPENED（诚实下限；阶段 3 IntegrityEngine 接管派生）。 */
+  /** 初始标记为 TARGET_OPENED；收尾后由观察事实重新派生。 */
   workflowStatus: WorkflowStatus;
   /** stop() 收尾完成后为 true；false = 进程崩溃或异常退出。 */
   stopped: boolean;

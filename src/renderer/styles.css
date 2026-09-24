@@ -1,6 +1,4 @@
-/* 规范 §5.1：专业诊断工作台——安静、精确、有技术感。
-   深石墨背景、青绿主强调色；圆角 ≤8px；层级由边框与留白承担。
-   普通文本系统字体；IP / ID / 字节 / 路径等宽。 */
+/* 单作业诊断工作台；固定宽度的操作控件在窄窗口下重排。 */
 
 :root {
   --page-bg: #101214;
@@ -54,10 +52,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 6px 0 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .app-name {
@@ -135,6 +131,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button:disabled:not(.secondary) {
+  opacity: 1;
+  background: #242c2b;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
 button.secondary {
   background: transparent;
   color: var(--text-primary);
@@ -168,13 +171,12 @@ input:disabled {
 /* ---- 输入行 ---- */
 
 .target-row {
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: end;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--border);
 }
 
 .target-row label {
@@ -183,44 +185,37 @@ input:disabled {
   gap: 4px;
   color: var(--text-secondary);
   font-size: 12px;
-  flex: 1;
+  min-width: 0;
 }
 
 /* ---- 阶段条 ---- */
 
 .stage-bar {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  padding: 12px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 6px 0;
 }
 
 .stage-step {
+  text-align: center;
   color: var(--text-secondary);
   font-size: 13px;
-  padding: 2px 10px;
+  padding: 5px 8px;
   border-radius: var(--radius-small);
   border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.stage-bar .stage-step + .stage-step::before {
-  content: '──';
-  color: var(--border);
-  margin-right: 8px;
+  min-width: 0;
 }
 
 .stage-step.stage-active {
   color: var(--accent);
   border-color: var(--accent);
+  background: rgba(66, 199, 183, 0.08);
 }
 
 .stage-step.stage-done {
   color: var(--success);
-  border-color: var(--success);
+  border-color: rgba(75, 194, 122, 0.45);
 }
 
 /* ---- 状态行 / 计数器 ---- */
@@ -236,13 +231,12 @@ input:disabled {
 }
 
 .counters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  padding: 12px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 13px;
 }
@@ -259,10 +253,8 @@ input:disabled {
 /* ---- 最近事实 ---- */
 
 .recent-facts {
-  padding: 12px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .facts-list {
@@ -341,6 +333,7 @@ input:disabled {
   justify-content: space-between;
   gap: 16px;
   margin-top: auto;
+  padding-top: 12px;
 }
 
 .advanced-diagnostics {
@@ -348,7 +341,7 @@ input:disabled {
   border-radius: var(--radius);
   background: var(--workspace-bg);
   min-width: 0;
-  flex: 1;
+  flex: 1 1 180px;
 }
 
 .advanced-diagnostics summary {
@@ -408,4 +401,39 @@ input:disabled {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .target-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .target-row > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .action-bar {
+    flex-direction: column;
+  }
+
+  .advanced-diagnostics {
+    flex: none;
+    width: 100%;
+  }
+
+  .action-bar .actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  #root { padding: 0 16px 24px; }
+  .top-bar { flex-wrap: wrap; gap: 8px; }
+  .target-row { grid-template-columns: minmax(0, 1fr); }
+  .target-row > button { grid-column: 1; width: 100%; }
+  .stage-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .counters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .action-bar .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .action-bar .actions button { min-width: 0; white-space: normal; }
 }

@@ -1,5 +1,5 @@
 /**
- * 阶段 2：真实浏览器 Mock KVM + 协议无关采集会话落盘对照。
+ * 真实浏览器 Mock KVM + 协议无关采集会话落盘对照。
  * 断言来自工作区文件与 Mock 服务端观察到的请求/帧，不经 0.2.x recorder。
  */
 
@@ -329,7 +329,7 @@ async function run() {
       );
     }
 
-    // —— 阶段 3 新增工件的对照断言 ——
+    // —— 证据图与完整度工件对照 ——
 
     const timeline = jsonl(await readFile(join(dir, 'raw/browser/timeline.jsonl'), 'utf8'));
     const navigations = timeline.filter(row => row.kind === 'navigation').map(row => String(row.url));
@@ -414,7 +414,7 @@ async function run() {
       throw new Error(`netlog.json captureMode 异常：${netlog?.captureMode ?? '(缺失)'}`);
     }
 
-    // 阶段 3：workflowStatus 必须由引擎从观察事实派生出 KVM_REACHED
+    // workflowStatus 必须由引擎从观察事实派生出 KVM_REACHED
     // （点击 → 主框架导航 → WS 双向帧 + Set-Cookie cookie 传播），不得手工指定
     const summary = session.integrityEvidence();
     if (summary.workflowStatus !== 'KVM_REACHED') {
@@ -574,7 +574,7 @@ async function run() {
     // 只消费导出交付物，不读工作区
     console.log(`exported-capture-pack: ${exportResult.export.zipPath}`);
 
-    // 阶段 4：AI / Replay 派生物必须由装配时引擎从包内持久事实派生
+    // AI / Replay 派生物必须由装配时引擎从包内持久事实派生
     // （规范 §12/§16/§19）。断言读导出 ZIP（回放客户端消费的交付物），
     // 不读工作区文件——工作区与交付物一致由导出门禁保证，这里断言内容本身。
     const zipEntries = await readZipEntries(exportResult.export.zipPath);

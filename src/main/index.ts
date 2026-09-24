@@ -1,5 +1,5 @@
 /**
- * KVM-Recon 主进程入口（0.3.0 阶段 2：生产 Controller + 单作业模型）。
+ * KVM-Recon 主进程入口：生产采集 Controller 与单作业模型。
  *
  * IPC 面只保留单作业生命周期：start / status / stop / export / discard
  * （+ 恢复作业手动导出 exportRecovered 与零观察事实丢弃 discardRecovered）。

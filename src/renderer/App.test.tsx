@@ -9,7 +9,7 @@ import { APP_VERSION } from '../version';
  * 高级诊断默认折叠；0.2.x 交互（多作业/打开对比包/暂停/手动截图/复验）不得回归。
  */
 
-describe('App（单屏单作业工作台，阶段 5）', () => {
+describe('App（单屏单作业工作台）', () => {
   it('渲染 §5.2 单屏结构：顶栏未脱敏徽标 + 输入行 + 阶段条 + 计数器 + 最近事实', () => {
     const html = renderToStaticMarkup(<App />);
 
@@ -39,6 +39,7 @@ describe('App（单屏单作业工作台，阶段 5）', () => {
     expect(html).toContain('导出采集包');
     expect(html).toContain('打开所在文件夹');
     expect(html).toContain('采集下一台');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<svg[^>]*>.*?导出采集包/s);
   });
 
   it('高级诊断默认折叠（details 未展开）', () => {
