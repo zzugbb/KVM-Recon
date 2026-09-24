@@ -31,11 +31,6 @@ export interface OpenSocketInput {
 export interface SocketFrameInput {
   direction: 'up' | 'down';
   opcode: WsFrameOpcode;
-  /**
-   * CDP 不上报 FIN 位；本字段仅为兼容旧调用方保留，采集器以后视推导
-   * （下一帧是否 continuation）为准，忽略该值。
-   */
-  fin?: boolean;
   timestamp: string;
   payload: Uint8Array;
 }

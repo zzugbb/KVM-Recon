@@ -8,7 +8,6 @@ import { APP_VERSION } from '../version';
  * + 恢复作业手动导出 exportRecovered（恢复只提示不自动写 ZIP）
  * 与恢复作业零观察事实丢弃 discardRecovered
  * + revealExportFolder（打开最近导出 ZIP 所在文件夹，路径由主进程决定）。
- * 0.2.x 的多作业、暂停、手动截图、离场复验、打开/对比包已删除。
  */
 contextBridge.exposeInMainWorld('kvmRecon', {
   appName: 'KVM-Recon',

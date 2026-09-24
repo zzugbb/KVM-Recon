@@ -1,7 +1,7 @@
 /**
  * 把 CDP Network / Target / Runtime / Debugger / Page / Log / Browser 事件写入
  * 协议无关采集器（规范 §7.1 / §8）。
- * 不复用 0.2.x recorder，不按 MIME/大小跳过正文。
+ * 不按 MIME/大小跳过正文。
  *
  * 失败记账：所有被捕获后继续执行的错误都进 evidence（缺口或丢弃计数），
  * 不静默吞掉；根会话初始化失败（attach / Network.enable / 观察脚本注入）
@@ -439,7 +439,7 @@ export async function attachProtocolAgnosticCapture(
   const mainFrameNavigations: Array<{ occurredAt: string; targetId: string; url: string | null }> = [];
   const requestChains = new Map<string, string[]>();
   const ignored = new Set<string>();
-  // Worker 跨 session 事务关联（0.2.10 唯一匹配别名机制的 0.3 重建）：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
+  // Worker 跨 session 事务关联：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
   // target 建立后其完成事件改在 Worker session 上报——按 scopedId 严格查找必然
   // miss。仅当 Worker target URL 与恰好一个在途父请求 URL 匹配时建立
   // `workerSession::requestId → 父 baseId` 别名；非唯一匹配不建（宁可漏不可错）。
@@ -663,7 +663,7 @@ export async function attachProtocolAgnosticCapture(
   }
 
   /**
-   * Worker 入口脚本正文补读（0.2.10 salvageWorkerMainScript 的 0.3 重建）。
+   * Worker 入口脚本正文补读。
    * 入口脚本由页面 loader 发起（requestWillBeSent 落父会话），完成事件改在
    * Worker session 上报；Worker URL 迟到期间到达的完成事件已按未命中显式
    * 丢弃（不可重放）——URL 补齐后经 Worker session 主动补读正文
@@ -694,7 +694,7 @@ export async function attachProtocolAgnosticCapture(
       await input.http.commit(id);
     } catch (error) {
       // Worker session 正文不可读（未就绪/生命周期限制）：不重试不伪造，
-      // 行保持未完成，缺正文由 flush 按未完成显式记账（0.2.10 markFailure=false 语义）
+      // 行保持未完成，缺正文由 flush 显式记账
       void error;
     }
   }

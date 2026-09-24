@@ -2,8 +2,7 @@
  * 生产采集链路 E2E：createProductionCapture → stop →
  * exportPack → 直接断言 ZIP 内容。
  *
- * 与 0.2.x 的关键差异（规范 §13 不脱敏策略）：POST token 必须原样在场
- * （e2e-secret-token 在请求正文文件里逐字节可见），不再断言脱敏。
+ * 不脱敏断言：POST token 必须原样在请求正文文件里逐字节可见。
  * 血缘断言：popup 根 target 带 windowRole=popup + openerTargetId=target-root。
  * 包一致性：verifyPackV2Zip 重开逐条目校验 + INCOMPLETE + capture-facts 终态。
  */

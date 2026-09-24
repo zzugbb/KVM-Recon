@@ -6,7 +6,6 @@
  * 启动时先恢复上一个未完成作业（recoverCrashedJob，规范 §4.2：
  * 应用异常退出后只恢复这一份；恢复止步于 finalize，不自动导出——
  * 由用户在恢复卡上手动选择目录导出；拒绝恢复时现场资料保留）。
- * 0.2.x 的多作业 / 暂停 / 手动截图 / 打开对比包 / 离场复验 IPC 已删除。
  */
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
