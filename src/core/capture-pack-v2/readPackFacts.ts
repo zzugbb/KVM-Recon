@@ -2,7 +2,7 @@
  * 装配时事实束读取器（规范 §15 / §19，阶段 4）。
  *
  * 从工作区持久工件重建派生引擎的只读事实：ai/ 与 replay/ 是派生可再生
- * 内容（§11），新版 Analyzer 只凭包内工件即可重新生成——派生不依赖采集
+ * 内容（§11），只凭包内工件即可重新生成——派生不依赖采集
  * 会话内存态（崩溃恢复导出的残包同样适用）。
  *
  * 主框架导航与观察钩子失败在采集期只存在于内存（attach 层不落盘独立工件）；
@@ -10,12 +10,18 @@
  * - 主框架导航 = Page.frameNavigated 且 frame 无 parentId；
  * - 钩子失败 = 观察脚本 Runtime.bindingCalled 的 observer-hook-failed payload。
  *
+ * 无上界 journal（事务 / 动作 / 表面 / crypto / CDP 事件）逐行流式读取
+ * （内存上界 = 最大单行 + 解析行累计），不整体载入文件；小元数据文件
+ * （targets / scripts / WS metadata）保持整体读取。
  * 缺文件 / 行不可解析 → 该维度空数组并记入缺口（dossier / replay 是派生物
- * 不是证据，派生退化不阻断导出；缺口进 ai/summary.md 供 AI 与审计可见）。
+ * 不是证据，派生退化不阻断导出；缺口进 ai/summary.md 供 AI 与审计可见）；
+ * 读取中途 I/O 失败同样全有或全无（半份事实会派生出错误结论）。
  * 页面上报内容是不可信数据（§12）：payload 解析全部失败关闭。
  */
 
-import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
+import { createInterface } from 'node:readline';
+import type { Readable } from 'node:stream';
+
 import type { ObserverHookFailure } from '../collector/collectorEvidence';
 import type {
   PackV2BrowserActionRow,
@@ -57,16 +63,23 @@ interface PackFactsReadOptions {
   channels?: ReadonlyArray<PackV2ChannelRow>;
 }
 
+/**
+ * 事实束读取只依赖工件读面（readArtifact / artifactPaths / openArtifactStream）
+ * ——JobWorkspace 结构满足该接口；读取已导出包的调用方也可实现它，
+ * 不依赖采集会话。
+ */
+export interface PackArtifactReader {
+  readArtifact(path: string): Promise<Buffer>;
+  artifactPaths(): Promise<string[]>;
+  openArtifactStream(path: string): Promise<Readable>;
+}
+
 /** 坏行上限：缺口串按文件聚合，避免数千行坏行撑爆 ai/summary.md；
  * 超出部分不静默丢弃，末尾聚合一条溢出哨兵记账（失败显式记账红线）。 */
 const MAX_GAPS = 40;
 
-function jsonlLines(buffer: string): string[] {
-  return buffer.split('\n').filter(line => line.trim().length > 0);
-}
-
 export async function readPackFacts(
-  workspace: JobWorkspace,
+  workspace: PackArtifactReader,
   options: PackFactsReadOptions = {},
 ): Promise<PackFactsReadResult> {
   const gaps: string[] = [];
@@ -84,27 +97,45 @@ export async function readPackFacts(
     }
   }
 
+  // 包内工件清单只走查一次：存在性判定 + WS 元数据发现共用。
+  // 无上界 journal（事务 / 动作 / 表面 / crypto / CDP 事件）逐行流式
+  // 读取，不整体载入（内存上界 = 最大单行 + 解析行累计）。
+  const workspacePaths = new Set(await workspace.artifactPaths());
+
+  async function* linesOf(path: string): AsyncGenerator<string> {
+    const stream = await workspace.openArtifactStream(path);
+    stream.setEncoding('utf8');
+    yield* createInterface({ input: stream, crlfDelay: Infinity });
+  }
+
   async function readJsonl<T>(path: string, isValid: (row: unknown) => row is T): Promise<T[]> {
-    const buffer = await readBufferOrNull(path);
-    if (buffer === null) {
+    if (!workspacePaths.has(path)) {
       addGap(`派生事实缺失：${path} 不在包内，该维度按空处理`);
       return [];
     }
     const rows: T[] = [];
     let broken = 0;
-    for (const line of jsonlLines(buffer.toString('utf8'))) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        broken += 1;
-        continue;
+    try {
+      for await (const line of linesOf(path)) {
+        if (!line.trim()) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          broken += 1;
+          continue;
+        }
+        if (isValid(parsed)) {
+          rows.push(parsed);
+        } else {
+          broken += 1;
+        }
       }
-      if (isValid(parsed)) {
-        rows.push(parsed);
-      } else {
-        broken += 1;
-      }
+    } catch {
+      // 读取中途失败（I/O 错误）：全有或全无——半份事实会派生出错误的
+      // 结论，按空维度处理并显式记账
+      addGap(`派生事实缺口：${path} 读取失败，该维度按空处理`);
+      return [];
     }
     if (broken > 0) addGap(`派生事实缺口：${path} 有 ${broken} 行不可解析或结构非法，已跳过`);
     return rows;
@@ -186,76 +217,85 @@ export async function readPackFacts(
   }
   const scripts = await readScripts();
 
-  // ---- 主框架导航 + 观察钩子失败：重放 raw/cdp/events.jsonl ----
+  // ---- 主框架导航 + 观察钩子失败：重放 raw/cdp/events.jsonl（逐行流式）----
   const navigations: WorkflowNavigationFact[] = [];
   const hookFailures: ObserverHookFailure[] = [];
-  const eventsBuffer = await readBufferOrNull('raw/cdp/events.jsonl');
-  if (eventsBuffer === null) {
+  if (!workspacePaths.has('raw/cdp/events.jsonl')) {
     addGap('派生事实缺失：raw/cdp/events.jsonl 不在包内，主框架导航与钩子失败按空处理');
   } else {
     let broken = 0;
-    for (const line of jsonlLines(eventsBuffer.toString('utf8'))) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        broken += 1;
-        continue;
-      }
-      const row = parsed as {
-        timestamp?: unknown;
-        method?: unknown;
-        targetId?: unknown;
-        params?: unknown;
-      };
-      if (typeof row.method !== 'string' || typeof row.timestamp !== 'string') {
-        broken += 1;
-        continue;
-      }
-      const params = row.params !== null && typeof row.params === 'object'
-        ? (row.params as Record<string, unknown>)
-        : {};
-      // 与在线采集同一规则：frameNavigated 且 frame 无 parentId = 主框架导航
-      if (row.method === 'Page.frameNavigated') {
-        const frame = params.frame !== null && typeof params.frame === 'object'
-          ? (params.frame as Record<string, unknown>)
-          : null;
-        if (!frame || frame.parentId !== undefined) continue;
-        if (typeof row.targetId !== 'string' || !row.targetId) {
+    let readFailed = false;
+    try {
+      for await (const line of linesOf('raw/cdp/events.jsonl')) {
+        if (!line.trim()) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(line);
+        } catch {
           broken += 1;
           continue;
         }
-        const url = typeof frame.url === 'string' ? frame.url : null;
-        navigations.push({ occurredAt: row.timestamp, targetId: row.targetId, url });
-        continue;
-      }
-      // 观察脚本钩子安装失败（页面内容不可信：只认结构完整的 payload）
-      if (row.method === 'Runtime.bindingCalled' && typeof params.payload === 'string') {
-        try {
-          const payload = JSON.parse(params.payload) as Record<string, unknown>;
-          if (
-            payload !== null && typeof payload === 'object' && payload.kind === 'observer-hook-failed' &&
-            typeof payload.hook === 'string'
-          ) {
-            hookFailures.push({
-              hook: payload.hook,
-              stage: typeof payload.stage === 'string' ? payload.stage : 'unknown',
-              detail: typeof payload.detail === 'string' ? payload.detail : 'no detail',
-            });
+        const row = parsed as {
+          timestamp?: unknown;
+          method?: unknown;
+          targetId?: unknown;
+          params?: unknown;
+        };
+        if (typeof row.method !== 'string' || typeof row.timestamp !== 'string') {
+          broken += 1;
+          continue;
+        }
+        const params = row.params !== null && typeof row.params === 'object'
+          ? (row.params as Record<string, unknown>)
+          : {};
+        // 与在线采集同一规则：frameNavigated 且 frame 无 parentId = 主框架导航
+        if (row.method === 'Page.frameNavigated') {
+          const frame = params.frame !== null && typeof params.frame === 'object'
+            ? (params.frame as Record<string, unknown>)
+            : null;
+          if (!frame || frame.parentId !== undefined) continue;
+          if (typeof row.targetId !== 'string' || !row.targetId) {
+            broken += 1;
+            continue;
           }
-        } catch {
-          // 非观察脚本的 binding 调用（页面自身用法）不是钩子失败证据
+          const url = typeof frame.url === 'string' ? frame.url : null;
+          navigations.push({ occurredAt: row.timestamp, targetId: row.targetId, url });
+          continue;
+        }
+        // 观察脚本钩子安装失败（页面内容不可信：只认结构完整的 payload）
+        if (row.method === 'Runtime.bindingCalled' && typeof params.payload === 'string') {
+          try {
+            const payload = JSON.parse(params.payload) as Record<string, unknown>;
+            if (
+              payload !== null && typeof payload === 'object' && payload.kind === 'observer-hook-failed' &&
+              typeof payload.hook === 'string'
+            ) {
+              hookFailures.push({
+                hook: payload.hook,
+                stage: typeof payload.stage === 'string' ? payload.stage : 'unknown',
+                detail: typeof payload.detail === 'string' ? payload.detail : 'no detail',
+              });
+            }
+          } catch {
+            // 非观察脚本的 binding 调用（页面自身用法）不是钩子失败证据
+          }
         }
       }
+    } catch {
+      readFailed = true;
     }
-    if (broken > 0) {
+    if (readFailed) {
+      // 全有或全无：半份事件重放会漏掉导航 / 钩子失败事实
+      navigations.length = 0;
+      hookFailures.length = 0;
+      addGap('派生事实缺口：raw/cdp/events.jsonl 读取失败，主框架导航与钩子失败按空处理');
+    } else if (broken > 0) {
       addGap(`派生事实缺口：raw/cdp/events.jsonl 有 ${broken} 行不可解析或结构非法，已跳过`);
     }
   }
 
   // ---- WS 握手事实：扫描 raw/websocket/*/metadata.json ----
   const wsHandshakes: PackWsHandshakeFact[] = [];
-  const workspacePaths = new Set(await workspace.artifactPaths());
   const metadataPaths = [...workspacePaths]
     .filter(path => /^raw\/websocket\/[^/]+\/metadata\.json$/.test(path))
     .sort();

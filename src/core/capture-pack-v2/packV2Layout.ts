@@ -3,7 +3,7 @@ import { UNTRUSTED_PAGE_CONTENT_MARKER } from './types';
 
 /**
  * Capture Pack 2.0 目录结构契约（规范 §11）与 00_START_HERE.md 内容契约（规范 §12 / §13）。
- * raw/ 为不可变事实，catalog/ 为稳定索引，ai/ 与 replay/ 为可由新版 Analyzer 重新生成的派生内容。
+ * raw/ 为不可变事实，catalog/ 为稳定索引，ai/ 与 replay/ 为可从包内事实重新生成的派生内容。
  */
 
 export const PACK_V2_REQUIRED_TOP_LEVEL_DIRS = [
@@ -187,13 +187,13 @@ export function buildPackV2StartHereMarkdown(): string {
     '',
     '## 状态',
     '',
-    '- captureIntegrity / workflowStatus / classificationStatus 见 `manifest.json` 与 `integrity.json`。',
-    '- 协议未知（UNKNOWN）不代表资料不完整；资料完整时可直接离场适配（规范 §6）。',
+    '- captureIntegrity / workflowStatus 见 `manifest.json` 与 `integrity.json`。',
+    '- 不要求识别协议族；只要完整度门禁通过且到达 KVM，资料可用于离场适配。',
     '',
   ].join('\n');
 }
 
-/** report.html 内容（状态三元组 + 未脱敏警告 + 阅读顺序；样例包与生产装配共用）。 */
+/** report.html 内容（采集状态 + 未脱敏警告 + 阅读顺序；样例包与生产装配共用）。 */
 export function buildPackV2ReportHtml(manifest: PackV2Manifest): string {
   return [
     '<!doctype html>',
@@ -204,7 +204,6 @@ export function buildPackV2ReportHtml(manifest: PackV2Manifest): string {
     '<dl>',
     `<dt>captureIntegrity</dt><dd>${manifest.captureIntegrity}</dd>`,
     `<dt>workflowStatus</dt><dd>${manifest.workflowStatus}</dd>`,
-    `<dt>classificationStatus</dt><dd>${manifest.classificationStatus}</dd>`,
     '</dl>',
     '<p>本包未脱敏，可能包含有效凭据与会话，只能作为敏感文件保管。</p>',
     '<p>阅读顺序：00_START_HERE.md → ai/index.json → ai/adapter-dossier.json。</p>',

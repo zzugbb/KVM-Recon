@@ -456,8 +456,40 @@ describe('JobWorkspace 工件读写与路径安全', () => {
     await workspace.close();
   }, 30000);
 
-  it('artifactPaths 只返回包内工件（排除 workspace.json 与 .tmp）', async () => {
+  it('openArtifactStream 逐块读取工件（不整体载入）且与 readArtifact 同一安全边界', async () => {
     const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    await workspace.writeArtifact('raw/browser/storage.json', '{"a":"1"}\n');
+    const stream = await workspace.openArtifactStream('raw/browser/storage.json');
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk as Buffer);
+    }
+    expect(Buffer.concat(chunks).toString('utf8')).toBe('{"a":"1"}\n');
+    // 同一安全边界：路径逃逸 / 内部文件拒绝
+    await expect(workspace.openArtifactStream('../escape.txt')).rejects.toThrow();
+    await expect(workspace.openArtifactStream(join(WORKSPACE_TMP_DIR, 'x.part'))).rejects.toThrow();
+    await workspace.close();
+    // 关闭后拒绝读取（与 readArtifact 一致）
+    await expect(workspace.openArtifactStream('raw/browser/storage.json')).rejects.toThrow();
+  }, 30000);
+
+  it('openArtifactStream：finalized 工作区仍可读（崩溃恢复导出路径）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startWorkspace(rootDir);
+    await workspace.writeArtifact('ai/value-flow.json', '{"nodes":[]}');
+    await workspace.finalize();
+    const stream = await workspace.openArtifactStream('ai/value-flow.json');
+    stream.setEncoding('utf8');
+    let text = '';
+    for await (const chunk of stream) {
+      text += chunk as string;
+    }
+    expect(text).toBe('{"nodes":[]}');
+    await workspace.close();
+  }, 30000);
+
+  it('artifactPaths 只返回包内工件（排除 workspace.json 与 .tmp）', async () => {    const rootDir = await newRootDir();
     const workspace = await startWorkspace(rootDir);
     await workspace.writeArtifact('manifest.json', '{}');
     await workspace.appendJsonl('raw/http/transactions.jsonl', { id: 1 });
@@ -708,7 +740,23 @@ describe('close / cleanup（生命周期边界）', () => {
     await second.writeArtifact('raw/still-alive.bin', 'ok');
     await second.cleanup();
   }, 30000);
-});
+  });
+
+  it('不可导出的作业可原样保留到 retained，释放 current 后继续新作业', async () => {
+    const rootDir = await newRootDir();
+    const first = await startWorkspace(rootDir);
+    await first.writeArtifact('raw/probe/index.json', JSON.stringify({ probeRan: true, facts: [{ kind: 'tls' }] }));
+    await first.finalize();
+    const retainedPath = await first.retainUnexported();
+    expect(retainedPath).toContain('/retained/');
+    expect(await readFile(join(retainedPath, 'raw/probe/index.json'), 'utf8')).toContain('tls');
+    const second = await startWorkspace(rootDir, { jobId: 'job-0002' });
+    expect(second.jobId).toBe('job-0002');
+    expect(await readFile(join(retainedPath, 'raw/probe/index.json'), 'utf8')).toContain('tls');
+    await second.finalize();
+    await second.markExported();
+    await second.cleanup();
+  });
 
 describe('recoverActiveJobWorkspace（崩溃恢复）', () => {
   it('active 作业崩溃后可恢复并继续写入', async () => {

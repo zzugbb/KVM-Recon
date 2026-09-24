@@ -7,12 +7,12 @@
  * schema/2.0/*.schema.json 副本。
  *
  * 适配候选链与 ai/index 候选 ID 由 dossierEngine 从包内工件重新派生
- * （规范 §15：新版 Analyzer 只凭本包即可重新生成）；读取缺口与派生失败
+ * （规范 §12：只凭本包即可重新生成）；读取缺口与派生失败
  * 退回诚实下限（空链）并记入 ai/summary.md，绝不编造。值传播图
  * （ai/value-flow.json）与证据图（catalog/relations.jsonl）由采集会话收尾
  * 派生；装配层对 ai/value-flow.json 工作区文件优先（缺失才落空兜底）。
  * captureIntegrity 由 derivePackIntegrity 从证据摘要派生；workflowStatus 取
- * 证据摘要（单一事实源，不在装配处另设输入）；classificationStatus 默认 UNKNOWN。
+ * 证据摘要（单一事实源，不在装配处另设输入）。
  *
  * manifest 必须携带真实采集环境：environment 为 null（页面环境未采集）时
  * 拒绝装配导出，绝不写编造的 environment 字段。
@@ -36,7 +36,6 @@ import { deriveReplayPlan } from '../collector/replayEngine';
 import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
 import {
   PACK_V2_SCHEMA_VERSION,
-  type ClassificationStatus,
   type DerivedPackIntegrity,
   type PackIntegrityEvidenceSummary,
   type PackV2AdapterDossier,
@@ -49,7 +48,7 @@ import {
   type PackV2ReplayChannelsFile,
   type PackV2ReplayManifest,
   type PackV2ReplayRequestRow,
-  type PackV2StatusTriple,
+  type PackV2Status,
   type PackV2ValueFlow,
 } from './types';
 
@@ -77,14 +76,13 @@ export interface AssembleCapturePackV2Input {
     endedAt?: string;
     deviceLabel?: string | null;
   };
-  classificationStatus?: ClassificationStatus;
   /** 覆盖 schema/2.0 目录解析（默认从 cwd / 模块目录向上查找）。 */
   schemaSourceDir?: string;
   now?: () => string;
 }
 
 export interface AssembleCapturePackV2Result {
-  status: PackV2StatusTriple;
+  status: PackV2Status;
   derived: DerivedPackIntegrity;
   manifest: PackV2Manifest;
   /** 规范 §10 ZIP 文件名（调用方用于落盘命名）。 */
@@ -169,7 +167,7 @@ function buildAssemblySummaryMarkdown(
     '',
     `目标：${manifest.target.host}:${manifest.target.port}（设备说明：${manifest.job.deviceLabel || '（未填写）'}）`,
     '',
-    `captureIntegrity=${manifest.captureIntegrity}，workflowStatus=${manifest.workflowStatus}，classificationStatus=${manifest.classificationStatus}；`,
+    `captureIntegrity=${manifest.captureIntegrity}，workflowStatus=${manifest.workflowStatus}；`,
     '十项门禁与原因代码见 integrity.json，缺失清单见 ai/missing-evidence.json。',
     '',
   ];
@@ -189,7 +187,7 @@ function buildAssemblySummaryMarkdown(
   lines.push(
     '值传播图（ai/value-flow.json）与证据图（catalog/relations.jsonl）由采集会话收尾派生',
     '（只记字节级观察背书的边）；候选链与 replay/* 由装配层从包内工件重新派生，',
-    '可由新版 Analyzer 只凭本包重新生成（规范 §15）。',
+    '可只凭本包中的原始事实重新生成（规范 §15）。',
     '',
     '证据入口：请求与正文索引 catalog/resources.jsonl；实时通道 catalog/channels.json；',
     '目标生命周期 catalog/targets.json；证据图 catalog/relations.jsonl。',
@@ -219,7 +217,6 @@ export async function assembleCapturePackV2(
   const status = buildPackStatusTriple({
     derived,
     workflowStatus: input.evidenceSummary.workflowStatus,
-    classificationStatus: input.classificationStatus ?? 'UNKNOWN',
   });
 
   const channels = await readChannelsCatalog(workspace);
@@ -242,7 +239,6 @@ export async function assembleCapturePackV2(
     },
     captureIntegrity: status.captureIntegrity,
     workflowStatus: status.workflowStatus,
-    classificationStatus: status.classificationStatus,
     security: { dataHandling: 'UNREDACTED', containsSensitiveData: true },
     environment: input.environment,
   };
@@ -422,7 +418,7 @@ export async function assembleCapturePackV2(
     { path: 'replay/channels.json', content: json2(replayChannels) },
   ];
 
-  // schema/ 副本：包内自带全部 2.0 Schema，供离线 Analyzer 校验。
+  // schema/ 副本：包内自带全部 2.0 Schema，供离线独立校验。
   const schemaDir = resolvePackV2SchemaDir(input.schemaSourceDir);
   const schemaNames = readdirSync(schemaDir)
     .filter(name => name.endsWith('.schema.json'))

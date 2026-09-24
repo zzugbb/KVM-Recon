@@ -44,12 +44,6 @@ describe('buildPackV2FileName（规范 §10）', () => {
     }
   });
 
-  it('LEGACY_UNVERIFIED 不能进入 2.0 导出文件名', () => {
-    expect(() =>
-      buildPackV2FileName({ ...base, captureIntegrity: 'LEGACY_UNVERIFIED' }),
-    ).toThrow(/LEGACY_UNVERIFIED/);
-  });
-
   it('空短作业 ID 抛错；非安全字符被剔除', () => {
     expect(() => buildPackV2FileName({ ...base, shortJobId: '   ' })).toThrow(/短作业 ID/);
     expect(buildPackV2FileName({ ...base, shortJobId: 'ab/cd-ef' })).toContain('_abcdef.zip');

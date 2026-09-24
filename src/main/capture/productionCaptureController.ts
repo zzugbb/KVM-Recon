@@ -19,7 +19,7 @@ import os from 'node:os';
 
 import { BrowserWindow, session, webContents, type WebContents } from 'electron';
 
-import type { CaptureTarget } from '../../core/capture-pack/types';
+import type { BmcTarget } from '../../core/probe/types';
 import { exportJobWorkspaceZip, type ExportJobWorkspaceZipResult } from '../../core/export/exportJobWorkspaceZip';
 import { nativePopupWindowOpenHandler, popupWindowFacts } from '../../core/browser/popupWindowFacts';
 import {
@@ -42,7 +42,7 @@ import { createElectronNetlogSource } from './electronNetlogSource';
 import { createViewerAutoStopWatchdog, type ViewerAutoStopWatchdog } from './viewerAutoStopWatchdog';
 import { shouldCommitAboutBlankBeforeCdp } from './cdpRendererReady';
 
-export type ProductionCaptureTarget = CaptureTarget & { originalInput?: string };
+export type ProductionCaptureTarget = BmcTarget & { originalInput?: string };
 
 /** close() 被 beforeunload 阻止时的强关宽限（毫秒）。 */
 const CLOSE_FORCE_DESTROY_MS = 10_000;
@@ -300,7 +300,7 @@ export async function createProductionCapture(
       if (cookieNames.size === 0) {
         probeResult = {
           ...probeResult,
-          authenticated: { attempted: true, cookieNames: [], paths: {} },
+          authenticated: { attempted: true, cookieNames: [] },
         };
         return;
       }

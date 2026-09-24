@@ -291,6 +291,23 @@ describe('Capture Pack 2.0 JSON Schema（规范 §22：Schema 与类型同步）
         channels: replayChannelsFile.channels.map(channelWithoutValues),
       }),
     ).toBe(false);
+
+    // replayable=false 必须携带非空 notReplayableReasons（缺失证据逐条显式，规范 §16）。
+    expect(validateReplayManifest?.({ ...replayManifestFile, replayable: false })).toBe(false);
+    expect(
+      validateReplayManifest?.({
+        ...replayManifestFile,
+        replayable: false,
+        notReplayableReasons: [],
+      }),
+    ).toBe(false);
+    expect(
+      validateReplayManifest?.({
+        ...replayManifestFile,
+        replayable: false,
+        notReplayableReasons: ['未观察到登录交互：没有 Set-Cookie 签发（带正文的 POST + 2xx/3xx 响应），也没有凭据头形态请求（Authorization 类）'],
+      }),
+    ).toBe(true);
   }, 30000);
 
   it('WebRTC / WebTransport 行 Schema 校验合法行并通过负向检查', async () => {

@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildPackStatusTriple,
-  canUpgradeCaptureIntegrity,
   checkPackStatus,
-  classificationStatusFromKvmFamilyDetection,
   derivePackIntegrity,
-  resolveLegacyPackImportStatus,
 } from './packStatus';
 import { INTEGRITY_POSITIVE_FIXTURE, INTEGRITY_FAILURE_FIXTURES } from './integrityFixtures';
 import type { DerivedPackIntegrity, PackIntegrityEvidenceSummary } from './types';
@@ -15,24 +12,13 @@ function allPresentSummary(): PackIntegrityEvidenceSummary {
   return INTEGRITY_POSITIVE_FIXTURE.summary;
 }
 
-describe('checkPackStatus（规范 §6 三正交状态）', () => {
-  it('允许 COMPLETE + KVM_REACHED + UNKNOWN（协议未知不影响完整度）', () => {
+describe('checkPackStatus（规范 §6 采集状态）', () => {
+  it('允许未知协议设备的 COMPLETE + KVM_REACHED', () => {
     const check = checkPackStatus({
       captureIntegrity: 'COMPLETE',
       workflowStatus: 'KVM_REACHED',
-      classificationStatus: 'UNKNOWN',
     });
     expect(check.legal).toBe(true);
-  });
-
-  it('允许 COMPLETE + KVM_REACHED + KNOWN', () => {
-    expect(
-      checkPackStatus({
-        captureIntegrity: 'COMPLETE',
-        workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'KNOWN',
-      }).legal,
-    ).toBe(true);
   });
 
   it('拒绝 COMPLETE + LOGIN_REACHED / TARGET_OPENED（未到达 KVM 不能完整）', () => {
@@ -40,36 +26,16 @@ describe('checkPackStatus（规范 §6 三正交状态）', () => {
       const check = checkPackStatus({
         captureIntegrity: 'COMPLETE',
         workflowStatus,
-        classificationStatus: 'UNKNOWN',
       });
       expect(check.legal).toBe(false);
       expect(check.violations.join('')).toContain('INCOMPLETE_WORKFLOW_NOT_REACHED');
     }
   });
 
-  it('INCOMPLETE 可以与任何 workflow / classification 组合', () => {
+  it('INCOMPLETE 可以与任何 workflow 组合', () => {
     for (const workflowStatus of ['KVM_REACHED', 'LOGIN_REACHED', 'TARGET_OPENED'] as const) {
-      for (const classificationStatus of ['KNOWN', 'UNKNOWN'] as const) {
-        expect(
-          checkPackStatus({
-            captureIntegrity: 'INCOMPLETE',
-            workflowStatus,
-            classificationStatus,
-          }).legal,
-        ).toBe(true);
-      }
+      expect(checkPackStatus({ captureIntegrity: 'INCOMPLETE', workflowStatus }).legal).toBe(true);
     }
-  });
-});
-
-describe('classificationStatusFromKvmFamilyDetection（规范 §15）', () => {
-  it('已知三族 → KNOWN；采集桶 → UNKNOWN', () => {
-    expect(classificationStatusFromKvmFamilyDetection('ami-megarac')).toBe('KNOWN');
-    expect(classificationStatusFromKvmFamilyDetection('openbmc-h5')).toBe('KNOWN');
-    expect(classificationStatusFromKvmFamilyDetection('huawei-ibmc')).toBe('KNOWN');
-    expect(classificationStatusFromKvmFamilyDetection('unknown-h5')).toBe('UNKNOWN');
-    expect(classificationStatusFromKvmFamilyDetection('not-h5')).toBe('UNKNOWN');
-    expect(classificationStatusFromKvmFamilyDetection('dell-idrac-h5')).toBe('UNKNOWN');
   });
 });
 
@@ -99,7 +65,6 @@ describe('derivePackIntegrity（规范 §14 门禁）', () => {
       buildPackStatusTriple({
         derived: { captureIntegrity: 'INCOMPLETE', reasons: [], gates: [] },
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/INCOMPLETE 必须至少携带一个稳定原因代码/);
   });
@@ -113,7 +78,6 @@ describe('derivePackIntegrity（规范 §14 门禁）', () => {
           gates: [],
         },
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/COMPLETE 不允许携带完整度原因代码/);
   });
@@ -130,38 +94,6 @@ describe('derivePackIntegrity（规范 §14 门禁）', () => {
       'INCOMPLETE_UNSUPPORTED_CHANNEL',
       'INCOMPLETE_WORKFLOW_NOT_REACHED',
     ]);
-  });
-});
-
-describe('resolveLegacyPackImportStatus（规范 §6 / §17）', () => {
-  it('旧包 YES / PARTIAL / NO 一律 LEGACY_UNVERIFIED，不能升级 COMPLETE', () => {
-    for (const oldReadiness of ['YES', 'PARTIAL', 'NO'] as const) {
-      const result = resolveLegacyPackImportStatus({
-        oldReadiness,
-        hadKvmWebSocketEvidence: true,
-        hadLoginEvidence: true,
-      });
-      expect(result.captureIntegrity).toBe('LEGACY_UNVERIFIED');
-      expect(result.workflowStatus).toBe('KVM_REACHED');
-      expect(result.classificationStatus).toBe('UNKNOWN');
-      expect(canUpgradeCaptureIntegrity(result.captureIntegrity, 'COMPLETE')).toBe(false);
-      expect(result.legacyNote).toContain('LEGACY_UNVERIFIED');
-    }
-  });
-
-  it('旧包按证据映射 workflowStatus，但完整度不变', () => {
-    expect(
-      resolveLegacyPackImportStatus({ oldReadiness: 'PARTIAL', hadLoginEvidence: true })
-        .workflowStatus,
-    ).toBe('LOGIN_REACHED');
-    expect(resolveLegacyPackImportStatus({ oldReadiness: 'NO' }).workflowStatus).toBe(
-      'TARGET_OPENED',
-    );
-  });
-
-  it('LEGACY_UNVERIFIED 之外的状态允许按证据重判', () => {
-    expect(canUpgradeCaptureIntegrity('INCOMPLETE', 'COMPLETE')).toBe(true);
-    expect(canUpgradeCaptureIntegrity('COMPLETE', 'INCOMPLETE')).toBe(true);
   });
 });
 
@@ -271,7 +203,6 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
       buildPackStatusTriple({
         derived: forged,
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/COMPLETE 不允许存在未通过的门禁/);
   });
@@ -281,7 +212,6 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
       buildPackStatusTriple({
         derived: { captureIntegrity: 'COMPLETE', reasons: [], gates: [] },
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/门禁必须恰好覆盖十个唯一门禁 ID/);
     const derived = derivePackIntegrity(allPresentSummary());
@@ -289,7 +219,6 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
       buildPackStatusTriple({
         derived: { ...derived, gates: derived.gates.slice(0, 9) },
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/门禁必须恰好覆盖十个唯一门禁 ID/);
     const duplicated: DerivedPackIntegrity = {
@@ -300,7 +229,6 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
       buildPackStatusTriple({
         derived: duplicated,
         workflowStatus: 'KVM_REACHED',
-        classificationStatus: 'UNKNOWN',
       }),
     ).toThrow(/门禁必须恰好覆盖十个唯一门禁 ID/);
   });
@@ -315,17 +243,15 @@ describe('完整度失败 fixtures（规范 §19 阶段 0 / §20）', () => {
     }
   });
 
-  it('正向 fixture：未知协议全部证据在 → COMPLETE + KVM_REACHED + UNKNOWN 合法', () => {
+  it('正向 fixture：未知协议全部证据在 → COMPLETE + KVM_REACHED 合法', () => {
     const derived = derivePackIntegrity(INTEGRITY_POSITIVE_FIXTURE.summary);
     const triple = buildPackStatusTriple({
       derived,
       workflowStatus: INTEGRITY_POSITIVE_FIXTURE.summary.workflowStatus,
-      classificationStatus: 'UNKNOWN',
     });
     expect(triple).toEqual({
       captureIntegrity: 'COMPLETE',
       workflowStatus: 'KVM_REACHED',
-      classificationStatus: 'UNKNOWN',
     });
   });
 });

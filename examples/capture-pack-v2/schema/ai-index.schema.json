@@ -65,12 +65,11 @@
     },
     "status": {
       "type": "object",
-      "required": ["captureIntegrity", "workflowStatus", "classificationStatus"],
+      "required": ["captureIntegrity", "workflowStatus"],
       "additionalProperties": false,
       "properties": {
-        "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
-        "workflowStatus": { "enum": ["KVM_REACHED", "LOGIN_REACHED", "TARGET_OPENED"] },
-        "classificationStatus": { "enum": ["KNOWN", "UNKNOWN"] }
+        "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE"] },
+        "workflowStatus": { "enum": ["KVM_REACHED", "LOGIN_REACHED", "TARGET_OPENED"] }
       }
     },
     "loginCandidateRequestIds": { "type": "array", "items": { "type": "string" } },

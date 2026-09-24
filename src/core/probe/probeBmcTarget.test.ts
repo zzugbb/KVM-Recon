@@ -1,201 +1,58 @@
 import { describe, expect, it } from 'vitest';
 
 import { applyAuthenticatedProbe, probeBmcTarget } from './probeBmcTarget';
-import type { ProbeHttpClient } from './probeBmcBasics';
 
-const httpClient: ProbeHttpClient = {
-  async get(path) {
-    if (path === '/redfish/v1/') {
-      return {
-        status: 200,
-        data: {
-          Vendor: 'OpenBMC',
-          Product: 'BMC',
-        },
-      };
-    }
-    if (path === '/randomtag') {
-      return { status: 200, data: { random: 1234, OemString: 'Public' } };
-    }
-    return { status: 404 };
-  },
-};
+const target = { host: 'bmc.example', port: 443, scheme: 'https' } as const;
+const tlsConnector = async () => ({
+  authorized: true,
+  protocol: 'TLSv1.3',
+  cipher: null,
+  certificate: null,
+});
 
 describe('probeBmcTarget', () => {
-  it('starts TLS, Redfish, and both randomtag signals concurrently', async () => {
-    const started: string[] = [];
-    let resolveRedfish: ((value: { status: number; data: unknown }) => void) | undefined;
-    const resultPromise = probeBmcTarget({
-      target: {
-        host: '10.0.0.19',
-        port: 443,
-        scheme: 'https',
-      },
+  it('并发读取标准 Redfish 与 TLS，不发厂商定向请求', async () => {
+    const calls: string[] = [];
+    const result = await probeBmcTarget({
+      target,
       httpClient: {
-        get(path) {
-          started.push(path);
-          if (path === '/redfish/v1/') {
-            return new Promise(resolve => {
-              resolveRedfish = resolve;
-            });
-          }
-          return Promise.resolve({ status: 404 });
+        async get(path) {
+          calls.push(path);
+          return { status: 200, data: { Vendor: 'Vendor X' } };
         },
       },
       tlsConnector: async () => {
-        started.push('tls');
-        return {
-          authorized: false,
-          protocol: 'TLSv1.3',
-          cipher: null,
-          certificate: null,
-        };
+        calls.push('tls');
+        return tlsConnector();
       },
     });
-
-    await Promise.resolve();
-    expect(started).toEqual(
-      expect.arrayContaining(['tls', '/redfish/v1/', '/api/randomtag', '/randomtag']),
-    );
-
-    resolveRedfish?.({ status: 404, data: null });
-    await resultPromise;
-  });
-
-  it('combines basic info, TLS info, path evidence, and family signatures', async () => {
-    const result = await probeBmcTarget({
-      target: {
-        host: '10.0.0.20',
-        port: 443,
-        scheme: 'https',
-      },
-      httpClient,
-      tlsConnector: async () => ({
-        authorized: true,
-        authorizationError: '',
-        protocol: 'TLSv1.3',
-        cipher: { name: 'TLS_AES_256_GCM_SHA384', version: 'TLSv1.3' },
-        certificate: {
-          subject: { CN: 'openbmc.local' },
-          issuer: { CN: 'Local CA' },
-          valid_from: 'Jan 1 00:00:00 2026 GMT',
-          valid_to: 'Jan 1 00:00:00 2027 GMT',
-        },
-      }),
-    });
-
-    expect(result.basic.vendor).toBe('OpenBMC');
+    expect(calls).toContain('tls');
+    expect(calls).toContain('/redfish/v1/');
+    expect(calls).not.toContain('/randomtag');
+    expect(calls).not.toContain('/api/randomtag');
+    expect(result.basic.vendor).toBe('Vendor X');
     expect(result.tls.reachable).toBe(true);
-    expect(result.tls.protocol).toBe('TLSv1.3');
-    expect(result.paths.randomtag).toBe(true);
-    expect(result.paths.kvmVideo).toBeUndefined();
-    expect(result.familySignatures.primary).toBe('openbmc-h5');
   });
 
-  it('merges anonymous and authenticated path evidence without storing cookie values', async () => {
+  it('合并匿名与带会话的 Redfish 事实，只记录 Cookie 名称', async () => {
     const anonymous = await probeBmcTarget({
-      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
+      target,
+      httpClient: { async get() { return { status: 401 }; } },
+      tlsConnector,
+    });
+    const authenticated = await probeBmcTarget({
+      target,
       httpClient: {
         async get() {
-          return { status: 404 };
+          return { status: 200, data: { Vendor: 'Vendor X', Product: 'Model 42' } };
         },
       },
-      tlsConnector: async () => ({
-        authorized: false,
-        protocol: 'TLSv1.2',
-        cipher: null,
-        certificate: null,
-      }),
+      tlsConnector,
     });
-    const authenticated = await probeBmcTarget({
-      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
-      httpClient: {
-        async get(path) {
-          if (path === '/api/randomtag') {
-            return { status: 200, data: { encrypt_ctrl: 1, random: 1234 } };
-          }
-          return { status: 404 };
-        },
-      },
-      tlsConnector: async () => ({
-        authorized: false,
-        protocol: 'TLSv1.2',
-        cipher: null,
-        certificate: null,
-      }),
-    });
-
-    const merged = applyAuthenticatedProbe(anonymous, authenticated, ['QSESSIONID', 'QSESSIONID']);
-    expect(merged.familySignatures.primary).toBe('ami-megarac');
-    expect(merged.authenticated).toMatchObject({
-      attempted: true,
-      cookieNames: ['QSESSIONID'],
-      paths: authenticated.paths,
-    });
-    expect(JSON.stringify(merged)).not.toContain('abc123');
-  });
-
-  it('lets authenticated false overlay anonymous true so AMI SPA hits do not stick', async () => {
-    const html = '<!doctype html><html><body>app</body></html>';
-    const anonymous = await probeBmcTarget({
-      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
-      httpClient: {
-        async get(path) {
-          if (path.startsWith('/api/')) {
-            return { status: 200, data: html };
-          }
-          if (path === '/redfish/v1/SessionService' || path === '/redfish/v1/Managers/1/KvmService') {
-            return { status: 401 };
-          }
-          return { status: 404 };
-        },
-      },
-      tlsConnector: async () => ({
-        authorized: false,
-        protocol: 'TLSv1.3',
-        cipher: null,
-        certificate: {
-          subject: { O: 'OpenBMC', CN: 'bmc' },
-          issuer: { O: 'OpenBMC', CN: 'bmc' },
-        },
-      }),
-    });
-    const authenticated = await probeBmcTarget({
-      target: { host: '10.0.0.10', port: 443, scheme: 'https' },
-      httpClient: {
-        async get(path) {
-          if (path.startsWith('/api/')) {
-            return { status: 404 };
-          }
-          if (path === '/randomtag') {
-            return { status: 200, data: { random: 1234, OemString: 'Public' } };
-          }
-          if (path === '/redfish/v1/SessionService') {
-            return { status: 200, data: { '@odata.id': '/redfish/v1/SessionService' } };
-          }
-          if (path === '/redfish/v1/Managers/1/KvmService') {
-            return { status: 200, data: { Id: 'KvmService' } };
-          }
-          return { status: 404 };
-        },
-      },
-      tlsConnector: async () => ({
-        authorized: false,
-        protocol: 'TLSv1.3',
-        cipher: null,
-        certificate: {
-          subject: { O: 'OpenBMC', CN: 'bmc' },
-          issuer: { O: 'OpenBMC', CN: 'bmc' },
-        },
-      }),
-    });
-
-    const merged = applyAuthenticatedProbe(anonymous, authenticated, ['SESSION']);
-    expect(merged.paths.apiSession).toBeUndefined();
-    expect(merged.paths.apiRandomtag).toBe(false);
-    expect(merged.paths.apiKvmToken).toBeUndefined();
-    expect(merged.paths.randomtag).toBe(true);
-    expect(merged.paths.kvmService).toBeUndefined();
-    expect(merged.familySignatures.primary).not.toBe('ami-megarac');
+    const merged = applyAuthenticatedProbe(anonymous, authenticated, ['SESSION', 'SESSION']);
+    expect(merged.basic.product).toBe('Model 42');
+    expect(merged.redfish.reachable).toBe(true);
+    expect(merged.authenticated).toEqual({ attempted: true, cookieNames: ['SESSION'] });
+    expect(JSON.stringify(merged)).not.toContain('secret-cookie-value');
   });
 });

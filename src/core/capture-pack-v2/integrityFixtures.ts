@@ -142,7 +142,7 @@ export const INTEGRITY_FAILURE_FIXTURES: readonly IntegrityFailureFixture[] = [
   {
     id: 'fixture-raw-journal-not-closed',
     reason: 'INCOMPLETE_RAW_JOURNAL',
-    scenario: '作业被强制结束后原始 CDP journal / NetLog 未正常关闭写入，未来 Analyzer 无法重新解释原始事件（规范 §14 条件 7）。',
+    scenario: '作业被强制结束后原始 CDP journal / NetLog 未正常关闭写入，离线研究无法重新解释原始事件（规范 §14 条件 7）。',
     summary: {
       ...allEvidencePresentSummary(),
       rawJournalsClosed: false,
@@ -171,7 +171,7 @@ export const INTEGRITY_FAILURE_FIXTURES: readonly IntegrityFailureFixture[] = [
   },
 ];
 
-/** 正向 fixture：完全未知协议 + 全部证据在 → COMPLETE + KVM_REACHED + UNKNOWN（规范 §20）。 */
+/** 正向 fixture：未知协议但证据完整 → COMPLETE + KVM_REACHED（规范 §20）。 */
 export interface IntegrityPositiveFixture {
   id: string;
   summary: PackIntegrityEvidenceSummary;

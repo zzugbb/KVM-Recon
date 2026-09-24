@@ -12,6 +12,7 @@ import {
   startJobWorkspace,
   type JobWorkspace,
 } from '../job-workspace/createJobWorkspace';
+import { checkUnexportedDiscard } from './discardUnexportedJob';
 import { exportRecoveredJob, recoverCrashedJob } from './recoverCrashedJob';
 
 /**
@@ -20,7 +21,8 @@ import { exportRecoveredJob, recoverCrashedJob } from './recoverCrashedJob';
  * 手动选择目录（exportRecoveredJob），成功才 markExported；取消/失败
  * 保留待导出状态（下次启动幂等再恢复）。
  * close() 保留目录 = 模拟进程死亡（owner 已释放）。
- * 反例：facts 缺失 / environment 缺失拒绝恢复；导出失败不 markExported。
+ * capture-facts 缺失按恢复作业挂起（零观察事实丢弃是清理出口）；
+ * 反例：environment 缺失拒绝恢复；导出失败不 markExported。
  */
 
 const roots: string[] = [];
@@ -187,7 +189,7 @@ describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
     await second.workspace.close();
   });
 
-  it('反例：capture-facts 缺失（挂载前崩溃）拒绝恢复，现场保留', async () => {
+  it('capture-facts 缺失：恢复后仍有截图与 DOM 证据，不得按零观察行直接丢弃', async () => {
     const rootDir = await newRootDir();
     const workspace = await startJobWorkspace({ jobId: 'job-recover-nofacts', rootDir });
     await writeMinimalWorkspaceArtifacts(workspace);
@@ -198,18 +200,62 @@ describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
       tool: { version: '0.3.0-dev', buildId: 'test-build' },
     });
 
-    expect(result.kind).toBe('refused');
-    if (result.kind !== 'refused') return;
+    // 不再 refused：refused + active 标记会让每次启动重复拒绝，用户没有
+    // UI 入口清理，只能人工删目录
+    expect(result.kind).toBe('recovered');
+    if (result.kind !== 'recovered') return;
     expect(result.jobId).toBe('job-recover-nofacts');
-    expect(result.reason).toContain('capture-facts.json 缺失');
-    expect(result.reason).toContain('保留');
-    // refused 也要释放工作区句柄与 .owner 租约；释放后下次启动照常幂等再接管
-    await expect(readFile(join(rootDir, 'current', '.owner'), 'utf-8')).rejects.toThrow();
-    const again = await recoverCrashedJob({
+    expect(result.conservative).toBe(true);
+    expect(result.workflowStatus).toBe('TARGET_OPENED');
+    expect(result.workspace.state).toBe('finalized');
+    expect(result.workspace.exported).toBe(false);
+
+    // 幂等再恢复：二次启动仍是恢复卡（finalized-unexported 可再接管）
+    await result.workspace.close();
+    const second = await recoverCrashedJob({
+      rootDir,
+      tool: { version: '0.3.0-dev', buildId: 'test-build' },
+      resetStaleOwner: true,
+    });
+    expect(second.kind).toBe('recovered');
+    if (second.kind !== 'recovered') return;
+
+    // 三类观察行虽然为空，截图和 DOM 仍是现场资料，不能不导出直接清理。
+    const check = await checkUnexportedDiscard(second.workspace);
+    expect(check.ok).toBe(false);
+    expect(check.counts).toEqual({ transactions: 0, channels: 0, actions: 0 });
+    expect(check.note).toMatch(/raw\/browser\/(?:screenshots|dom-snapshots)\//);
+    await second.workspace.close();
+    const third = await recoverCrashedJob({
       rootDir,
       tool: { version: '0.3.0-dev', buildId: 'test-build' },
     });
-    expect(again.kind).toBe('refused');
+    expect(third.kind).toBe('recovered');
+    if (third.kind === 'recovered') await third.workspace.close();
+  });
+
+  it('反例：facts 缺失但有观察事实（挂载中途崩溃）：恢复卡挂起，丢弃门禁拒绝（现场资料保留）', async () => {
+    const rootDir = await newRootDir();
+    const workspace = await startJobWorkspace({ jobId: 'job-recover-nofacts-rows', rootDir });
+    await writeMinimalWorkspaceArtifacts(workspace);
+    await workspace.writeArtifact(
+      'raw/http/transactions.jsonl',
+      `${JSON.stringify({ requestId: 'http-000001', url: 'https://10.10.8.111:8443/login', method: 'GET' })}\n`,
+    );
+    await workspace.close();
+
+    const result = await recoverCrashedJob({
+      rootDir,
+      tool: { version: '0.3.0-dev', buildId: 'test-build' },
+    });
+    expect(result.kind).toBe('recovered');
+    if (result.kind !== 'recovered') return;
+
+    const check = await checkUnexportedDiscard(result.workspace);
+    expect(check.ok).toBe(false);
+    expect(check.counts.transactions).toBe(1);
+    expect(check.note).toContain('先导出再丢弃');
+    await result.workspace.close();
   });
 
   it('反例：facts 缺 environment（页面环境未采集）拒绝恢复', async () => {
@@ -230,6 +276,16 @@ describe('recoverCrashedJob（崩溃恢复：只恢复，不导出）', () => {
     expect(result.kind).toBe('refused');
     if (result.kind !== 'refused') return;
     expect(result.reason).toContain('environment');
+    // 正式包仍拒绝伪造环境；原始工作区可安全保留并释放下一台入口。
+    const retained = await recoverActiveJobWorkspace(rootDir, { resetStaleOwner: true });
+    expect(retained).not.toBeNull();
+    await retained!.finalize();
+    const path = await retained!.retainUnexported();
+    expect(await readFile(join(path, 'raw/browser/screenshots/0001.png'))).toHaveLength(4);
+    const next = await startJobWorkspace({ jobId: 'job-after-retain', rootDir });
+    await next.finalize();
+    await next.markExported();
+    await next.cleanup();
   });
 
   it('无可恢复工作区：no-workspace', async () => {

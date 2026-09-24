@@ -1,9 +1,9 @@
 import http from 'node:http';
 import https from 'node:https';
 
-import type { CaptureTarget } from '../capture-pack/types';
 import type { ProbeHttpClient, ProbeHttpResponse } from './probeBmcBasics';
 import { tlsServerName } from './tlsServerName';
+import type { BmcTarget } from './types';
 
 export const MAX_PROBE_RESPONSE_BYTES = 1024 * 1024;
 
@@ -25,7 +25,7 @@ function parseResponseBody(buffer: Buffer, contentType: string): unknown {
 }
 
 export function createNodeProbeHttpClient(
-  target: CaptureTarget,
+  target: BmcTarget,
   options: {
     extraHeaders?: Record<string, string>;
     extraHeadersForPath?: (path: string) => Promise<Record<string, string>>;

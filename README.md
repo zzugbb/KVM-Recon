@@ -6,28 +6,26 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases)](https://github.com/zzugbb/KVM-Recon/releases)
 
-Offline BMC/KVM Discovery & Compatibility Toolkit.
+Offline BMC/KVM evidence capture.
 
-KVM-Recon is an offline desktop client for the server room: it records what happens when you log into a BMC, open HTML5 KVM, and establish the related HTTP/WebSocket traffic, then exports a redacted Capture Pack. After you leave the room and get a network connection, give that pack to an engineer or an AI for gateway compatibility analysis.
+KVM-Recon is an offline desktop client that records browser-visible evidence while an operator logs into a BMC and opens HTML5 KVM. It manually exports a Capture Pack 2.0 containing HTTP bodies, scripts, browser state, screenshots, and realtime channel data. Capture does not depend on vendor or protocol-family rules. Packs are **unredacted** and must be handled as sensitive data.
+
+The main branch is developing 0.3.0. The published 0.2.10 release uses an older UI and pack format; its YES/PARTIAL/NO result is not a Capture Pack 2.0 integrity verdict.
 
 The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
 ## Screenshots
 
-![Main window](docs/images/main-window.png)
+The current development UI is a single-job capture workbench; historical screenshots may not match it.
 
 ## What this project is
 
 - An offline capture tool. It is **not** a production KVM gateway and does not provide a remote console for operators.
 - It does not need the public internet and does not call external analysis services inside the server room.
-- On-site staff can help log in, click menus, and open HTML5 KVM; the tool records the facts needed for later adaptation.
+- Operators enter a BMC address, optionally add a free-text device label, then manually log in and open HTML5 KVM.
 - This tool **does not write adapters**.
 
-The capture tool writes one of five **capture buckets** (`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`). `unknown-h5` and `not-h5` are not gateway adapter names. After leaving the room, treat HTTP/WebSocket in the pack as source of truth: reuse an existing adapter only when the protocol matches; otherwise add a new adapter named after the market BMC product (for example `dell-idrac-h5`). See `docs/kvm-family.md` (Chinese). Nameplate vendor/model fields are evidence only.
-
-AMI MegaRAC HTML5 launch APIs are `/api/kvm/token` and `/api/settings/media/h5viewercfg`. The tool never probes those endpoints; it only records operator traffic. `PARTIAL` for `network.capture.complete` means a unique login, one-shot KVM launch/token, or Viewer/Worker source request is still missing—not that a same-window GET KvmService poll happened to be in flight at export time. A later POST to the same URL still counts as incomplete. Worker entry scripts must be captured as source text; a pack that never stored that body stays incomplete until you recapture.
-
-Product-specific readiness also understands H3C HDM2, Dell iDRAC, and HPE iLO evidence while keeping them in the `unknown-h5` capture bucket. Dell header-based login does not require a synthetic POST body; HPE iLO5 Redfish Sessions is a login endpoint, and `/wss/ircport` is the direct KVM transport rather than a missing token API. Dell ES2015/ES5 differential bundles are alternatives, not two mandatory copies.
+Capture Pack 2.0 reports only `captureIntegrity` (COMPLETE/INCOMPLETE) and `workflowStatus`. It does not classify the protocol family. An unfamiliar architecture may still yield a COMPLETE pack if the observed evidence and integrity gates are satisfied.
 
 ## Download
 
@@ -38,17 +36,17 @@ Current builds **do not use paid Apple / Microsoft developer certificates**:
 - **macOS**: ad-hoc signature. If Gatekeeper says the developer cannot be verified after a browser download, allow it in **System Settings → Privacy & Security**.
 - **Windows**: no Authenticode signature. If SmartScreen says Windows protected your PC or the publisher is unknown, choose **More info → Run anyway**.
 
-Step-by-step field instructions (Chinese) are in `docs/offline-field-guide.md`.
+Development-version field instructions (Chinese) are in [docs/field-guide.md](docs/field-guide.md). The published 0.2.10 instructions remain available from its Git tag.
 
 ## Field workflow
 
 1. Install and open KVM-Recon in the server room.
-2. Enter the BMC address and port; optionally fill in on-site vendor, product, firmware, rack location, and a job note.
-3. Start capture. The tool runs basic probes plus TLS/fingerprint collection.
+2. Enter the BMC address and optionally a free-text device label.
+3. Start capture. The tool opens an isolated browser and records optional TLS/Redfish facts.
 4. An embedded browser opens the BMC. On-site staff **manually** log in if needed.
-5. Open the HTML5 KVM entry and wait for the viewer and WebSocket. If KVM opens in a new window, keep that window in the foreground for at least 10 seconds.
-6. The tool records HTTP, WebSocket, page events, screenshots, storage keys, TLS, fingerprints, and the checklist.
-7. Export a Capture Pack. After leaving the room, read `README.md` inside the pack.
+5. Open HTML5 KVM and wait for the Viewer picture; keep any popup open.
+6. The tool records browser-visible HTTP, scripts/Workers, state, screenshots, and realtime channels.
+7. Manually export the pack. Start with `00_START_HERE.md` inside the ZIP.
 
 The main window shows the current tool version (`vX.Y.Z`). Exported packs also include `manifest.tool.buildId` so a field package can be traced to the exact build.
 
@@ -65,28 +63,25 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`: unit tests plus a local mock-BMC probe / redaction / zip loop. Optional field regressions read `KVM_RECON_FIELD_PACKS` (0.2.9 representative packs) and `KVM_RECON_FIELD_COLLECTION_2` (27 ZIP + 16 HAR corpus); each suite is skipped when its env is unset or the directory is missing.
-- `npm run test:e2e`: production capture E2E covering Electron launch, native popup, production Capture Controller, main/popup Documents, HTML/JS bodies, sourceFiles, `target=_blank` POST, referrer, window lineage, redaction, and ZIP self-check (build first)
+- `npm test`: unit tests plus Mock KVM, schema, and export checks. The optional field HAR replay uses `KVM_RECON_FIELD_COLLECTION_2`.
+- `npm run test:e2e`: Electron browser capture and protocol-fixture replay (build first).
 - `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 
 ## Docs
 
 Index: `docs/README.md`.
 
-- `docs/v0.3-development-spec.md`: authoritative 0.3.0 evidence-first redesign specification (target design, not implemented yet)
-- `docs/offline-field-guide.md`: install and capture on site (Chinese)
-- `docs/kvm-family.md`: capture buckets vs gateway `kvmFamily` keys (Chinese)
-- `docs/capture-pack-spec.md`: Capture Pack contract
+- `docs/v0.3-development-spec.md`: authoritative 0.3.0 specification (phases 0–5 implemented; phase 6 pending)
+- `docs/field-guide.md`: development-version field workflow (Chinese)
 - `docs/releasing.md`: build and publish installers
 - `docs/development-plan.md`: product boundary and current status
-- `docs/architecture.md`: technical architecture
-- `schema/`: JSON Schema for pack files (timeline, TLS, probes, and more)
+- `schema/2.0/`: Capture Pack 2.0 JSON Schema
 - `CHANGELOG.md`: version history; fold `[Unreleased]` into a version heading when you ship
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE`
 
 ## Safety and limits
 
-- No plaintext passwords, no cookie values on disk, no full KVM video bitstream.
+- Packs can contain plaintext passwords, cookies, tokens, and realtime payloads. Store and share them only in controlled environments; never attach a raw pack to a public issue.
 - Will not: auto-login, MITM, call AI inside the server room, auto-write adapters, or fully decode video.
 - Report vulnerabilities via [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new). Do not paste credentials or unredacted capture packs into issues.
 

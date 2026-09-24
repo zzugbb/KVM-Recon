@@ -12,7 +12,7 @@ import type {
 } from '../capture-pack-v2/types';
 import { deriveAdapterDossier, type DossierEngineInput } from './dossierEngine';
 import type { PackWsHandshakeFact } from '../capture-pack-v2/readPackFacts';
-import type { WorkflowFacts } from './workflowStatusEngine';
+import { deriveWorkflowStatus, type WorkflowFacts } from './workflowStatusEngine';
 
 /**
  * 适配候选链派生（规范 §12）：候选按时间与因果关系定位，每步引用稳定
@@ -356,5 +356,57 @@ describe('deriveAdapterDossier（适配候选链派生）', () => {
     expect(result.wasmIds).toEqual(['script-wasm-0001']);
     const scriptStep = result.candidateChain.find(step => step.role === 'script-worker-wasm');
     expect(scriptStep?.evidenceIds).toContain('script-wasm-0001');
+  });
+
+  it('反例（候选放宽）：纯 Token 登录（Authorization 头、无 Set-Cookie 签发）→ 有登录候选而无登录链步，workflowStatus 不升格', () => {
+    const fixture = fullFixture();
+    const transactions = fixture.facts.transactions as PackV2HttpTransactionRow[];
+    const login = transactions.find(tx => tx.id === 'http-000002');
+    if (login) {
+      login.responseHeaders = {};
+      login.requestHeaders = { authorization: 'Bearer token-abc123' };
+    }
+    for (const tx of transactions) {
+      if (tx.id === 'http-000003' || tx.id === 'http-000004') {
+        tx.requestHeaders = { authorization: 'Bearer token-abc123' };
+      }
+    }
+    // 无双向通道 → 无 Viewer 活动：workflowStatus 诚实停在 TARGET_OPENED
+    fixture.facts.channels[0].frameCounts = { up: 0, down: 3 };
+    const result = derive(fixture);
+    // 凭据头形态请求进登录候选（候选 ≠ 判定；含无正文的 GET）
+    expect(result.loginCandidateRequestIds).toEqual(['http-000002', 'http-000003', 'http-000004']);
+    const roles = result.candidateChain.map(step => step.role);
+    expect(roles).not.toContain('login-interaction');
+    expect(roles).not.toContain('session-established');
+    // workflowStatus 不因候选而升格：登录链四组事实未合取
+    const status = deriveWorkflowStatus(fixture.facts);
+    expect(status.loginPropagation).toBe(false);
+    expect(status.workflowStatus).toBe('TARGET_OPENED');
+  });
+
+  it('反例（候选放宽）：GET xhr/fetch 启动请求入启动候选，GET Other 不入', () => {
+    const fixture = fullFixture();
+    const transactions = fixture.facts.transactions as PackV2HttpTransactionRow[];
+    const launchIndex = transactions.findIndex(tx => tx.id === 'http-000004');
+    transactions[launchIndex] = {
+      ...transactions[launchIndex],
+      method: 'GET',
+      requestBody: undefined,
+      resourceType: 'XHR',
+    };
+    fixture.facts = {
+      ...fixture.facts,
+      transactions: [
+        ...fixture.facts.transactions,
+        transaction('http-000007', 5, { resourceType: 'Other' }),
+        transaction('http-000008', 5, { resourceType: 'Fetch' }),
+      ],
+    };
+    const result = derive(fixture);
+    expect(result.kvmLaunchCandidateRequestIds).toEqual(['http-000004', 'http-000008']);
+    const launchStep = result.candidateChain.find(step => step.role === 'launch-request');
+    expect(launchStep?.evidenceIds).toEqual(['http-000004', 'http-000008']);
+    expect(launchStep?.title).toContain('xhr-fetch GET');
   });
 });

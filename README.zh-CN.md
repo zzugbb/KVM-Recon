@@ -6,28 +6,26 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases)](https://github.com/zzugbb/KVM-Recon/releases)
 
-Offline BMC/KVM Discovery & Compatibility Toolkit / KVM 离线探测与兼容性采集工具。
+Offline BMC/KVM Evidence Capture / BMC KVM 离线证据采集工具。
 
-KVM-Recon 是面向机房现场的离线桌面客户端：采集「登录 BMC → 打开 HTML5 KVM → 建立相关 HTTP/WebSocket」的事实资料，导出脱敏 Capture Pack。离开机房、联网之后，再把资料包交给工程师或 AI 做网关兼容分析。
+KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登录 BMC → 打开 HTML5 KVM」时浏览器实际观察到的请求、正文、脚本、实时通道与画面，并手动导出 Capture Pack 2.0。采集不依赖厂商、型号或协议族规则。包内资料**未脱敏**，离场后由工程师或 AI 研究适配。
+
+主分支正在开发 0.3.0；GitHub 已发布的 0.2.10 是旧格式和旧界面，不能把旧包的 YES/PARTIAL/NO 当作 2.0 完整度结论。
 
 界面与现场说明目前是中文。GitHub 访客请看英文 [README.md](README.md)。
 
 ## 界面预览
 
-![主窗口](docs/images/main-window.png)
+界面以单作业工作台为准；仓库中的历史截图不代表当前开发版本。
 
 ## 项目定位
 
 - 这是离线采集工具，**不是**生产 KVM 网关，也不提供用户远程控制台。
 - 不依赖公网，不在机房内调用外部分析服务。
-- 现场人员可以辅助登录、点击菜单、打开 HTML5 KVM；工具负责记录适配所需资料。
+- 现场人员只需填写 BMC 地址与可选设备说明，手工登录并打开 HTML5 KVM；导出仍由用户手动触发。
 - 本工具**不写 Adapter**。
 
-采集器只会打五个**采集桶**（`ami-megarac` / `openbmc-h5` / `huawei-ibmc` / `unknown-h5` / `not-h5`）。这不是网关 Adapter 主键：`unknown-h5` / `not-h5` 不能写进 registry；已知三族也要先用包内 HTTP/WS 核对是否同构。新 Adapter 用市面 BMC 产品名（如 `dell-idrac-h5`）。详见 `docs/kvm-family.md`。现场铭牌只作为证据。
-
-AMI MegaRAC HTML5 启动接口同时支持 `/api/kvm/token` 与 `/api/settings/media/h5viewercfg`，只记录现场真实操作，不主动探测。`network.capture.complete` 的 PARTIAL 只针对登录、一次性 KVM 启动/Token、Viewer/Worker 源码等真正缺失的请求；同窗口已成功采过的 GET KvmService 查询不会单独降级；POST 等写操作仍会降级。Worker 入口脚本必须保存正文，旧包缺正文不能靠规则改成已采到。
-
-H3C HDM2、Dell iDRAC、HPE iLO 仍写入 `unknown-h5` 采集桶和独立 `productHints`，但 readiness 会按各自真实链路判断：Dell 请求头登录不强求虚构的 POST 正文；HPE iLO5 Redfish Sessions 计作登录，`/wss/ircport` 是直接 KVM 通道；Dell ES2015 / ES5 差分 bundle 任一实际加载版本完整即可。产品提示仍不改变 ZIP 包名，也不是自动生成 Adapter。
+包只声明 `captureIntegrity`（COMPLETE/INCOMPLETE）与 `workflowStatus`（是否观察到 KVM 等阶段）；没有协议族分类状态。未知架构只要证据和门禁满足要求，同样可以 COMPLETE。完整度不是“保证能一次写出 Adapter”，而是对采集器已观察证据的可验证结论。
 
 ## 下载
 
@@ -38,17 +36,17 @@ H3C HDM2、Dell iDRAC、HPE iLO 仍写入 `unknown-h5` 采集桶和独立 `produ
 - **macOS**：ad-hoc 签名。从浏览器下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。
 - **Windows**：无 Authenticode 签名。SmartScreen 若提示已保护你的电脑或未知发布者，点「更多信息 → 仍要运行」。
 
-逐步说明见 `docs/offline-field-guide.md`。
+0.3.0 开发版流程见 [现场说明](docs/field-guide.md)。已发布 0.2.10 的旧说明可从对应 Git 标签获取。
 
 ## 现场流程
 
 1. 在机房内安装并打开 KVM-Recon。
-2. 输入 BMC 地址、端口；可选填写现场厂商、型号、固件、机柜位置和作业备注。
-3. 开始采集，工具执行基础探测与 TLS/指纹采集。
+2. 输入 BMC 地址；可选在同一输入框填写设备说明。
+3. 开始采集，工具打开独立浏览器并记录 TLS/Redfish 补充事实。
 4. 内嵌浏览器打开 BMC，现场人员按需**手工**登录。
-5. 点击 HTML5 KVM 入口，等待 viewer 与 WebSocket。若 KVM 开在新窗口，把新窗口留在前台至少 10 秒。
-6. 工具记录 HTTP、WebSocket、页面、截图、storage key、TLS、指纹和 checklist。
-7. 导出 Capture Pack。出机房后阅读包内 `README.md`。
+5. 点击 HTML5 KVM 入口，等待 Viewer 画面出现；弹出的 Viewer 窗口保持打开。
+6. 工具自动记录 HTTP、WebSocket、脚本/Worker、页面状态、截图与已观察到的其他实时通道。
+7. 在主界面手动导出 Capture Pack。离场后按包内 `00_START_HERE.md` 阅读资料。
 
 主窗口标题旁会显示当前工具版本（`vX.Y.Z`）；导出包还会写入 `manifest.tool.buildId`，用于确认现场包来自哪次构建。
 
@@ -65,28 +63,25 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测 + 本地 mock BMC 的探测/脱敏/zip 闭环。现场语料不硬编码本机路径：`KVM_RECON_FIELD_PACKS` 用于 0.2.9 代表包，`KVM_RECON_FIELD_COLLECTION_2` 用于 27 个 ZIP + 16 份 HAR；未设置对应变量则跳过该组。
-- `npm run test:e2e`：生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验（需先 build）
+- `npm test`：单测与 Mock KVM 样例、Schema、导出验证。现场语料通过 `KVM_RECON_FIELD_COLLECTION_2` 可选启用；未设置时跳过现场 HAR 回放。
+- `npm run test:e2e`：Electron 真实浏览器采集与协议 Fixture 回放（需先 build）。
 - `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 
 ## 文档
 
 索引见 `docs/README.md`。
 
-- `docs/v0.3-development-spec.md`：0.3.0 证据优先采集重构的权威开发规范（目标设计，尚未实现）
-- `docs/offline-field-guide.md`：现场安装与采集
-- `docs/kvm-family.md`：采集桶与网关 `kvmFamily` 主键、未知族如何起名
-- `docs/capture-pack-spec.md`：Capture Pack 契约
+- `docs/v0.3-development-spec.md`：0.3.0 权威开发规范（阶段 0–5 已实现，阶段 6 待验收）
+- `docs/field-guide.md`：0.3.0 开发版现场操作
 - `docs/releasing.md`：构建与发布安装包
 - `docs/development-plan.md`：项目边界与当前状态
-- `docs/architecture.md`：技术架构
-- `schema/`：JSON Schema（含 timeline、TLS、probe 等导出文件）
+- `schema/2.0/`：Capture Pack 2.0 JSON Schema
 - `CHANGELOG.md`：版本记录；发新版时把 `[Unreleased]` 收成版本号
 - `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`
 
 ## 安全与边界
 
-- 不保存明文密码；Cookie 值不落盘；不保存完整 KVM 视频码流。
+- 原始采集包可能包含明文密码、Cookie、Token 和实时通道 payload；只在受控环境保存、传输和分析，禁止上传公开 Issue。
 - 不会做：自动登录、MITM、机房内调 AI、自动写 Adapter、完整视频解码。
 - 漏洞请走 [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new)，不要在 Issue 里贴凭证或未脱敏资料包。
 

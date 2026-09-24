@@ -65,8 +65,13 @@ async function artifactBytes(artifact: ZipArtifact): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/** 读取工件字节（大索引流式通道复用：Schema 副本属元数据规模，可整体读）。 */
+export async function readArtifactBytes(artifact: ZipArtifact): Promise<Buffer> {
+  return artifactBytes(artifact);
+}
+
 /** 按行流式读取（file 源流式；bytes 源本身就在内存）。 */
-async function* linesOf(artifact: ZipArtifact): AsyncIterable<string> {
+export async function* linesOf(artifact: ZipArtifact): AsyncIterable<string> {
   if (artifact.source.kind === 'file') {
     const input = createReadStream(artifact.source.absolutePath, { encoding: 'utf8' });
     const reader = createInterface({ input, crlfDelay: Infinity });
@@ -87,9 +92,8 @@ async function* linesOf(artifact: ZipArtifact): AsyncIterable<string> {
 interface CompiledSchemas {
   validators: Map<string, (data: unknown) => boolean>;
 }
-
 /** 从包内 Schema 副本编译目标校验器（副本 $id/编译问题由元数据校验报告）。 */
-async function compileTargetSchemas(
+export async function compileTargetSchemas(
   artifacts: ReadonlyArray<ZipArtifact>,
 ): Promise<CompiledSchemas> {
   const copies = new Map<string, Buffer>();

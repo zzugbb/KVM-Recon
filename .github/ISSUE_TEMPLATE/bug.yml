@@ -15,7 +15,7 @@ body:
       options:
         - 探测 / 指纹
         - 采集窗口 / HTTP / WebSocket
-        - 导出 / 脱敏 / Capture Pack
+        - 导出 / Capture Pack
         - 桌面 UI
         - 打包 / GitHub Actions
         - 文档

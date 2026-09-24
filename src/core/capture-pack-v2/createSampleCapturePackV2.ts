@@ -1,21 +1,19 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { deflateSync } from 'node:zlib';
 
 import { createMockKvmServer, type MockKvmHandle, type MockKvmUrlSet } from '../mock-kvm/createMockKvmServer';
+import { scanStreamForNeedles } from '../collector/chunkedNeedleScan';
 import { buildPackV2FileName } from './buildPackV2FileName';
 import { incompleteReasonInfo } from './incompleteReasons';
-import {
-  classificationStatusFromKvmFamilyDetection,
-  derivePackIntegrity,
-} from './packStatus';
+import { derivePackIntegrity } from './packStatus';
 import {
   validatePackV2Consistency,
   type PackV2ConsistencyProblemCode,
 } from './packV2Consistency';
 import { buildPackV2ReportHtml, buildPackV2StartHereMarkdown } from './packV2Layout';
-import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 import { harContentOf, harEntry, harPostDataOf, headerOf } from '../collector/harBuilder';
 import { deriveAdapterDossier } from '../collector/dossierEngine';
 import { deriveReplayPlan } from '../collector/replayEngine';
@@ -55,8 +53,8 @@ import { UNTRUSTED_PAGE_CONTENT_MARKER } from './types';
  * Capture Pack 2.0 样例包生成器（规范 §19 阶段 0）。
  *
  * 由固定 seed 的随机 URL Mock KVM 实际驱动（fetch + WebSocket）生成，
- * 展示 §11 全部必需文件与「COMPLETE + KVM_REACHED + UNKNOWN」验收场景
- * （规范 §20）：协议完全未知，但资料完整，可离场适配。
+ * 展示 §11 全部必需文件与「COMPLETE + KVM_REACHED」验收场景
+ * （规范 §20）：随机路径且无预置协议规则，资料仍完整，可离场适配。
  *
  * 固定 seed 时输出逐字节确定：URL 归一化到固定 authority，时间戳为
  * 逻辑时钟（startedAt + 递增偏移），不依赖真实端口与系统时区。
@@ -419,7 +417,7 @@ function buildSummaryMarkdown(manifest: PackV2Manifest, urls: MockKvmUrlSet, web
     `目标：${manifest.target.host}:${manifest.target.port}（设备说明：${manifest.job.deviceLabel}）`,
     '',
     '本包由完全未知协议的本地 Mock KVM 生成：所有 URL 均为随机值，不命中任何厂商签名。',
-    'classificationStatus=UNKNOWN 只表示当前没有已知协议候选，不影响资料完整性。',
+    '采集与完整度不依赖厂商或协议族规则。',
     '',
     '适配链：登录交互 → Session/Cookie 建立 → KVM 点击 → 启动请求 → Viewer 打开 → 脚本/Worker → 实时通道。',
     '',
@@ -457,23 +455,6 @@ export async function createSampleCapturePackV2(
     // 实际建立的 WS 通道 URL：Viewer 页脚本与样例驱动都以查询参数 t 携带
     // viewerToken（与 Mock 服务端握手校验一致），记录的是真实连接 URL。
     const websocketConnectUrl = `${urls.websocket}?t=${encodeURIComponent(viewerToken)}`;
-
-    // 离线分类（只在签名库上运行，不影响采集与完整度，规范 §15）。
-    const detection = scoreCapturedKvmFamily(
-      { basic: {}, paths: {}, tls: { certificate: null } },
-      {
-        httpRequests: exchanges
-          .filter(exchange => exchange.kind !== 'document')
-          .map(exchange => ({ url: normalizeUrl(exchange.url, handle), resourceType: 'XHR' })),
-        webSockets: [{ url: websocketConnectUrl }],
-        webSocketFrames: wsMessages
-          .filter(message => message.direction === 'down' && message.opcode === 'binary')
-          .map(message => ({
-            headHex: Buffer.from(message.payload.subarray(0, 8)).toString('hex'),
-          })),
-      },
-    );
-    const classificationStatus = classificationStatusFromKvmFamilyDetection(detection.primary);
 
     const shortId = sha256Hex(seed).slice(0, 6);
     const startedAtMatch = startedAt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
@@ -715,7 +696,7 @@ export async function createSampleCapturePackV2(
 
     // 值传播图（ai/value-flow.json）由 deriveValueFlow 从以下真实观察事实派生
     //（见下方「派生引擎接线」块）：cookie 链、storage 值链、crypto 链与
-    // WS 握手查询参数，与装配层 / 离线 Analyzer 同一引擎同一事实形状。
+    // WS 握手查询参数，与装配层同一引擎同一事实形状。
 
     // ---- raw/browser ----
     const timeline: PackV2BrowserTimelineRow[] = [
@@ -813,7 +794,7 @@ export async function createSampleCapturePackV2(
     // ai/index.json 候选与 replay 三件套全部由真实引擎（deriveValueFlow /
     // deriveRelations / deriveAdapterDossier / deriveReplayPlan）从上述真实
     // 观察事实派生——与装配层（assembleCapturePackV2）同一引擎、同一事实
-    // 形状。样例包因此就是引擎输出契约样例：离线 Analyzer 只凭包内工件
+    // 形状。样例包因此就是引擎输出契约样例：离线重建只凭包内工件
     // 可逐字节再生全部派生物（契约对照测试见 createSampleCapturePackV2.test）。
     const navigations: WorkflowNavigationFact[] = [
       { occurredAt: isoAt(startedAt, 1), targetId: 'target-page-0001', url: urls.loginPage },
@@ -839,11 +820,21 @@ export async function createSampleCapturePackV2(
       renderSurfaces,
       hookFailures: [],
     };
-    // 正文逐份读取（读一份放一份）：http 正文与 crypto 输入/输出都在内存
-    // blob store 里，与采集会话的 workspace 读取语义一致。
+    // 正文两侧分开读取：needle 侧（crypto 输入/输出）整体读取——本身就是
+    // 匹配素材；干草堆侧（响应/请求正文）分块扫描，与采集会话的 workspace
+    // 读取语义一致（httpBodies / runtimeBodies 是内存 blob store）。
     const readBody = async (ref: PackV2BodyRef): Promise<Buffer | null> => {
       const content = httpBodies.get(ref.sha256) ?? runtimeBodies.get(ref.sha256);
       return content === undefined ? null : Buffer.from(content, 'utf8');
+    };
+    const scanBody = async (
+      ref: PackV2BodyRef,
+      needles: ReadonlyArray<Buffer>,
+    ): Promise<ReadonlySet<Buffer> | null> => {
+      const content = httpBodies.get(ref.sha256) ?? runtimeBodies.get(ref.sha256);
+      if (content === undefined) return null;
+      if (needles.length === 0) return new Set<Buffer>();
+      return scanStreamForNeedles(Readable.from([Buffer.from(content, 'utf8')]), needles);
     };
     const derivedFlow = await deriveValueFlow(
       {
@@ -870,7 +861,7 @@ export async function createSampleCapturePackV2(
         ].map(([key, value]) => ({ key, value })),
         storageCapturedAt: storage.capturedAt,
       },
-      { readBody },
+      { readBody, scanBody },
     );
     const valueFlow = derivedFlow.valueFlow;
 
@@ -1173,7 +1164,6 @@ export async function createSampleCapturePackV2(
       },
       captureIntegrity: derived.captureIntegrity,
       workflowStatus,
-      classificationStatus,
       security: { dataHandling: 'UNREDACTED', containsSensitiveData: true },
       environment: {
         chromium: '152.0.7977.76',
@@ -1200,7 +1190,6 @@ export async function createSampleCapturePackV2(
       status: {
         captureIntegrity: manifest.captureIntegrity,
         workflowStatus: manifest.workflowStatus,
-        classificationStatus: manifest.classificationStatus,
       },
       // 候选链由 deriveAdapterDossier 派生（时间与因果关系定位）。
       candidateChain: dossier.candidateChain,
@@ -1216,7 +1205,6 @@ export async function createSampleCapturePackV2(
       status: {
         captureIntegrity: manifest.captureIntegrity,
         workflowStatus: manifest.workflowStatus,
-        classificationStatus: manifest.classificationStatus,
       },
       // 候选 ID 由 dossierEngine 派生；通道 ID 是 catalog/channels.json 的事
       // 实复制（与装配层 assembleCapturePackV2 同一接线）。

@@ -88,6 +88,36 @@ function headerOf(headers: Readonly<Record<string, string>>, name: string): stri
   }
   return null;
 }
+export { headerOf };
+
+/** 登录签发的 Set-Cookie name=value 对（签发时刻 = 响应到达时刻）。 */
+export interface LoginIssuance {
+  at: number;
+  transactionId: string;
+  pair: string;
+}
+
+/**
+ * 登录签发事实（单一事实源：loginChainOf / replayEngine 会话凭证判定共用
+ * 同一签发定义，不出现第二套判定）。
+ * 签发形态：POST + 请求正文 + 2xx/3xx 响应 Set-Cookie。
+ */
+export function loginIssuances(facts: WorkflowFacts): LoginIssuance[] {
+  const issued: LoginIssuance[] = [];
+  for (const transaction of facts.transactions) {
+    if (transaction.method.toUpperCase() !== 'POST') continue;
+    if (!transaction.requestBody) continue;
+    if (transaction.status === null || transaction.status < 200 || transaction.status >= 400) continue;
+    const setCookie = headerOf(transaction.responseHeaders, 'set-cookie');
+    if (!setCookie) continue;
+    for (const pair of setCookiePairs(setCookie)) {
+      // 签发时刻 = 响应到达时刻：请求开始晚于登录请求、但
+      // 早于登录响应到达的请求不可能持有该 cookie，不构成传播证据
+      issued.push({ at: responseArrivalAt(transaction), transactionId: transaction.id, pair });
+    }
+  }
+  return issued;
+}
 
 /**
  * Set-Cookie 的 name=value 对（去掉 Path 等属性段）。
@@ -128,19 +158,7 @@ export interface LoginChainEvidence {
  * 任一签发对的传播成立即返回证据；无传播返回 null。
  */
 export function loginChainOf(facts: WorkflowFacts): LoginChainEvidence | null {
-  const issued: Array<{ at: number; transactionId: string; pair: string }> = [];
-  for (const transaction of facts.transactions) {
-    if (transaction.method.toUpperCase() !== 'POST') continue;
-    if (!transaction.requestBody) continue;
-    if (transaction.status === null || transaction.status < 200 || transaction.status >= 400) continue;
-    const setCookie = headerOf(transaction.responseHeaders, 'set-cookie');
-    if (!setCookie) continue;
-    for (const pair of setCookiePairs(setCookie)) {
-      // 签发时刻 = 响应到达时刻：请求开始晚于登录请求、但
-      // 早于登录响应到达的请求不可能持有该 cookie，不构成传播证据
-      issued.push({ at: responseArrivalAt(transaction), transactionId: transaction.id, pair });
-    }
-  }
+  const issued = loginIssuances(facts);
   if (issued.length === 0) return null;
   const propagated = new Set<number>();
   const carriers = new Set<string>();

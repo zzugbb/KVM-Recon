@@ -16,7 +16,7 @@
 | macOS | ad-hoc（不是 Apple 公证） | 无法验证开发者 | 「系统设置 → 隐私与安全性」允许 |
 | Windows | 无 Authenticode | SmartScreen：已保护你的电脑 / 未知发布者 | 「更多信息 → 仍要运行」 |
 
-现场步骤见 `docs/offline-field-guide.md`。
+现场步骤见 `docs/field-guide.md`。
 
 不要把本机 `release/` 目录提交进 git。
 
@@ -56,7 +56,7 @@ Windows 安装包请用 GitHub 的 Windows runner（**Build installers** 或 **R
 
 ## 签名
 
-当前默认：macOS 使用 ad-hoc 签名（不需要 Apple 账号）；Windows 不签名（无 Authenticode）。打开时的系统提示见上文表格与 `docs/offline-field-guide.md`。
+当前默认：macOS 使用 ad-hoc 签名（不需要 Apple 账号）；Windows 不签名（无 Authenticode）。打开时的系统提示见上文表格与 `docs/field-guide.md`。
 
 若以后要用 Apple Developer ID 并公证，或 Windows Authenticode / EV 证书，把证书放在仓库 Secrets，不要写入 git。
 

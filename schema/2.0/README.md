@@ -4,8 +4,7 @@
 > `src/core/capture-pack-v2/types.ts` 逐字段同步（规范 §22：不再以「代码优先、
 > Schema 滞后」为常态）。修改类型时必须同步修改本目录与测试。
 >
-> 上级 `schema/` 目录中的 1.x Schema 保持不动，用于校验旧现场包与已发布格式；
-> 不要在本目录原地改写 1.x 文件。
+> 当前仓库只维护 2.0 Schema；旧 1.x 格式可从已发布 Git 标签查阅。
 
 本目录是 Capture Pack 2.0 的独立 JSON Schema（33 个），方便出机房后用任意校验器核对 zip 内文件。
 权威规范是 `docs/v0.3-development-spec.md`；类型契约是 `src/core/capture-pack-v2/types.ts`。
@@ -69,5 +68,4 @@ frames.index.jsonl 描述）；`raw/browser/dom-snapshots/*`、`raw/browser/scre
   `JobWorkspace` / `BodyStore` / 采集器 / `EvidenceGraph` 时如需扩展行字段，
   必须同步更新本目录与 `types.ts`，再更新测试与样例包。
 - `examples/capture-pack-v2/` 是与这些 Schema 保持同步的样例包。
-- 旧包导入状态固定 `LEGACY_UNVERIFIED`（规范 §6 / §17），由
-  `packStatus.ts` 的 `resolveLegacyPackImportStatus` 决定，不由 Schema 决定。
+- 旧 1.x 包不能按 2.0 Schema 验证，更不能据此宣称 2.0 的 COMPLETE。

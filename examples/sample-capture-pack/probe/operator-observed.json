@@ -1,8 +1,0 @@
-{
-  "source": "operator",
-  "vendor": "AMI",
-  "product": "MegaRAC SPX",
-  "firmware": "1.0.0",
-  "location": "实验室 A 柜",
-  "note": "样例包，仅用于说明导出目录与 README 格式。"
-}

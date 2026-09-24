@@ -1,6 +1,6 @@
 import tls from 'node:tls';
 
-import type { CaptureTarget } from '../capture-pack/types';
+import type { BmcTarget } from './types';
 import { tlsServerName } from './tlsServerName';
 
 interface CertificateParty {
@@ -51,7 +51,7 @@ export interface TlsProbeResult {
 }
 
 interface ProbeTlsInfoInput {
-  target: CaptureTarget;
+  target: BmcTarget;
   connector?: () => Promise<TlsConnectorResult>;
 }
 
@@ -66,7 +66,7 @@ function isSelfSigned(certificate: PeerCertificate | null) {
   return !!subjectCn && subjectCn === issuerCn;
 }
 
-function createDefaultConnector(target: CaptureTarget): () => Promise<TlsConnectorResult> {
+function createDefaultConnector(target: BmcTarget): () => Promise<TlsConnectorResult> {
   return () =>
     new Promise((resolve, reject) => {
       const socket = tls.connect({

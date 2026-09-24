@@ -16,7 +16,7 @@ import {
   assembleCapturePackV2,
   type AssembleCapturePackV2Input,
 } from '../capture-pack-v2/assembleCapturePackV2';
-import type { DerivedPackIntegrity, PackV2StatusTriple } from '../capture-pack-v2/types';
+import type { DerivedPackIntegrity, PackV2Status } from '../capture-pack-v2/types';
 import { exportPackV2Zip, type PackV2ZipExportResult, type ZipArtifact } from './exportPackV2Zip';
 
 export interface ExportJobWorkspaceZipInput {
@@ -32,7 +32,7 @@ export interface ExportJobWorkspaceZipInput {
 
 export interface ExportJobWorkspaceZipResult {
   export: PackV2ZipExportResult;
-  status: PackV2StatusTriple;
+  status: PackV2Status;
   derived: DerivedPackIntegrity;
   /** 规范 §10 ZIP 文件名（装配派生，调用方落盘命名参考）。 */
   fileName: string;

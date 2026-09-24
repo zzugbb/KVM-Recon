@@ -32,9 +32,11 @@ import { buildChecksumsManifest, sha256OfContent } from './checksumsManifest';
 import {
   validatePackV2Consistency,
   isRawJournalPath,
+  isLargeIndexPath,
   type PackV2ArtifactLike,
 } from '../capture-pack-v2/packV2Consistency';
 import { streamValidateRawJournals } from './streamingRawJournalChecks';
+import { streamValidateLargeIndexes } from './streamingLargeIndexChecks';
 
 export const PACK_V2_CHECKSUMS_PATH = 'checksums.sha256';
 
@@ -145,14 +147,15 @@ async function sha256OfArtifact(artifact: ZipArtifact): Promise<string> {
 /**
  * 文件背书的一致性门禁工件：结构化文件带真实内容，二进制只带流式
  * 预计算的 sha256/bytes（验证器跳过其内容哈希，不整体载入内存）。
- * 无界 raw journal（CDP/NetLog/事务/实时/帧索引）在此一律哈希背书，
- * 内容校验由流式通道负责。
+ * 无界 raw journal（CDP/NetLog/事务/实时/帧索引）与无上界索引文件
+ * （resources/relations/replay 行索引、value-flow 图、storage 快照）
+ * 在此一律哈希背书，内容校验由两条流式通道负责。
  */
 async function buildConsistencyArtifact(
   artifact: ZipArtifact,
   sha256: string,
 ): Promise<PackV2ArtifactLike> {
-  if (isRawJournalPath(artifact.path)) {
+  if (isRawJournalPath(artifact.path) || isLargeIndexPath(artifact.path)) {
     const bytes =
       artifact.source.kind === 'file'
         ? (await stat(artifact.source.absolutePath)).size
@@ -203,7 +206,10 @@ async function assertPackV2Consistency(
   }
   const streamed = await streamValidateRawJournals({ artifacts, sha256ByPath: hashes, bytesByPath });
 
-  // 2. 元数据/索引规模文件内存校验（raw journal 以哈希背书 + 委托选项）。
+  // 1b. 无上界索引文件流式校验（逐行/逐元素，行数据注入内存侧闭包检查）。
+  const streamedLarge = await streamValidateLargeIndexes(artifacts);
+
+  // 2. 元数据/索引规模文件内存校验（raw journal 与大索引以哈希背书 + 委托选项）。
   const validationArtifacts: PackV2ArtifactLike[] = [];
   for (const artifact of artifacts) {
     validationArtifacts.push(await buildConsistencyArtifact(artifact, hashes.get(artifact.path)!));
@@ -216,9 +222,11 @@ async function assertPackV2Consistency(
   const check = validatePackV2Consistency(validationArtifacts, {
     skipRawJournalContentChecks: true,
     rawJournalIds: streamed.rawJournalIds,
+    skipLargeIndexContentChecks: true,
+    largeIndexFacts: streamedLarge.facts,
   });
 
-  const problems = [...streamed.problems, ...check.problems];
+  const problems = [...streamed.problems, ...streamedLarge.problems, ...check.problems];
   if (problems.length > 0) {
     const summary = problems
       .slice(0, 5)

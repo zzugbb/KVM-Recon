@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { Readable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
 import { deriveAdapterDossier } from '../collector/dossierEngine';
+import { scanStreamForNeedles } from '../collector/chunkedNeedleScan';
 import { deriveReplayPlan } from '../collector/replayEngine';
 import { deriveValueFlow } from '../collector/valueFlowEngine';
 import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
@@ -44,11 +46,11 @@ function jsonLinesOf(artifacts: Map<string, SampleArtifact>, path: string): unkn
 }
 
 describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
-  it('生成 COMPLETE + KVM_REACHED + UNKNOWN 样例，并通过独立一致性验证（非循环验证）', async () => {
+  it('生成未知协议的 COMPLETE + KVM_REACHED 样例，并通过独立一致性验证', async () => {
     const sample = await createSampleCapturePackV2();
     expect(sample.manifest.captureIntegrity).toBe('COMPLETE');
     expect(sample.manifest.workflowStatus).toBe('KVM_REACHED');
-    expect(sample.manifest.classificationStatus).toBe('UNKNOWN');
+    expect(sample.manifest).not.toHaveProperty('classificationStatus');
     expect(checkPackStatus(sample.manifest).legal).toBe(true);
     expect(sample.fileName).toBe(
       'KVM-Recon_20260918-143522_127-0-0-1_KVM-REACHED_COMPLETE_' +
@@ -457,10 +459,11 @@ describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
         ? Buffer.from(artifact.content, 'utf8')
         : Buffer.from(artifact.content);
     };
-    // readPackFacts 只依赖 readArtifact / artifactPaths 两个只读口；
-    // 这里用包内工件构造一个最小只读工作区（离线 Analyzer 视角）。
+    // readPackFacts 只依赖 readArtifact / openArtifactStream / artifactPaths
+    // 三个只读口；这里用包内工件构造一个最小只读工作区（离线 Analyzer 视角）。
     const packWorkspace = {
       readArtifact: async (path: string) => bufferOf(path),
+      openArtifactStream: async (path: string) => Readable.from([bufferOf(path)]),
       artifactPaths: async () => [...artifacts.keys()],
     } as unknown as JobWorkspace;
 
@@ -505,7 +508,15 @@ describe('createSampleCapturePackV2（规范 §19 阶段 0 / §20）', () => {
         ].map(([key, value]) => ({ key, value })),
         storageCapturedAt: storageFile.capturedAt,
       },
-      { readBody: async ref => bufferOf(ref.path) },
+      {
+        readBody: async ref => bufferOf(ref.path),
+        scanBody: async (ref, needles) => {
+          const body = bufferOf(ref.path);
+          if (body === null) return null;
+          if (needles.length === 0) return new Set<Buffer>();
+          return scanStreamForNeedles(Readable.from([body]), needles);
+        },
+      },
     );
     expect(derivedFlow.valueFlow).toEqual(
       JSON.parse(String(artifacts.get('ai/value-flow.json')!.content)),

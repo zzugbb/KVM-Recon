@@ -2,8 +2,7 @@
   "schemaVersion": "2.0.0",
   "status": {
     "captureIntegrity": "COMPLETE",
-    "workflowStatus": "KVM_REACHED",
-    "classificationStatus": "UNKNOWN"
+    "workflowStatus": "KVM_REACHED"
   },
   "candidateChain": [
     {
@@ -47,7 +46,7 @@
     },
     {
       "role": "launch-request",
-      "title": "启动请求：动作后在血缘集合内带正文的 POST（含值传播背书来源）",
+      "title": "启动请求：动作后在血缘集合内带正文的 POST / xhr-fetch GET（含值传播背书来源）",
       "evidenceIds": [
         "http-000002",
         "http-000004"

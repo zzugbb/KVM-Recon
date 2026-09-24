@@ -1,23 +1,13 @@
-import type { CaptureTarget } from '../capture-pack/types';
-import {
-  detectKvmFamily,
-  overlayPathEvidence,
-  tlsCommonNameFromCertificate,
-  tlsOrganizationFromCertificate,
-  type ProbeSignatureInput,
-} from '../signatures/detectKvmFamily';
 import { createNodeProbeHttpClient } from './createNodeProbeHttpClient';
 import { probeBmcBasics, type ProbeBmcBasicsResult, type ProbeHttpClient } from './probeBmcBasics';
 import { probeTlsInfo, type TlsProbeResult } from './probeTlsInfo';
+import type { BmcTarget } from './types';
 
 interface TlsConnectorResult {
   authorized: boolean;
   authorizationError?: string;
   protocol: string | null;
-  cipher: {
-    name: string;
-    version: string;
-  } | null;
+  cipher: { name: string; version: string } | null;
   certificate: {
     subject?: Record<string, string | undefined>;
     issuer?: Record<string, string | undefined>;
@@ -28,91 +18,44 @@ interface TlsConnectorResult {
 }
 
 interface ProbeBmcTargetInput {
-  target: CaptureTarget;
+  target: BmcTarget;
   httpClient?: ProbeHttpClient;
   tlsConnector?: () => Promise<TlsConnectorResult>;
 }
 
 export interface ProbeBmcTargetResult extends ProbeBmcBasicsResult {
   tls: TlsProbeResult;
-  authenticated?: {
-    attempted: boolean;
-    cookieNames: string[];
-    paths: NonNullable<ProbeSignatureInput['paths']>;
-    pathDetails?: ProbeBmcBasicsResult['pathDetails'];
-  };
+  authenticated?: { attempted: boolean; cookieNames: string[] };
 }
 
 export async function probeBmcTarget(input: ProbeBmcTargetInput): Promise<ProbeBmcTargetResult> {
-  const httpClient = input.httpClient || createNodeProbeHttpClient(input.target);
   const [basics, tls] = await Promise.all([
     probeBmcBasics({
       target: input.target,
-      httpClient,
+      httpClient: input.httpClient || createNodeProbeHttpClient(input.target),
     }),
-    probeTlsInfo({
-      target: input.target,
-      connector: input.tlsConnector,
-    }),
+    probeTlsInfo({ target: input.target, connector: input.tlsConnector }),
   ]);
-
-  return {
-    ...basics,
-    tls,
-    familySignatures: detectKvmFamily({
-      redfish: {
-        vendor: basics.basic.vendor,
-        product: basics.basic.product,
-        oemKeys: basics.redfish?.oemKeys,
-        oemSoftwareName: basics.redfish?.oemSoftwareName,
-      },
-      paths: basics.paths,
-      tls: {
-        organization: tlsOrganizationFromCertificate(tls.certificate),
-        commonName: tlsCommonNameFromCertificate(tls.certificate),
-      },
-    }),
-  };
+  return { ...basics, tls };
 }
-
-export { overlayPathEvidence };
 
 export function applyAuthenticatedProbe(
   anonymous: ProbeBmcTargetResult,
   authenticated: ProbeBmcTargetResult,
   cookieNames: string[],
 ): ProbeBmcTargetResult {
-  const paths = overlayPathEvidence(anonymous.paths, authenticated.paths);
-  const vendor = anonymous.basic.vendor || authenticated.basic.vendor;
-  const product = anonymous.basic.product || authenticated.basic.product;
   return {
     ...anonymous,
     basic: {
       ...anonymous.basic,
-      vendor,
-      product,
+      vendor: anonymous.basic.vendor || authenticated.basic.vendor,
+      product: anonymous.basic.product || authenticated.basic.product,
       firmwareVersion: anonymous.basic.firmwareVersion || authenticated.basic.firmwareVersion,
     },
-    paths,
-    familySignatures: detectKvmFamily({
-      redfish: {
-        vendor,
-        product,
-        oemKeys: anonymous.redfish?.oemKeys || authenticated.redfish?.oemKeys,
-        oemSoftwareName:
-          anonymous.redfish?.oemSoftwareName || authenticated.redfish?.oemSoftwareName,
-      },
-      paths,
-      tls: {
-        organization: tlsOrganizationFromCertificate(anonymous.tls.certificate),
-        commonName: tlsCommonNameFromCertificate(anonymous.tls.certificate),
-      },
-    }),
+    redfish: anonymous.redfish.reachable ? anonymous.redfish : authenticated.redfish,
     authenticated: {
       attempted: true,
       cookieNames: [...new Set(cookieNames.filter(Boolean))],
-      paths: authenticated.paths,
-      pathDetails: authenticated.pathDetails,
     },
   };
 }

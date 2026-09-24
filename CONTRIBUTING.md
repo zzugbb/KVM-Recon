@@ -15,11 +15,11 @@ npm run build
 npm run test:e2e
 ```
 
-`npm test` 含单测和离线 HTTP 探测/导出闭环。现场 zip 离线回归不硬编码本机路径：设置 `KVM_RECON_FIELD_PACKS` 为 zip 目录后再跑测试；未设置则跳过。`npm run test:e2e` 是生产采集 E2E，覆盖 Electron 启动、原生 popup、生产 Capture Controller、主/弹窗 Document、HTML/JS 正文、sourceFiles、target=_blank POST、referrer、窗口血缘、脱敏和 ZIP 自校验，需要先 `npm run build`。
+`npm test` 含单测和离线采集/导出闭环。现场 HAR 回放使用 `KVM_RECON_FIELD_COLLECTION_2` 指向本机语料目录；未设置则跳过。`npm run test:e2e` 覆盖 Electron 启动、原生 popup、生产采集 Controller、主/弹窗、请求正文、脚本、窗口血缘和 ZIP 自校验，需要先 `npm run build`。
 
 ## 可以做的改动
 
-- 采集正确性、脱敏、Capture Pack 契约、文档、测试、CI/打包缺陷
+- 采集正确性、Capture Pack 契约、文档、测试、CI/打包缺陷
 - 真机验收中暴露的 bug 修复
 - 开源治理文件与 GitHub Actions 维护
 
@@ -32,7 +32,8 @@ npm run test:e2e
 - 机房内调用公网或 AI
 - 根据 Capture Pack 自动写 Adapter
 - 完整 KVM 视频解码或保存完整码流
-- 把明文密码、Cookie 值、storage 明文写入导出包
+- 在仓库中提交真实凭据、Cookie、未经审核的现场 Capture Pack 或 HAR
+- 在采集器中加入厂商/协议族判定，或根据判定筛选证据
 
 ## Pull Request
 
@@ -42,7 +43,7 @@ npm run test:e2e
 4. 描述里说明：改了什么、为什么、如何验证（`npm test` / `npm run typecheck` / 是否跑过 `test:e2e`）。
 5. 用户可见改动请写入 `CHANGELOG.md` 的 `[Unreleased]`。
 6. 使用仓库里的 PR 模板。
-7. 若改了 Capture Pack 导出结构，请同步 `examples/sample-capture-pack/`（`writeSampleCapturePack` 在 `src/core/delivery/createSampleCapturePack.ts`）。`npm test` 不会改盘上样例。
+7. 若改了 Capture Pack 2.0 导出结构，请同步 `schema/2.0/` 和 `examples/capture-pack-v2/`，并运行样例一致性测试。真实凭据必须进入导出包，但不得进入仓库样例。
 
 ## Dependabot
 

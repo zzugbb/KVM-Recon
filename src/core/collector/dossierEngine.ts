@@ -6,8 +6,9 @@
  * 协议无关、不依赖厂商 URL 与页面语义：候选按时间与因果关系定位——
  * - 登录链：loginChainOf（观察到的 Set-Cookie 签发 + 逐字节传播）；
  * - Viewer 链：detectViewerActivity（动作 → 打开 → 表面 → 双向通道）；
- * - 启动候选：动作后在动作 target 血缘内带正文的 POST 请求，加上值传播
- *   图背书的「响应正文 → WS 握手查询参数」来源请求；
+ * - 启动候选：动作后在动作 target 血缘内带正文的 POST / xhr-fetch GET
+ *   请求，加上值传播图背书的「响应正文 → WS 握手查询参数」来源请求；
+ *   登录候选另收凭据头形态请求（Authorization 类，候选 ≠ 判定）；
  * - 脚本 / Worker / WASM 候选：Viewer 血缘集合内的脚本索引条目。
  * 每一步只引用稳定 ID 与包内真实路径；无法派生的角色整步省略
  * （缺失由 replay 的 notReplayableReasons 与 ai/index 空列表显式表达）。
@@ -60,6 +61,16 @@ export interface DossierEngineResult {
 
 function unique(values: ReadonlyArray<string>): string[] {
   return [...new Set(values)];
+}
+
+/** 凭据头形态（Authorization 类）：Token / Bearer 登录不签发 cookie，
+ * 登录链四组事实合取不到，但候选集必须收录（候选 ≠ 判定）。 */
+const CREDENTIAL_HEADER_NAMES = new Set(['authorization', 'proxy-authorization']);
+
+function hasCredentialHeader(headers: Readonly<Record<string, string>>): boolean {
+  return Object.entries(headers).some(
+    ([name, value]) => value !== '' && CREDENTIAL_HEADER_NAMES.has(name.toLowerCase()),
+  );
 }
 
 export function deriveAdapterDossier(input: DossierEngineInput): DossierEngineResult {
@@ -125,17 +136,21 @@ export function deriveAdapterDossier(input: DossierEngineInput): DossierEngineRe
     });
   }
   // 登录候选 = 全部「签发且被传播」的签发事务（再按签发事务形态过滤，
-  // 防御 value-flow 之外的形态异常行）
+  // 防御 value-flow 之外的形态异常行）∪ 凭据头形态请求（Authorization 类）。
+  // 候选 ≠ 判定：候选是 AI 超集，loginChainOf 的严格合取（观察到的
+  // cookie 传播）仍单独决定 workflowStatus 的 LOGIN_REACHED。
   const loginCandidateRequestIds: string[] = [];
-  if (login) {
-    for (const tx of facts.transactions) {
-      if (!login.propagatedIssuerTransactionIds.includes(tx.id)) continue;
+  const propagatedIssuers = new Set(login?.propagatedIssuerTransactionIds ?? []);
+  for (const tx of facts.transactions) {
+    if (propagatedIssuers.has(tx.id)) {
       if (tx.method.toUpperCase() !== 'POST' || !tx.requestBody) continue;
       if (tx.status === null || tx.status < 200 || tx.status >= 400) continue;
       const setCookie = Object.entries(tx.responseHeaders).find(
         ([key]) => key.toLowerCase() === 'set-cookie',
       );
       if (setCookie) loginCandidateRequestIds.push(tx.id);
+    } else if (hasCredentialHeader(tx.requestHeaders)) {
+      loginCandidateRequestIds.push(tx.id);
     }
   }
 
@@ -169,9 +184,9 @@ export function deriveAdapterDossier(input: DossierEngineInput): DossierEngineRe
     }
 
     // 启动候选：值传播背书（响应正文 → 本通道握手查询参数）+ 时间窗口内
-    // 血缘集合中带正文的 POST 请求（按信号隔离，链步只用本信号的候选）。
-    // 值传播背书来源同样受时间窗约束：早于动作发起的请求不是点击触发的
-    // 启动请求，晚于通道建立的响应进不了握手。
+    // 血缘集合中的启动形态请求（带正文的 POST / xhr-fetch GET，按信号隔离，
+    // 链步只用本信号的候选）。值传播背书来源同样受时间窗约束：早于动作
+    // 发起的请求不是点击触发的启动请求，晚于通道建立的响应进不了握手。
     const signalLaunchIds = new Set<string>();
     for (const edge of valueFlow.edges) {
       if (edge.relation !== 'propagated-to') continue;
@@ -186,7 +201,11 @@ export function deriveAdapterDossier(input: DossierEngineInput): DossierEngineRe
       signalLaunchIds.add(from.evidenceId);
     }
     for (const tx of facts.transactions) {
-      if (tx.method.toUpperCase() !== 'POST' || !tx.requestBody) continue;
+      const resourceType = tx.resourceType.toLowerCase();
+      const isLaunchShape =
+        (tx.method.toUpperCase() === 'POST' && !!tx.requestBody) ||
+        (tx.method.toUpperCase() === 'GET' && (resourceType === 'xhr' || resourceType === 'fetch'));
+      if (!isLaunchShape) continue;
       if (!tx.targetId || !lineage.has(tx.targetId)) continue;
       const at = timeOf(tx.startedAt);
       if (at < actionAt || at >= channelAt) continue;
@@ -212,7 +231,7 @@ export function deriveAdapterDossier(input: DossierEngineInput): DossierEngineRe
     if (launchStepIds.length > 0) {
       chain.push({
         role: 'launch-request',
-        title: '启动请求：动作后在血缘集合内带正文的 POST（含值传播背书来源）',
+        title: '启动请求：动作后在血缘集合内带正文的 POST / xhr-fetch GET（含值传播背书来源）',
         evidenceIds: launchStepIds.map(tx => tx.id),
         evidencePaths: [TX_PATH],
         occurredAt: launchStepIds[0].startedAt,

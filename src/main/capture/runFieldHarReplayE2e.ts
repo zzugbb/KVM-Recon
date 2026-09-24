@@ -201,8 +201,15 @@ export async function runFieldHarReplayE2e(harPath: string) {
 
   const e2eProbe = async (): Promise<ProbeBmcTargetResult> => ({
     basic: { host: '127.0.0.1', port, scheme: 'http', vendor: '', product: '', firmwareVersion: '' },
-    paths: {},
-    familySignatures: { primary: 'unknown-h5', confidence: 0, candidates: [] },
+    redfish: {
+      path: '/redfish/v1/',
+      status: 0,
+      reachable: false,
+      vendor: '',
+      product: '',
+      firmwareVersion: '',
+      rootFields: {},
+    },
     tls: {
       reachable: true,
       authorized: true,

@@ -4,17 +4,16 @@
  * 权威规范：docs/v0.3-development-spec.md。schema/2.0/ 下的 JSON Schema
  * 必须与本文件逐字段同步（规范 §22）；修改类型时同步修改 Schema 与测试。
  *
- * 0.2.x / Capture Pack 1.x 的类型在 src/core/capture-pack/types.ts，保持不动，
- * 用于旧包兼容；不要把 1.x 的限制（YES/PARTIAL/NO、大小上限、脱敏）带入本模块。
+ * 本契约只描述 Capture Pack 2.0；旧包可作为历史语料保存，但不进入
+ * 2.0 导出或完整度判定。
  */
 
 // ---------- 状态枚举（规范 §6） ----------
 
-export type CaptureIntegrity = 'COMPLETE' | 'INCOMPLETE' | 'LEGACY_UNVERIFIED';
+export type CaptureIntegrity = 'COMPLETE' | 'INCOMPLETE';
 
 export type WorkflowStatus = 'KVM_REACHED' | 'LOGIN_REACHED' | 'TARGET_OPENED';
 
-export type ClassificationStatus = 'KNOWN' | 'UNKNOWN';
 
 // ---------- 完整度原因稳定代码（规范 §14） ----------
 
@@ -48,7 +47,6 @@ export interface PackV2Manifest {
   target: PackV2Target;
   captureIntegrity: CaptureIntegrity;
   workflowStatus: WorkflowStatus;
-  classificationStatus: ClassificationStatus;
   security: PackV2Security;
   environment: PackV2Environment;
 }
@@ -195,10 +193,9 @@ export const AI_READING_ORDER = [
   'ai/adapter-dossier.json',
 ] as const;
 
-export type PackV2StatusTriple = {
+export type PackV2Status = {
   captureIntegrity: CaptureIntegrity;
   workflowStatus: WorkflowStatus;
-  classificationStatus: ClassificationStatus;
 };
 
 export interface PackV2AiIndex {
@@ -217,7 +214,7 @@ export interface PackV2AiIndex {
     scheme: 'http' | 'https';
   };
   tool: PackV2ToolInfo;
-  status: PackV2StatusTriple;
+  status: PackV2Status;
   loginCandidateRequestIds: string[];
   kvmLaunchCandidateRequestIds: string[];
   viewerTargetIds: string[];
@@ -254,7 +251,7 @@ export interface AdapterDossierStep {
 
 export interface PackV2AdapterDossier {
   schemaVersion: typeof PACK_V2_SCHEMA_VERSION;
-  status: PackV2StatusTriple;
+  status: PackV2Status;
   /** 按时间与因果关系输出的候选链，不依赖厂商正则（规范 §12）。 */
   candidateChain: AdapterDossierStep[];
 }

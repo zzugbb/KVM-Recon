@@ -9,8 +9,11 @@
  * 字节不匹配 / 时间倒序 / 过短值 → 零边（空图是诚实形态）。
  */
 
+import { Readable } from 'node:stream';
+
 import { describe, expect, it } from 'vitest';
 
+import { scanStreamForNeedles } from './chunkedNeedleScan';
 import type {
   PackV2BodyRef,
   PackV2ChannelRow,
@@ -89,11 +92,42 @@ function wsChannel(input: Partial<ValueFlowWsChannelFact> & { channelId: string 
   };
 }
 
-/** 逐份读的注入正文源：path → bytes。 */
-function readerOf(bodies: Record<string, Buffer>): ValueFlowBodyReader {
+/**
+ * 逐份读的注入正文源：path → bytes。干草堆侧（响应/请求正文）必须走
+ * 分块扫描原语（与生产同一路径）；readBody 只服务 needle 侧（crypto
+ * 输入/输出）。chunkBytes 指定干草堆切块大小（默认整块），用于跨块
+ * 边界反例；scanCalls/readCalls 记录调用路径供间谍断言。
+ */
+function readerOf(
+  bodies: Record<string, Buffer>,
+  options: { chunkBytes?: number } = {},
+): ValueFlowBodyReader & { scanCalls: string[]; readCalls: string[] } {
+  const chunkBytes = options.chunkBytes;
+  const scanCalls: string[] = [];
+  const readCalls: string[] = [];
+  const sourceOf = (body: Buffer): Readable => {
+    if (chunkBytes === undefined || body.byteLength <= chunkBytes) return Readable.from([body]);
+    const chunks: Buffer[] = [];
+    for (let offset = 0; offset < body.byteLength; offset += chunkBytes) {
+      chunks.push(body.subarray(offset, Math.min(body.byteLength, offset + chunkBytes)));
+    }
+    return Readable.from(chunks);
+  };
   return {
+    scanCalls,
+    readCalls,
     readBody(ref) {
-      return Promise.resolve(Object.prototype.hasOwnProperty.call(bodies, ref.path) ? bodies[ref.path] : null);
+      readCalls.push(ref.path);
+      return Promise.resolve(
+        Object.prototype.hasOwnProperty.call(bodies, ref.path) ? bodies[ref.path] : null,
+      );
+    },
+    scanBody(ref, needles) {
+      scanCalls.push(ref.path);
+      const body = bodies[ref.path];
+      if (body === undefined) return Promise.resolve(null);
+      if (needles.length === 0) return Promise.resolve(new Set<Buffer>());
+      return scanStreamForNeedles(sourceOf(body), needles);
     },
   };
 }
@@ -835,6 +869,119 @@ describe('deriveValueFlow（字节级观察背书的值传播）', () => {
     );
     expect(noSource.valueFlow.edges).toHaveLength(0);
     expect(noSource.valueFlow.nodes).toHaveLength(0);
+  });
+
+  // 刀 1 反例：干草堆侧必须分块扫描——needle 跨块边界也要命中，
+  // 且正文读取不得走 needle 侧的整读通道。
+  it('反例：needle 跨块边界必须命中（4 字节分块扫描响应正文）', async () => {
+    const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
+    const response = Buffer.from(`prefix..${nonce.toString('utf8')}..suffix`, 'utf8');
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', response.byteLength),
+          }),
+        ],
+        cryptoRows: [
+          cryptoCall({
+            id: 'crypto-0001',
+            occurredAt: T1,
+            inputRef: bodyRef('raw/runtime/bodies/0001', nonce.byteLength),
+            outputRef: bodyRef('raw/runtime/bodies/0002', 32),
+          }),
+        ],
+      }),
+      readerOf(
+        {
+          'raw/http/bodies/0001': response,
+          'raw/runtime/bodies/0001': nonce,
+          'raw/runtime/bodies/0002': Buffer.alloc(32, 7),
+        },
+        { chunkBytes: 4 },
+      ),
+    );
+    const derivedFrom = result.valueFlow.edges.filter(edge => edge.relation === 'derived-from');
+    expect(derivedFrom).toHaveLength(1);
+    const responseNode = result.valueFlow.nodes.find(node => node.kind === 'http-response');
+    const outputNode = result.valueFlow.nodes.find(node => node.kind === 'crypto-output');
+    expect(derivedFrom[0]?.from).toBe(responseNode?.id);
+    expect(derivedFrom[0]?.to).toBe(outputNode?.id);
+  });
+
+  it('反例：reader 间谍——干草堆正文只走 scanBody，readBody 只服务 crypto needle 侧', async () => {
+    const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
+    const output = Buffer.alloc(32, 7);
+    const request = Buffer.from(`{"token":"${output.toString('hex')}"}`, 'utf8');
+    const response = Buffer.from(`<input value="${nonce.toString('utf8')}">`, 'utf8');
+    const reader = readerOf({
+      'raw/http/bodies/0001': response,
+      'raw/http/bodies/0002': request,
+      'raw/runtime/bodies/0001': nonce,
+      'raw/runtime/bodies/0002': output,
+    });
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', response.byteLength),
+          }),
+          tx({
+            id: 'http-0002',
+            startedAt: T2,
+            method: 'POST',
+            requestBody: bodyRef('raw/http/bodies/0002', request.byteLength),
+          }),
+        ],
+        cryptoRows: [
+          cryptoCall({
+            id: 'crypto-0001',
+            occurredAt: T1,
+            inputRef: bodyRef('raw/runtime/bodies/0001', nonce.byteLength),
+            outputRef: bodyRef('raw/runtime/bodies/0002', output.byteLength),
+          }),
+        ],
+      }),
+      reader,
+    );
+    // 两侧都要有边（crypto 输入 ⊆ 响应正文；输出 hex ⊆ 请求正文）
+    expect(result.valueFlow.edges.length).toBeGreaterThan(0);
+    expect(reader.readCalls).toEqual([
+      'raw/runtime/bodies/0001',
+      'raw/runtime/bodies/0002',
+    ]);
+    expect(reader.scanCalls).toEqual(['raw/http/bodies/0001', 'raw/http/bodies/0002']);
+  });
+
+  it('反例：needle 长于正文总字节数（诚实预筛）与无候选 needle 时不得读取正文', async () => {
+    const nonce = Buffer.from('nonce-value-0123456789', 'utf8');
+    const shortResponse = Buffer.from('short', 'utf8');
+    // needle 长于响应正文字节数：scanBody 预筛跳过读取（由 reader 实现层
+    // 保证；此处引擎侧断言无候选 needle 时不发起扫描）
+    const reader = readerOf({
+      'raw/http/bodies/0001': shortResponse,
+      'raw/runtime/bodies/0001': nonce,
+    });
+    const result = await deriveValueFlow(
+      factsOf({
+        transactions: [
+          // 无 crypto / WS 参数 / storage 值候选：不得扫描任何正文
+          tx({
+            id: 'http-0001',
+            startedAt: T0,
+            responseBody: bodyRef('raw/http/bodies/0001', shortResponse.byteLength),
+          }),
+        ],
+      }),
+      reader,
+    );
+    expect(result.valueFlow.edges).toHaveLength(0);
+    expect(reader.scanCalls).toEqual([]);
+    expect(reader.readCalls).toEqual([]);
   });
 });
 

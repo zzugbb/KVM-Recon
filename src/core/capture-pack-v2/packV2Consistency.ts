@@ -98,6 +98,64 @@ export interface PackV2ConsistencyOptions {
   skipRawJournalContentChecks?: boolean;
   /** skipRawJournalContentChecks 时由流式通道收集的 raw journal ID 集合。 */
   rawJournalIds?: ReadonlySet<string>;
+  /**
+   * 大索引文件（resources / relations / replay / value-flow / storage）
+   * 的逐行 / 逐元素内容校验交给外部流式通道（默认 false）。为 true 时
+   * 这些文件按哈希背书参与，行数据经 largeIndexFacts 注入——闭包与
+   * 对齐检查（BodyRef 闭环、replay 三方对齐、value-flow 节点闭环）
+   * 仍在内存侧对注入行执行，单一实现不分裂。用于导出器对无上界
+   * 索引文件的有界内存校验；必须与流式校验配合使用，不得单独开启。
+   */
+  skipLargeIndexContentChecks?: boolean;
+  /** skipLargeIndexContentChecks 时由流式通道收集的大索引行数据。 */
+  largeIndexFacts?: PackV2LargeIndexFacts;
+}
+
+/** replay/http.jsonl 行（流式通道与内存校验共用形状）。 */
+export interface PackV2ReplayHttpRow {
+  requestId: string;
+  url?: string;
+  method?: string;
+  requestBodyPath?: string | null;
+  responseBodyPath?: string | null;
+}
+
+/** ai/value-flow.json 节点的闭包检查字段（流式通道注入的瘦行）。 */
+export interface PackV2ValueFlowNodeRef {
+  id: string;
+  evidencePath?: string;
+  evidenceId?: string;
+}
+
+/** ai/value-flow.json 边的闭包检查字段（流式通道注入的瘦行）。 */
+export interface PackV2ValueFlowEdgeRef {
+  from: string;
+  to: string;
+  evidencePath?: string;
+}
+
+/** raw/browser/storage.json 的 cacheStorage 引用行（流式通道注入）。 */
+export interface PackV2StorageCacheRefs {
+  cacheStorage: ReadonlyArray<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+  additionalContexts: ReadonlyArray<{
+    targetId: string;
+    cacheStorage: ReadonlyArray<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+  }>;
+}
+
+/** 大索引文件流式通道收集的事实（行数据为 O(行数) 的元数据规模）。 */
+export interface PackV2LargeIndexFacts {
+  /** catalog/resources.jsonl 行（流式解析 + 逐行 Schema 校验后）。 */
+  resources?: ReadonlyArray<PackV2ResourceRow>;
+  /** catalog/relations.jsonl 行。 */
+  relations?: ReadonlyArray<PackV2RelationRow>;
+  /** replay/http.jsonl 行。 */
+  replayHttpRows?: ReadonlyArray<PackV2ReplayHttpRow>;
+  /** ai/value-flow.json 的 nodes / edges（逐元素 Schema 校验后）。 */
+  valueFlowNodes?: ReadonlyArray<PackV2ValueFlowNodeRef>;
+  valueFlowEdges?: ReadonlyArray<PackV2ValueFlowEdgeRef>;
+  /** raw/browser/storage.json 的 cacheStorage 引用（含 additionalContexts）。 */
+  storageCacheRefs?: PackV2StorageCacheRefs;
 }
 
 export interface PackV2ArtifactLike {
@@ -214,6 +272,25 @@ export function isRawJournalPath(path: string): boolean {
   );
 }
 
+/**
+ * 无上界索引文件路径全集：resources / relations / replay 行索引、
+ * value-flow 图、storage 快照（IndexedDB record 内联，无上界）。导出器
+ * 对它们做流式行/元素校验并注入事实行，内存上界 = 行数据（O(行数)，
+ * 配对算法固有），不再整文件载入。除这些与 raw journal 外的结构化
+ * 文件属于元数据规模，保留在内存校验。
+ */
+const LARGE_INDEX_PATHS: ReadonlySet<string> = new Set([
+  'catalog/resources.jsonl',
+  'catalog/relations.jsonl',
+  'replay/http.jsonl',
+  'ai/value-flow.json',
+  'raw/browser/storage.json',
+]);
+
+export function isLargeIndexPath(path: string): boolean {
+  return LARGE_INDEX_PATHS.has(path);
+}
+
 function toBuffer(content: string | Uint8Array): Buffer {
   return typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content);
 }
@@ -229,6 +306,11 @@ export function validatePackV2Consistency(
   const problems: PackV2ConsistencyProblem[] = [];
   /** raw journal 内容校验委托：哈希背书工件无内容，跳过其解析/单行 Schema。 */
   const skipRawJournalContent = options.skipRawJournalContentChecks === true;
+  /** 大索引内容校验委托：行数据经 largeIndexFacts 注入，闭包检查仍在内存侧。 */
+  const skipLargeIndexContent = options.skipLargeIndexContentChecks === true;
+  const largeIndexFacts = skipLargeIndexContent
+    ? options.largeIndexFacts ?? {}
+    : {};
   const add = (code: PackV2ConsistencyProblemCode, detail: string, path?: string) => {
     problems.push({ code, detail, ...(path ? { path } : {}) });
   };
@@ -330,7 +412,9 @@ export function validatePackV2Consistency(
     }
   };
 
-  const resources = jsonlOf('catalog/resources.jsonl') as PackV2ResourceRow[];
+  const resources: ReadonlyArray<PackV2ResourceRow> = skipLargeIndexContent
+    ? largeIndexFacts.resources ?? []
+    : (jsonlOf('catalog/resources.jsonl') as PackV2ResourceRow[]);
   for (const row of resources) {
     checkBodyRef(row.requestBody, `资源 ${row.id}`, 'DANGLING_BODY_REF');
     checkBodyRef(row.responseBody, `资源 ${row.id}`, 'DANGLING_BODY_REF');
@@ -346,15 +430,25 @@ export function validatePackV2Consistency(
   for (const script of scriptIndex?.scripts || []) {
     checkBodyRef(script.bodyRef, `脚本 ${script.id}`, 'DANGLING_SCRIPT_REF');
   }
-  const storage = jsonOf('raw/browser/storage.json') as
+  const storage:
     | {
-        cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
-        additionalContexts?: Array<{
+        cacheStorage?: ReadonlyArray<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+        additionalContexts?: ReadonlyArray<{
           targetId: string;
-          cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+          cacheStorage?: ReadonlyArray<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
         }>;
       }
-    | undefined;
+    | undefined = skipLargeIndexContent
+    ? largeIndexFacts.storageCacheRefs
+    : (jsonOf('raw/browser/storage.json') as
+        | {
+            cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+            additionalContexts?: Array<{
+              targetId: string;
+              cacheStorage?: Array<{ requestUrl: string; responseRef?: PackV2BodyRef }>;
+            }>;
+          }
+        | undefined);
   for (const [index, entry] of (storage?.cacheStorage || []).entries()) {
     checkBodyRef(entry.responseRef, `CacheStorage[${index}] ${entry.requestUrl}`, 'DANGLING_BODY_REF');
   }
@@ -635,14 +729,22 @@ export function validatePackV2Consistency(
     to: string;
     evidencePath?: string;
   }
-  const valueFlow = jsonOf('ai/value-flow.json') as
-    | { nodes?: ValueFlowNodeLike[]; edges?: ValueFlowEdgeLike[] }
-    | undefined;
+  const valueFlow:
+    | { nodes?: ReadonlyArray<ValueFlowNodeLike>; edges?: ReadonlyArray<ValueFlowEdgeLike> }
+    | undefined = skipLargeIndexContent
+    ? {
+        nodes: largeIndexFacts.valueFlowNodes ?? [],
+        edges: largeIndexFacts.valueFlowEdges ?? [],
+      }
+    : (jsonOf('ai/value-flow.json') as
+        | { nodes?: ValueFlowNodeLike[]; edges?: ValueFlowEdgeLike[] }
+        | undefined);
   for (const node of valueFlow?.nodes || []) knownIds.add(node.id);
 
-  for (const [index, relation] of (
-    jsonlOf('catalog/relations.jsonl') as PackV2RelationRow[]
-  ).entries()) {
+  const relations: ReadonlyArray<PackV2RelationRow> = skipLargeIndexContent
+    ? largeIndexFacts.relations ?? []
+    : (jsonlOf('catalog/relations.jsonl') as PackV2RelationRow[]);
+  for (const [index, relation] of relations.entries()) {
     for (const side of [relation.from, relation.to] as const) {
       if (!knownIds.has(side)) {
         add('UNKNOWN_EVIDENCE_ID', `relations.jsonl 第 ${index} 行引用未知 ID：${side}`, 'catalog/relations.jsonl');
@@ -768,13 +870,9 @@ export function validatePackV2Consistency(
       }
     }
   }
-  const replayHttpRows = jsonlOf('replay/http.jsonl') as Array<{
-    requestId: string;
-    url?: string;
-    method?: string;
-    requestBodyPath?: string | null;
-    responseBodyPath?: string | null;
-  }>;
+  const replayHttpRows: ReadonlyArray<PackV2ReplayHttpRow> = skipLargeIndexContent
+    ? largeIndexFacts.replayHttpRows ?? []
+    : (jsonlOf('replay/http.jsonl') as PackV2ReplayHttpRow[]);
   reportDuplicateReplayIds(
     replayHttpRows.map(row => row.requestId),
     'replay/http.jsonl 的行',
@@ -973,7 +1071,6 @@ export function validatePackV2Consistency(
           status?: {
             captureIntegrity?: string;
             workflowStatus?: string;
-            classificationStatus?: string;
           };
           loginCandidateRequestIds?: string[];
           kvmLaunchCandidateRequestIds?: string[];
@@ -987,7 +1084,7 @@ export function validatePackV2Consistency(
         }
       | undefined;
     const dossier = jsonOf('ai/adapter-dossier.json') as
-      | { status?: { captureIntegrity?: string; workflowStatus?: string; classificationStatus?: string }; candidateChain?: AdapterDossierStep[] }
+      | { status?: { captureIntegrity?: string; workflowStatus?: string }; candidateChain?: AdapterDossierStep[] }
       | undefined;
 
     if (manifest && integrity) {
@@ -1053,7 +1150,6 @@ export function validatePackV2Consistency(
         const check = checkPackStatus({
           captureIntegrity: manifest.captureIntegrity,
           workflowStatus: manifest.workflowStatus,
-          classificationStatus: manifest.classificationStatus,
         });
         if (!check.legal) {
           add('STATUS_ILLEGAL', check.violations.join('; '), 'manifest.json');
@@ -1066,10 +1162,9 @@ export function validatePackV2Consistency(
         if (
           status &&
           (status.captureIntegrity !== manifest.captureIntegrity ||
-            status.workflowStatus !== manifest.workflowStatus ||
-            status.classificationStatus !== manifest.classificationStatus)
+            status.workflowStatus !== manifest.workflowStatus)
         ) {
-          add('STATUS_MISMATCH', `${name} 的状态三元组与 manifest 不一致`, name);
+          add('STATUS_MISMATCH', `${name} 的采集状态与 manifest 不一致`, name);
         }
       }
     }
@@ -1224,6 +1319,8 @@ export function validatePackV2Consistency(
           if (!target || !packSchemas.has(target.schema)) continue;
           // raw journal 内容校验被委托给流式通道（哈希背书工件没有内容可解析）。
           if (skipRawJournalContent && isRawJournalPath(path)) continue;
+          // 大索引内容校验被委托给流式通道（逐行/逐元素 Schema 校验后注入行数据）。
+          if (skipLargeIndexContent && isLargeIndexPath(path)) continue;
           const validate = validators.get(target.schema);
           if (!validate) {
             // 理论上不可达（$id/编译失败会先报 SCHEMA_VIOLATION）；

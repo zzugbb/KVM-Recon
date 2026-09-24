@@ -1,17 +1,16 @@
 import { sortIncompleteReasons } from './incompleteReasons';
 import type {
   CaptureIntegrity,
-  ClassificationStatus,
   DerivedPackIntegrity,
   PackIntegrityEvidenceSummary,
   PackV2IntegrityGate,
-  PackV2StatusTriple,
+  PackV2Status,
   WorkflowStatus,
 } from './types';
 import { PACK_V2_INTEGRITY_GATE_IDS } from './types';
 
 /**
- * 三正交状态模型（规范 §6）与完整度门禁派生（规范 §14）。
+ * 采集完整度与工作流状态（规范 §6）以及完整度门禁（规范 §14）。
  * 阶段 0 固化契约；阶段 3 的 IntegrityEngine 负责从真实采集事实填充证据摘要。
  */
 
@@ -24,10 +23,9 @@ export interface PackStatusCheck {
  * 状态组合合法性：
  * - COMPLETE 只能与 KVM_REACHED 组合。未到达 KVM 时完整度必须是
  *   INCOMPLETE + INCOMPLETE_WORKFLOW_NOT_REACHED。
- * - classificationStatus 与完整度无关：协议未知（UNKNOWN）不能阻止 COMPLETE
- *   （COMPLETE + KVM_REACHED + UNKNOWN 是合法且重要的结果，规范 §6）。
+ * - 不识别协议族：未知架构只要证据完整且到达 KVM，同样可以 COMPLETE。
  */
-export function checkPackStatus(status: PackV2StatusTriple): PackStatusCheck {
+export function checkPackStatus(status: PackV2Status): PackStatusCheck {
   const violations: string[] = [];
   if (status.captureIntegrity === 'COMPLETE' && status.workflowStatus !== 'KVM_REACHED') {
     violations.push(
@@ -35,21 +33,6 @@ export function checkPackStatus(status: PackV2StatusTriple): PackStatusCheck {
     );
   }
   return { legal: violations.length === 0, violations };
-}
-
-/**
- * 离线分类结果 → classificationStatus。
- *
- * **这只是 0.2 旧 detector 的桥接映射**，用于过渡期展示与 Mock 验收，
- * 不是 Capture Pack 2.0 的通用分类契约：2.0 的 KNOWN/UNKNOWN 应由离线
- * Analyzer 是否产出有效协议候选决定（规范 §15，阶段 4 实现），不能把
- * 已知三族的 URL/路径规则重新耦合进 Collector。该映射只影响离线分类展示，
- * 绝不影响采集范围与完整度。
- */
-export function classificationStatusFromKvmFamilyDetection(primary: string): ClassificationStatus {
-  return primary === 'ami-megarac' || primary === 'openbmc-h5' || primary === 'huawei-ibmc'
-    ? 'KNOWN'
-    : 'UNKNOWN';
 }
 
 // ---------- 完整度派生（规范 §14 门禁） ----------
@@ -185,15 +168,14 @@ export function derivePackIntegrity(summary: PackIntegrityEvidenceSummary): Deri
 }
 
 /**
- * 由派生完整度与分类结果组装合法状态三元组。
+ * 由派生完整度与工作流结果组装合法状态。
  * INCOMPLETE 结果不携带任何原因代码视为契约违规；
  * COMPLETE 结果携带原因代码或存在失败门禁同样视为契约违规。
  */
 export function buildPackStatusTriple(input: {
   derived: DerivedPackIntegrity;
   workflowStatus: WorkflowStatus;
-  classificationStatus: ClassificationStatus;
-}): PackV2StatusTriple {
+}): PackV2Status {
   if (input.derived.captureIntegrity === 'INCOMPLETE' && input.derived.reasons.length === 0) {
     throw new Error('INCOMPLETE 必须至少携带一个稳定原因代码（规范 §14）');
   }
@@ -221,62 +203,13 @@ export function buildPackStatusTriple(input: {
       );
     }
   }
-  const triple: PackV2StatusTriple = {
+  const status: PackV2Status = {
     captureIntegrity: input.derived.captureIntegrity,
     workflowStatus: input.workflowStatus,
-    classificationStatus: input.classificationStatus,
   };
-  const check = checkPackStatus(triple);
+  const check = checkPackStatus(status);
   if (!check.legal) {
     throw new Error(check.violations.join('; '));
   }
-  return triple;
-}
-
-// ---------- Capture Pack 1.x 导入（规范 §6 / §17） ----------
-
-export interface LegacyPackImportInput {
-  /** 旧包 manifest.readiness.status。 */
-  oldReadiness: 'YES' | 'PARTIAL' | 'NO';
-  hadKvmWebSocketEvidence?: boolean;
-  hadLoginEvidence?: boolean;
-}
-
-export interface LegacyPackImportResult extends PackV2StatusTriple {
-  captureIntegrity: 'LEGACY_UNVERIFIED';
-  workflowStatus: WorkflowStatus;
-  classificationStatus: 'UNKNOWN';
-  legacyNote: string;
-}
-
-/**
- * 旧 Capture Pack 1.x 导入结果：完整度固定 LEGACY_UNVERIFIED。
- * 旧包 YES/PARTIAL/NO 不参与 2.0 完整度，不能升级为 COMPLETE（规范 §17）；
- * 旧包已截断或跳过的正文也无法由导入恢复（规范 §17）。
- */
-export function resolveLegacyPackImportStatus(input: LegacyPackImportInput): LegacyPackImportResult {
-  const workflowStatus: WorkflowStatus = input.hadKvmWebSocketEvidence
-    ? 'KVM_REACHED'
-    : input.hadLoginEvidence
-      ? 'LOGIN_REACHED'
-      : 'TARGET_OPENED';
-  return {
-    captureIntegrity: 'LEGACY_UNVERIFIED',
-    workflowStatus,
-    classificationStatus: 'UNKNOWN',
-    legacyNote:
-      `Capture Pack 1.x（readiness=${input.oldReadiness}）未按 2.0 完整度门禁验证，` +
-      '固定 LEGACY_UNVERIFIED；需要重新运行离线 Analyzer 或重新采集，不能升级为 COMPLETE。',
-  };
-}
-
-/**
- * LEGACY_UNVERIFIED 在任何路径下都不能升级为 COMPLETE。
- * 2.0 导出（ZIP 文件名）也不允许出现 LEGACY_UNVERIFIED。
- */
-export function canUpgradeCaptureIntegrity(
-  from: CaptureIntegrity,
-  to: CaptureIntegrity,
-): boolean {
-  return !(from === 'LEGACY_UNVERIFIED' && to === 'COMPLETE');
+  return status;
 }

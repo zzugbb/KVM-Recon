@@ -10,7 +10,6 @@
     "target",
     "captureIntegrity",
     "workflowStatus",
-    "classificationStatus",
     "security",
     "environment"
   ],
@@ -50,9 +49,8 @@
         "originalInput": { "type": "string" }
       }
     },
-    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE"] },
     "workflowStatus": { "enum": ["KVM_REACHED", "LOGIN_REACHED", "TARGET_OPENED"] },
-    "classificationStatus": { "enum": ["KNOWN", "UNKNOWN"] },
     "security": {
       "type": "object",
       "required": ["dataHandling", "containsSensitiveData"],

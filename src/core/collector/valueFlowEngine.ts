@@ -16,9 +16,11 @@
  * - WS 握手查询参数值 ⊆ 先前响应正文 → propagated-to。
  * 无匹配就无边；不参与任何边的节点不出图（空图是诚实形态）。
  *
- * 正文逐份读取（注入 readBody，读一份放一份，不整包载入）；包含匹配要求
- * 源值 ≥ MIN_CONTAINED_BYTES 字节，短值在任何正文里都能子串命中，不构成
- * 值传播证据。纯函数：只读事实、无副作用；时间戳不可解析时按 0 处理。
+ * 正文两侧分开读取（注入 reader）：needle 侧（crypto 输入/输出）逐份整体
+ * 读取——它们本身就是要匹配的值；干草堆侧（响应/请求正文）分块扫描
+ * （块重叠 = 最长 needle − 1），不整体载入。包含匹配要求源值 ≥
+ * MIN_CONTAINED_BYTES 字节，短值在任何正文里都能子串命中，不构成值传播
+ * 证据。纯函数：只读事实、无副作用；时间戳不可解析时按 0 处理。
  */
 
 import type {
@@ -74,9 +76,20 @@ export interface ValueFlowFacts {
   storageCapturedAt: string;
 }
 
-/** 逐份读正文的注入源（读一份放一份；缺失返回 null，不抛出）。 */
+/**
+ * 正文读取源（读一份放一份；缺失返回 null，不抛出）。
+ * - readBody：needle 侧——crypto 调用输入/输出本身就是要匹配的值，整体读取
+ *   是语义必需（variants 装配需要完整字节）；
+ * - scanBody：干草堆侧——响应/请求正文只做包含判定，必须分块扫描
+ *   （块重叠 = 最长 needle − 1），返回命中的 needle 引用集合；needles 为空
+ *   时不得读取正文。
+ */
 export interface ValueFlowBodyReader {
   readBody(ref: PackV2BodyRef): Promise<Buffer | null>;
+  scanBody(
+    ref: PackV2BodyRef,
+    needles: ReadonlyArray<Buffer>,
+  ): Promise<ReadonlySet<Buffer> | null>;
 }
 
 /** value-flow 边的观察时间（to 节点证据时间，value-flow 关系行 occurredAt）。 */
@@ -145,10 +158,6 @@ function containedVariants(bytes: Buffer): Buffer[] {
   ];
 }
 
-function containsAny(haystack: Buffer, needles: ReadonlyArray<Buffer>): boolean {
-  return needles.some(needle => needle.byteLength > 0 && haystack.indexOf(needle) >= 0);
-}
-
 interface CryptoNeedle {
   nodeKey: string;
   at: number;
@@ -160,6 +169,10 @@ export async function deriveValueFlow(
   reader: ValueFlowBodyReader,
 ): Promise<DerivedValueFlow> {
   const readBody = (ref: PackV2BodyRef): Promise<Buffer | null> => reader.readBody(ref);
+  const scanBody = (
+    ref: PackV2BodyRef,
+    needles: ReadonlyArray<Buffer>,
+  ): Promise<ReadonlySet<Buffer> | null> => reader.scanBody(ref, needles);
   const nodes = new Map<string, NodeDraft>();
   const edges: EdgeDraft[] = [];
   const addNode = (draft: NodeDraft): string => {
@@ -399,19 +412,31 @@ export async function deriveValueFlow(
     });
   }
 
-  // ---- 响应正文：逐份读，测试全部输入 needle 与 WS 查询参数值 ----
+  // ---- 响应正文：分块扫描全部输入 needle 与 WS 查询参数值（一次读取）----
   for (const transaction of facts.transactions) {
     if (!transaction.responseBody) continue;
     const arrivedAt = responseArrivalAt(transaction);
     // 响应正文的存在时刻 = 到达时刻：节点与边不得记成请求
     // 开始时就已存在
     const arrivedAtIso = new Date(arrivedAt).toISOString();
-    const body = await readBody(transaction.responseBody);
-    if (!body) continue;
+    // 时间过滤后的候选 needle（与整读版本同一谓词）；无候选不读正文
+    const responseNeedles: Buffer[] = [];
     for (const needle of inputNeedles) {
       if (!needle.nodeKey || needle.at < arrivedAt) continue;
-      if (!containsAny(body, needle.variants)) continue;
-      const responseKey = addNode({
+      responseNeedles.push(...needle.variants);
+    }
+    for (const param of wsParams) {
+      if (timeOf(param.channel.createdAt) < arrivedAt) continue;
+      responseNeedles.push(param.value);
+    }
+    for (const entry of storageEntries) {
+      responseNeedles.push(entry.buffer);
+    }
+    if (responseNeedles.length === 0) continue;
+    const matched = await scanBody(transaction.responseBody, responseNeedles);
+    if (matched === null) continue;
+    const addResponseBodyNode = (): string =>
+      addNode({
         key: `response-body:${transaction.id}`,
         kind: 'http-response',
         name: `响应正文（${transaction.url}）`,
@@ -419,6 +444,10 @@ export async function deriveValueFlow(
         evidenceId: transaction.id,
         occurredAt: arrivedAtIso,
       });
+    for (const needle of inputNeedles) {
+      if (!needle.nodeKey || needle.at < arrivedAt) continue;
+      if (!needle.variants.some(variant => matched.has(variant))) continue;
+      const responseKey = addResponseBodyNode();
       edges.push({
         fromKey: responseKey,
         toKey: needle.nodeKey,
@@ -430,15 +459,8 @@ export async function deriveValueFlow(
     }
     for (const param of wsParams) {
       if (timeOf(param.channel.createdAt) < arrivedAt) continue;
-      if (body.indexOf(param.value) < 0) continue;
-      const responseKey = addNode({
-        key: `response-body:${transaction.id}`,
-        kind: 'http-response',
-        name: `响应正文（${transaction.url}）`,
-        evidencePath: TX_PATH,
-        evidenceId: transaction.id,
-        occurredAt: arrivedAtIso,
-      });
+      if (!matched.has(param.value)) continue;
+      const responseKey = addResponseBodyNode();
       addPropagationEdge(
         responseKey,
         `url-param:${param.channel.channelId}:${param.name}=${param.value.toString('utf8')}`,
@@ -447,15 +469,8 @@ export async function deriveValueFlow(
       );
     }
     for (const entry of storageEntries) {
-      if (body.indexOf(entry.buffer) < 0) continue;
-      const responseKey = addNode({
-        key: `response-body:${transaction.id}`,
-        kind: 'http-response',
-        name: `响应正文（${transaction.url}）`,
-        evidencePath: TX_PATH,
-        evidenceId: transaction.id,
-        occurredAt: arrivedAtIso,
-      });
+      if (!matched.has(entry.buffer)) continue;
+      const responseKey = addResponseBodyNode();
       addPropagationEdge(responseKey, entry.nodeKey, TX_PATH, arrivedAtIso);
       if (arrivedAt < entry.sourceAt) {
         entry.sourceKey = responseKey;
@@ -529,15 +544,21 @@ export async function deriveValueFlow(
     );
   }
 
-  // ---- 请求正文：逐份读，测试全部 crypto 输出 needle ----
+  // ---- 请求正文：分块扫描全部 crypto 输出 needle ----
   for (const transaction of facts.transactions) {
     if (!transaction.requestBody) continue;
     const at = timeOf(transaction.startedAt);
-    const body = await readBody(transaction.requestBody);
-    if (!body) continue;
+    const requestNeedles: Buffer[] = [];
     for (const needle of outputNeedles) {
       if (at < needle.at) continue;
-      if (!containsAny(body, needle.variants)) continue;
+      requestNeedles.push(...needle.variants);
+    }
+    if (requestNeedles.length === 0) continue;
+    const matched = await scanBody(transaction.requestBody, requestNeedles);
+    if (matched === null) continue;
+    for (const needle of outputNeedles) {
+      if (at < needle.at) continue;
+      if (!needle.variants.some(variant => matched.has(variant))) continue;
       const requestKey = addNode({
         key: `request-body:${transaction.id}`,
         kind: 'http-request-body',

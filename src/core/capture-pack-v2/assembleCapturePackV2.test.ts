@@ -84,7 +84,6 @@ describe('assembleCapturePackV2（阶段 2 包装配）', () => {
     expect(result.status).toEqual({
       captureIntegrity: 'INCOMPLETE',
       workflowStatus: 'TARGET_OPENED',
-      classificationStatus: 'UNKNOWN',
     });
     expect(result.derived.reasons).toContain('INCOMPLETE_WORKFLOW_NOT_REACHED');
     expect(result.derived.reasons).toContain('INCOMPLETE_CHANNEL_GAP');

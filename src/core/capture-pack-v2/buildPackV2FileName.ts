@@ -8,8 +8,7 @@ import type { CaptureIntegrity, WorkflowStatus } from './types';
  * - 不包含协议族、产品候选和设备说明。
  * - HOST 做文件名安全化（点号等分隔符转连字符，例如 10.10.8.111 → 10-10-8-111）。
  * - WORKFLOW：KVM-REACHED / LOGIN-REACHED / TARGET-OPENED。
- * - INTEGRITY：COMPLETE / INCOMPLETE；LEGACY_UNVERIFIED 只来自 1.x 导入，
- *   2.0 导出不允许出现。
+ * - INTEGRITY：COMPLETE / INCOMPLETE。
  */
 
 export interface BuildPackV2FileNameInput {
@@ -55,9 +54,6 @@ function safeShortIdSegment(shortJobId: string): string {
 }
 
 export function buildPackV2FileName(input: BuildPackV2FileNameInput): string {
-  if (input.captureIntegrity === 'LEGACY_UNVERIFIED') {
-    throw new Error('LEGACY_UNVERIFIED 只能来自 1.x 导入，不能出现在 2.0 导出文件名（规范 §6 / §10）');
-  }
   const workflow = input.workflowStatus.replace(/_/g, '-');
   return [
     'KVM-Recon',

@@ -2,7 +2,7 @@
  * KVM-Recon 主进程入口（0.3.0 阶段 2：生产 Controller + 单作业模型）。
  *
  * IPC 面只保留单作业生命周期：start / status / stop / export / discard
- * （+ 恢复作业手动导出 exportRecovered）。
+ * （+ 恢复作业手动导出 exportRecovered 与零观察事实丢弃 discardRecovered）。
  * 启动时先恢复上一个未完成作业（recoverCrashedJob，规范 §4.2：
  * 应用异常退出后只恢复这一份；恢复止步于 finalize，不自动导出——
  * 由用户在恢复卡上手动选择目录导出；拒绝恢复时现场资料保留）。
@@ -11,11 +11,13 @@
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { APP_VERSION, BUILD_ID } from '../version';
-import type { JobWorkspace } from '../core/job-workspace/createJobWorkspace';
+import { recoverActiveJobWorkspace, WORKSPACE_JOB_DIR, type JobWorkspace } from '../core/job-workspace/createJobWorkspace';
 import { exportRecoveredJob, recoverCrashedJob } from '../core/export/recoverCrashedJob';
+import { checkUnexportedDiscard } from '../core/export/discardUnexportedJob';
 import { derivePackIntegrity } from '../core/capture-pack-v2/packStatus';
 import {
   createProductionCapture,
@@ -24,6 +26,7 @@ import {
   type ProductionCaptureTarget,
 } from './capture/productionCaptureController';
 import { getCaptureWindowLogLines, getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
+import { finalizeFailedStart } from './capture/failedStartFinalizer';
 import { MAX_RECENT_FACTS, recentFactsOf, type RecentFactEntry } from './capture/recentFacts';
 import {
   isE2eCaptureControllerLaunch,
@@ -111,9 +114,10 @@ interface CaptureStatusPayload {
 }
 
 interface RecoveryNotice {
-  kind: 'recovered' | 'exported' | 'refused' | 'failed';
+  kind: 'recovered' | 'exported' | 'discarded' | 'retained' | 'refused' | 'failed';
   jobId?: string;
   zipPath?: string;
+  workspacePath?: string;
   reason?: string;
   error?: string;
   conservative?: boolean;
@@ -139,6 +143,8 @@ let recoveredPending: RecoveredPendingJob | null = null;
 // exportRecovered 进行中标志：ipcMain.handle 不串行化，并发 invoke 会绕过
 // recoveredPending 检查写出两份 ZIP / 双重 markExported——同步置位挡重入
 let exportRecoveredInFlight = false;
+let captureExportInFlight = false;
+let retainingInFlight = false;
 /** 高级诊断里环形缓冲的截尾行数（载荷膨胀上限）。 */
 const CAPTURE_LOG_TAIL = 40;
 
@@ -231,7 +237,7 @@ function registerCaptureHandlers() {
     'capture:start',
     async (_event, payload: { target: string; deviceLabel?: string }) => {
       try {
-        if (activeController) {
+        if (activeController || retainingInFlight) {
           return {
             ok: false as const,
             error: '已有进行中的采集作业（单作业模型）。先停止并导出，或丢弃已导出的作业。',
@@ -255,7 +261,15 @@ function registerCaptureHandlers() {
           deviceLabel: payload?.deviceLabel?.trim() || undefined,
           tool: { version: APP_VERSION, buildId: BUILD_ID },
         });
-        await controller.start();
+        try {
+          await controller.start();
+        } catch (error) {
+          // start 失败收尾：作业不滞留 active + 租约被持有（拒绝一切后续
+          // 操作）；收尾成功则接管为当前作业，界面可导出 / 丢弃
+          const outcome = await finalizeFailedStart(controller, error);
+          if (outcome.finalized) activeController = controller;
+          return { ok: false as const, error: outcome.error };
+        }
         activeController = controller;
         return { ok: true as const, jobId: controller.session.workspace.jobId, target };
       } catch (error) {
@@ -282,6 +296,10 @@ function registerCaptureHandlers() {
     if (!activeController) {
       return { ok: false as const, error: '没有进行中的采集作业。' };
     }
+    if (captureExportInFlight || retainingInFlight) {
+      return { ok: false as const, error: '作业正在导出或保留，请等待本次操作完成。' };
+    }
+    captureExportInFlight = true;
     try {
       // 导出前先收尾（窗口保留：收尾快照需要活页面；导出成功后再关）
       await activeController.stop();
@@ -307,6 +325,8 @@ function registerCaptureHandlers() {
       return { ...(await statusPayload()), zipPath: result.zipPath, fileName: result.fileName };
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
+    } finally {
+      captureExportInFlight = false;
     }
   });
 
@@ -314,7 +334,7 @@ function registerCaptureHandlers() {
     if (!recoveredPending) {
       return { ok: false as const, error: '没有待导出的恢复作业。' };
     }
-    if (exportRecoveredInFlight) {
+    if (exportRecoveredInFlight || retainingInFlight) {
       return { ok: false as const, error: '恢复作业导出进行中，请等待本次导出完成。' };
     }
     exportRecoveredInFlight = true;
@@ -383,24 +403,96 @@ function registerCaptureHandlers() {
     return { ok: true as const };
   });
 
+  ipcMain.handle('capture:revealWorkspace', () => {
+    const path = join(workspacesRootDir(), WORKSPACE_JOB_DIR);
+    if (!existsSync(path)) return { ok: false as const, error: '当前没有待检查的原始工作区。' };
+    shell.showItemInFolder(path);
+    return { ok: true as const };
+  });
+
   ipcMain.handle('capture:discard', async () => {
+    if (captureExportInFlight || retainingInFlight) {
+      return { ok: false as const, error: '作业正在导出或保留，请等待操作完成。' };
+    }
     if (!activeController) {
       return { ok: false as const, error: '没有进行中的采集作业。' };
     }
+    const workspace = activeController.session.workspace;
     try {
-      if (!activeController.session.workspace.exported) {
-        return {
-          ok: false as const,
-          error: '作业尚未导出，不能丢弃（未导出的现场资料必须保留）。先导出再丢弃。',
-        };
+      if (!workspace.exported) {
+        // 门禁核对三类观察行与其他已知证据面；未导出的现场资料必须保留。
+        const check = await checkUnexportedDiscard(workspace);
+        if (!check.ok) {
+          return { ok: false as const, error: `作业尚未导出，不能丢弃（${check.note}）。` };
+        }
+        recordCaptureWindowLog(`discard-zero-observation ${workspace.jobId}：${check.note}`);
+        await activeController.closeWindows();
+        await workspace.cleanup({ allowUnexportedDiscard: true });
+        activeController = null;
+        lastExport = null;
+        return statusPayload();
       }
       await activeController.closeWindows();
-      await activeController.session.workspace.cleanup();
+      await workspace.cleanup();
       activeController = null;
       lastExport = null;
       return statusPayload();
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
+    }
+  });
+
+  // 恢复作业的零观察事实丢弃（恢复卡清理出口：finalize 后未导出、
+  // 无事务/通道/动作行 = 没有现场资料；有观察事实的恢复作业必须先导出）
+  ipcMain.handle('capture:discardRecovered', async () => {
+    if (exportRecoveredInFlight || retainingInFlight) {
+      return { ok: false as const, error: '恢复作业正在导出或保留，请等待操作完成。' };
+    }
+    if (!recoveredPending) {
+      return { ok: false as const, error: '没有待处理的恢复作业。' };
+    }
+    const pending = recoveredPending;
+    try {
+      const check = await checkUnexportedDiscard(pending.workspace);
+      if (!check.ok) {
+        return { ok: false as const, error: `恢复作业 ${pending.jobId} 不能丢弃（${check.note}）。` };
+      }
+      recordCaptureWindowLog(`discard-recovered-zero-observation ${pending.jobId}：${check.note}`);
+      await pending.workspace.cleanup({ allowUnexportedDiscard: true });
+      recoveredPending = null;
+      recoveryNotice = { kind: 'discarded', jobId: pending.jobId, reason: check.note };
+      return statusPayload();
+    } catch (error) {
+      return { ok: false as const, error: errorMessage(error) };
+    }
+  });
+
+  ipcMain.handle('capture:retainWorkspace', async () => {
+    if (retainingInFlight || captureExportInFlight || exportRecoveredInFlight) {
+      return { ok: false as const, error: '导出或保留操作正在进行，请稍候。' };
+    }
+    retainingInFlight = true;
+    try {
+      const workspace = activeController?.session.workspace ?? recoveredPending?.workspace ??
+        await recoverActiveJobWorkspace(workspacesRootDir(), { resetStaleOwner: true });
+      if (!workspace) return { ok: false as const, error: '没有可保留的作业工作区。' };
+      if (activeController && workspace.state !== 'finalized') {
+        return { ok: false as const, error: '请先停止并收尾当前作业。' };
+      }
+      if (workspace.state === 'active') await workspace.finalize();
+      if (activeController) await activeController.closeWindows();
+      const workspacePath = await workspace.retainUnexported();
+      const jobId = workspace.jobId;
+      activeController = null;
+      recoveredPending = null;
+      lastExport = null;
+      recoveryNotice = { kind: 'retained', jobId, workspacePath };
+      shell.showItemInFolder(workspacePath);
+      return statusPayload();
+    } catch (error) {
+      return { ok: false as const, error: errorMessage(error) };
+    } finally {
+      retainingInFlight = false;
     }
   });
 }

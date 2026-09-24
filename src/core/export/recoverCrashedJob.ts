@@ -10,12 +10,14 @@
  * （单一事实来源）→ active 作业用保守证据摘要覆写 facts（recovered=true）
  * → finalize。
  *
- * 显式拒绝：capture-facts 缺失（首个根挂载前崩溃，没有可装配的事实）或
- * target/environment 缺失（采集未真正开始）时拒绝恢复，现场资料保留
- * 供人工检查。装配/导出门禁失败同样保留工作区，绝不产生半包。
+ * capture-facts 缺失（stop 收尾从未落盘）按恢复作业挂起：finalize 后
+ * 挂起为待导出（只有确无其他现场证据时恢复卡才允许丢弃），不再 close 后留
+ * active 标记造成每次启动重复接管、重复拒绝。target/environment 缺失
+ * （采集未真正开始但 facts 已落盘）仍显式拒绝恢复，现场资料保留供
+ * 人工检查。装配/导出门禁失败同样保留工作区，绝不产生半包。
  */
 
-import type { DerivedPackIntegrity, PackV2StatusTriple } from '../capture-pack-v2/types';
+import type { DerivedPackIntegrity, PackV2Status } from '../capture-pack-v2/types';
 import {
   CAPTURE_FACTS_PATH,
   conservativeRecoveredEvidenceSummary,
@@ -64,14 +66,26 @@ export async function recoverCrashedJob(
   try {
     const facts = await readCaptureFacts(workspace);
     if (!facts) {
-      // 拒绝恢复也释放句柄与 .owner 租约：现场资料保留在磁盘上，但本进程
-      // 不再滞留持有（下次启动照常幂等再接管、再拒绝）
-      await workspace.close().catch(() => undefined);
+      // capture-facts 缺失 = stop 收尾从未落盘（首根挂载前 / 挂载中途崩溃；
+      // 挂载中途崩溃时仍可能有截图、脚本或探测事实，丢弃门禁会一并检查，
+      // 不在这里假设）。finalize 后按恢复作业挂起（恢复卡上的导出 / 零观察
+      // 事实丢弃是清理出口），不再「close 后留 active 标记」——那会让每次
+      // 启动重复接管、重复拒绝，用户没有 UI 入口清理，只能人工删目录。
+      // 现场资料保留在磁盘上（finalize 只收尾不删数据）；恢复卡上的导出会
+      // 因 facts 缺失被拒绝（诚实报错），零观察事实丢弃是清理出口。
+      if (workspace.state === 'active') {
+        await workspace.finalize();
+      }
       return {
-        kind: 'refused',
+        kind: 'recovered',
         jobId: workspace.jobId,
-        reason:
-          'catalog/capture-facts.json 缺失（首个根窗口挂载前已崩溃），没有可装配的事实，拒绝恢复；现场资料已保留',
+        workspaceId: workspace.workspaceId,
+        workspace,
+        conservative: true,
+        // 没有任何观察事实，派生不出更高状态：诚实下限
+        workflowStatus: 'TARGET_OPENED',
+        targetUrl: workspace.targetUrl ?? '',
+        deviceLabel: workspace.deviceLabel ?? '',
       };
     }
     if (!facts.target || !facts.environment) {
@@ -139,7 +153,7 @@ export type ExportRecoveredJobResult =
       export: PackV2ZipExportResult;
       zipPath: string;
       fileName: string;
-      status: PackV2StatusTriple;
+      status: PackV2Status;
       derived: DerivedPackIntegrity;
     }
   | { ok: false; error: string };

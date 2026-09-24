@@ -6,9 +6,6 @@ import type { ProbeBmcTargetResult } from './probeBmcTarget';
 function fakeResult(): ProbeBmcTargetResult {
   return {
     basic: { host: '10.10.8.111', port: 8443, scheme: 'https', vendor: 'Supermicro', product: 'X12', firmwareVersion: '1.2.3' },
-    paths: { apiSession: true, kvmVideo: true },
-    pathDetails: {},
-    familySignatures: { primary: 'unknown-h5', confidence: 2, candidates: [] },
     redfish: {
       path: '/redfish/v1',
       status: 200,
@@ -17,6 +14,7 @@ function fakeResult(): ProbeBmcTargetResult {
       product: 'X12',
       firmwareVersion: '1.2.3',
       rootFields: {},
+      body: { Vendor: 'Supermicro', Oem: { Acme: { Detail: { CustomKey: 'kept' } } } },
     },
     tls: {
       reachable: true,
@@ -30,19 +28,19 @@ function fakeResult(): ProbeBmcTargetResult {
 }
 
 describe('buildProbeFactsFile', () => {
-  it('把匿名 probe 结果映射为事实（tls/redfish/paths/family）', () => {
+  it('只把通用 Probe 结果映射为事实（basic/tls/redfish）', () => {
     const file = buildProbeFactsFile(fakeResult());
     expect(file.schemaVersion).toBe('2.0.0');
     expect(file.probeRan).toBe(true);
     const kinds = file.facts.map(fact => fact.kind);
-    expect(kinds).toEqual(['tls', 'redfish', 'paths', 'family']);
-    expect(file.facts[2]).toEqual({ kind: 'paths', paths: { apiSession: true, kvmVideo: true } });
-    expect(file.facts[3]).toEqual({
-      kind: 'family',
-      primary: 'unknown-h5',
-      confidence: 2,
-      candidates: [],
+    expect(kinds).toEqual(['basic', 'tls', 'redfish']);
+    expect(file.facts[0]).toEqual({ kind: 'basic', vendor: 'Supermicro', product: 'X12', firmwareVersion: '1.2.3' });
+    expect(file.facts[2]).toMatchObject({
+      path: '/redfish/v1',
+      status: 200,
+      body: { Oem: { Acme: { Detail: { CustomKey: 'kept' } } } },
     });
+    expect(JSON.stringify(file)).not.toContain('family');
     expect(JSON.stringify(file)).not.toContain('cookie');
   });
 
@@ -52,7 +50,6 @@ describe('buildProbeFactsFile', () => {
       authenticated: {
         attempted: true,
         cookieNames: ['SESSION', 'SMC_TOKEN'],
-        paths: { apiKvmToken: true },
       },
     });
     const authenticated = file.facts.find(fact => fact.kind === 'authenticated');

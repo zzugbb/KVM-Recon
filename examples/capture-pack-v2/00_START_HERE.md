@@ -22,5 +22,5 @@
 
 ## 状态
 
-- captureIntegrity / workflowStatus / classificationStatus 见 `manifest.json` 与 `integrity.json`。
-- 协议未知（UNKNOWN）不代表资料不完整；资料完整时可直接离场适配（规范 §6）。
+- captureIntegrity / workflowStatus 见 `manifest.json` 与 `integrity.json`。
+- 不要求识别协议族；只要完整度门禁通过且到达 KVM，资料可用于离场适配。

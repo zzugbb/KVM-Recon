@@ -23,8 +23,7 @@
   },
   "status": {
     "captureIntegrity": "COMPLETE",
-    "workflowStatus": "KVM_REACHED",
-    "classificationStatus": "UNKNOWN"
+    "workflowStatus": "KVM_REACHED"
   },
   "loginCandidateRequestIds": [
     "http-000002"

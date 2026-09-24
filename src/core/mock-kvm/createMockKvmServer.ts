@@ -7,7 +7,7 @@ import type { Duplex } from 'node:stream';
  * 完全未知、随机 URL 的本地 Mock KVM（规范 §19 阶段 0）。
  *
  * 用于验证「清空所有厂商和协议签名后，随机 URL 的 Mock KVM 仍得到
- * COMPLETE + KVM_REACHED + UNKNOWN」（规范 §20）：
+ * COMPLETE + KVM_REACHED」（规范 §20）：
  * - 每次启动随机生成路径段与表单字段名；固定 seed 时可复现。
  * - 不包含任何已知厂商 URL、路径、帧魔数或品牌词。
  * - 提供完整 HTML5 KVM 链路：登录页 → 登录 API（token + cookie）→

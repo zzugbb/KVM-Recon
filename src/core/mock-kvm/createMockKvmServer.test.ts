@@ -4,13 +4,6 @@ import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createMockKvmServer, type MockKvmHandle } from './createMockKvmServer';
-import { classificationStatusFromKvmFamilyDetection } from '../capture-pack-v2/packStatus';
-import {
-  EXPLICIT_KVM_LAUNCH_URL_PATTERN,
-  KNOWN_KVM_WEBSOCKET_PATTERN,
-} from '../signatures/kvmUrlPatterns';
-import { detectProductHints } from '../signatures/detectProductHints';
-import { scoreCapturedKvmFamily } from '../signatures/detectKvmFamily';
 
 let handles: MockKvmHandle[] = [];
 
@@ -55,12 +48,10 @@ describe('createMockKvmServer（规范 §19 阶段 0 / §20）', () => {
     expect(otherSeed.paths.loginApi).not.toBe(seededA.paths.loginApi);
   });
 
-  it('URL 不命中任何已知厂商 / KVM 路径模式', async () => {
+  it('随机 URL 不依赖常见 BMC 路径', async () => {
     const handle = await bootMock();
     const allUrls = Object.values(handle.urls);
     for (const url of allUrls) {
-      expect(KNOWN_KVM_WEBSOCKET_PATTERN.test(url), url).toBe(false);
-      expect(EXPLICIT_KVM_LAUNCH_URL_PATTERN.test(url), url).toBe(false);
       expect(url).not.toMatch(/\/api\/|\/redfish|kvmservice|setkvmkey|starth5kvm|ircport|vconsole|html5viewer/i);
     }
   });
@@ -358,60 +349,4 @@ describe('createMockKvmServer（规范 §19 阶段 0 / §20）', () => {
     expect(handle.capturedFrames()).toHaveLength(0);
   });
 
-  it('对全部厂商签名零命中：分类结论是 UNKNOWN（规范 §20 验收场景 1 的分类部分）', async () => {
-    const handle = await bootMock({ seed: 'zero-signature' });
-
-    // 模拟真实采集到的流量摘要（走与登录页脚本一致的摘要凭据链）。
-    const loginPage = await fetch(handle.urls.loginPage);
-    const loginPageHtml = await loginPage.text();
-    const credential = digestCredential(loginPageHtml, handle.loginFieldNames.nonce);
-    const login = await fetch(handle.urls.loginApi, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        [handle.loginFieldNames.user]: 'operator',
-        [handle.loginFieldNames.password]: credential,
-      }),
-    });
-    expect(login.status).toBe(200);
-    const sessionCookie = login.headers.getSetCookie()[0].split(';')[0];
-    const loginPayload = (await login.json()) as { csrfToken: string };
-    const launch = await fetch(handle.urls.kvmLaunch, {
-      method: 'POST',
-      headers: { cookie: sessionCookie, [handle.csrfHeaderName]: loginPayload.csrfToken },
-    });
-    expect(launch.status).toBe(200);
-    const launchPayload = (await launch.json()) as { viewerToken: string };
-
-    const httpUrls = handle
-      .capturedRequests()
-      .filter(request => !request.url.startsWith(handle.paths.websocket))
-      .map(request => `${handle.base}${request.url}`);
-    const webSocketUrls = [
-      `${handle.urls.websocket}?t=${encodeURIComponent(launchPayload.viewerToken)}`,
-    ];
-    const frameHeadHexes = handle
-      .capturedFrames()
-      .filter(frame => frame.opcode === 'binary')
-      .map(frame => Buffer.from(frame.payload.subarray(0, 8)).toString('hex'));
-
-    const detection = scoreCapturedKvmFamily(
-      { basic: {}, paths: {}, tls: { certificate: null } },
-      {
-        httpRequests: httpUrls.map(url => ({ url, resourceType: 'XHR' })),
-        webSockets: webSocketUrls.map(url => ({ url })),
-        webSocketFrames: frameHeadHexes.map(headHex => ({ headHex })),
-      },
-    );
-    expect(detection.primary).not.toBe('ami-megarac');
-    expect(detection.primary).not.toBe('openbmc-h5');
-    expect(detection.primary).not.toBe('huawei-ibmc');
-    expect(detection.candidates).toEqual([]);
-    expect(classificationStatusFromKvmFamilyDetection(detection.primary)).toBe('UNKNOWN');
-
-    const productHints = detectProductHints({
-      traffic: { httpUrls, webSocketUrls, frameHeadHexes },
-    });
-    expect(productHints).toEqual([]);
-  });
 });

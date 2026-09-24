@@ -7,8 +7,12 @@
 
 ## [Unreleased]
 
+- KVM-Recon 收口为协议无关的证据采集器：移除离线协议分类 Analyzer、采集侧厂商/协议签名与旧 1.x 兼容代码、Schema、样例和运行文档；Capture Pack 2.0 仅保留完整度与工作流状态。`ai/` 证据导航、值传播与 Replay 保留，不输出协议族。历史文件仍可从已发布 Git 标签查阅。本条覆盖下文开发过程中的 Analyzer 与三状态设计记录。
+
+- 阶段 5 审核修复：离线 Analyzer 改读生产 Capture Pack 2.0 的 `raw/probe/index.json`，补存匿名基础厂商/型号/固件事实并兼容旧包 Redfish 回退（规则版本 `1.0.1`）；Replay 对会话 Cookie、Bearer/Token/JWT、WS 查询参数逐项核对传播来源，缺 WS 握手/帧索引时不再误报可回放；未导出作业的零观察行丢弃还须核对截图、DOM、脚本、正文、Probe 等原始资料；不能装配正式包时可保留原始工作区到 `retained/` 并继续新作业，不伪造包也不删现场资料。
+
 - 修复 Linux CI 的提前关窗导出：截图与 DOM 快照均未落盘时，只有明确报告 `INCOMPLETE_BROWSER_STATE` 且 `browser-state-written` 门禁失败的包可作为 `INCOMPLETE` 导出；未报告缺口或声明 `COMPLETE` 的包仍被拒绝。
-- 0.3.0 阶段 0（契约先行）：`src/core/capture-pack-v2/` 三正交状态、11 个 `INCOMPLETE` 稳定原因与十项完整度门禁映射、`derivePackIntegrity`；`schema/2.0/`（当前 33 个 Schema 与类型同步，导出按包内 Schema 副本自校验）；Capture Pack 1.x 导入固定 `LEGACY_UNVERIFIED`。
+- 0.3.0 阶段 0（契约先行）：`src/core/capture-pack-v2/` 完整度与工作流状态、11 个 `INCOMPLETE` 稳定原因与十项完整度门禁映射、`derivePackIntegrity`；`schema/2.0/` 与类型同步，导出按包内 Schema 副本自校验。旧 1.x 包不按 2.0 格式验证。
 - 新增随机 URL Mock KVM（对现有厂商签名零命中）：SHA-256 摘要凭据登录链、CSRF 校验的 KVM 启动、严格会话校验；真实浏览器可走通登录 → 控制台 → Viewer → WebSocket 全链（`e2e/mock-kvm-browser-flow.mjs`）。
 - 新增完整度失败 Fixture（每个 `INCOMPLETE` 原因一个）、样例包一致性验证器（负向 36 项）与 `examples/capture-pack-v2/` 样例包（完整度从观察事实派生，无编造关系）。
 - 0.3.0 阶段 1（磁盘工作区与流式导出）：单作业 `JobWorkspace`（跨进程互斥为 OS 内核独占、磁盘水位 5 GiB 粘性、finalize 不可变、崩溃后可恢复导出）、SHA-256 内容寻址 `BodyStore`、checksums 与流式 ZIP64；新管线无任何大小上限。
@@ -41,6 +45,10 @@
 - 0.3.0 阶段 4：样例包 `createSampleCapturePackV2` 的 `ai/value-flow.json` / `catalog/relations.jsonl` / adapter dossier / `ai/index.json` 候选 / replay 三件套全部换真实引擎生成（与装配层同一引擎、同一事实形状）；`raw/cdp/events.jsonl` 补 `Page.frameNavigated`；新增离线再生契约测试——`readPackFacts` 只凭包内工件重新派生与包内派生物逐项相等（规范 §15「新版 Analyzer 可从既有包重新生成」的验收样例）。
 - 0.3.0 阶段 5（界面收口）：界面重排为规范 §5 单屏单作业工作台——顶栏（应用名 + 版本 + 常驻「原始资料 · 未脱敏」徽标）、输入行（BMC 地址 + 设备说明）、四步阶段条（连接目标 ── 登录活动 ── Viewer 活动 ── 完整性校验）、稳定宽度计数器（HTTP/Targets/WS/已写入/缺失）、最近事实 feed、高级诊断 `<details>` 默认折叠（缺口分类/丢弃事件/观察钩子失败/通道断档/不受支持通道/磁盘余量/采集窗口日志尾部）；页面阶段由 `stage.ts` 纯函数八阶段派生（idle/launching/capturing-login/capturing-viewer/finalizing/complete/incomplete/exported，已收尾但未派生 COMPLETE 一律按 incomplete 不主张未验证的完整）；样式整体重写为深石墨色板（圆角 ≤8px、ID/字节/路径等宽），新增 lucide-react 图标依赖。
 - 0.3.0 阶段 5（状态载荷与导出收口）：`capture:status` 扩展计数器（来自 `workflowFacts()`）、包工件字节记账（`JobWorkspace.bytesWritten()`：JSONL 追加行 + writeArtifact + BodyStore 发布正文按字节累加，失败写入与去重命中不计）、收尾后预导出完整度与原因码（仅 finalize 后派生，只用于按钮文案，导出后以导出结果为准）、最近事实 feed（`recentFacts.ts` 纯函数：target 挂载/通道开启/用户动作/主框架导航/渲染表面按时间归并、上限 30 条、URL 只出 origin+path——query/fragment 可能含会话 token 一律剥除）；INCOMPLETE 时导出按钮明确「导出未完整包」；导出成功显示摘要与路径 +「打开所在文件夹」（新 IPC `capture:revealExport`，路径由主进程 `lastExport` 决定，渲染层不能传任意路径）+「采集下一台」（丢弃并清理临时目录）；删除 0.2.x 死 CSS 选择器（job-list/pack-review/pack-diff 等）与多作业/对比包界面入口回归断言。
+- 0.3.0 第二轮审核修复（P1-1 内存有界化）：`readPackFacts` 四个 JSONL 事实维度与 `raw/cdp/events.jsonl` 改逐行流式读取（内存上界 = 最大单行）；`valueFlowEngine` 正文消费统一为 `scanBody` 分块滚动子串搜索（块重叠跨 needle 边界，不再整读单份正文；`Buffer.equals` 精确匹配路径不变）；收尾期 `storage.json` 改流式提取派生引擎实际消费的字段（格式与 Schema 不变）；导出一致性门禁闭包 ID 索引改逐行流式行读 + Set 收集 + stream-json 校验。诚实边界：dossier / replay 事实行与闭包 ID 集仍为 O(行数)（配对算法固有），本轮修复承诺的是零整文件 buffer、零整正文载入。
+- 0.3.0 第二轮审核修复（P1-2 离线 Analyzer）：新增 `src/core/analyzer/`——读已导出 Capture Pack 2.0（工作区或 ZIP）生成带证据 ID 的独立分类报告（协议候选 / 产品候选 / 置信度 + 包内工件路径 + 判定依据，`analyzer-report.schema.json`）；报告是包外派生物，原包 `classificationStatus` 保持 UNKNOWN（生产装配零改动）；规则版本化（`ANALYZER_RULES_VERSION`，规则更新对同一包重跑即新报告，不必重新进机房采集）；Huawei / AMI / OpenBMC 三族打分与 Dell / HPE / H3C 产品线索从 `src/core/signatures` 迁入 `src/core/analyzer/rules`（Lenovo / Nettrix 无在库证据诚实零候选，不按厂商名称硬判）；新增 dev CLI `scripts/analyze-capture-pack.mjs`；契约测试：同包两次运行逐项相等、Mock KVM 包零候选、报告引用证据 ID 全部在包内闭环。
+- 0.3.0 第二轮审核修复（P2-3 + P2-5 回放闭环与候选放宽）：`deriveReplayPlan` 动态值闭环——携带会话凭证（与登录签发对相等的 Cookie / 头值）的回放请求与 WS 握手必须能沿值传播图 `propagated-to` 边回溯并出现在 `requiresDynamicValueIds`，否则逐条追加 `notReplayableReasons`（重放将携带过期凭证）；纯静态站点保留空清单 + `replayable=true`；replay-manifest Schema 补条件约束 `replayable=false ⇒ notReplayableReasons 非空`。候选 ≠ 判定：登录候选 ∪ 凭据头形态请求（Authorization 类）、启动候选 ∪ 血缘时间窗内 GET（xhr/fetch），与 `loginChainOf` 严格判定解耦——`workflowStatus` 的 `LOGIN_REACHED` 定义不变（观察到的 cookie 传播），Token 登录与 GET 启动不再零候选。
+- 0.3.0 第二轮审核修复（P2-4 启动失败路径）：`capture:start` 失败收尾 `finalizeFailedStart`——复用 stop 收尾序列（自写 capture-facts 真实摘要 + finalize，现场保留），收尾落盘则接管为当前作业（界面可导出未完整包）；收尾未落盘退化为释放窗口与租约，重启后走恢复卡。零观察事实丢弃放宽：`observationRowCount` 流式计数（事务 / 通道 / 动作行）+ `checkUnexportedDiscard` 门禁 + `cleanup({ allowUnexportedDiscard })`——finalized 且三面零行 = 没有现场资料，允许不导出直接丢弃（放行与拒绝 alike 判定消息显式记账；行数不可读宁可保留，不放宽）。崩溃恢复死循环修复：capture-facts 缺失的工作区从「close 后留 active 标记」改为 finalize + 恢复卡挂起，新增 `capture:discardRecovered` IPC 与恢复卡丢弃按钮（零观察事实一键清理，不再人工删目录）。
 - 当前版本仍为 0.2.10：阶段 0–5 已在主分支落地，0.2.x 运行链路已删除（已发布安装包不受影响）；阶段 6 全量验收未开始，真机验收最后统一进行。
 
 ## [0.2.10] - 2026-09-16

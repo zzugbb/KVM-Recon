@@ -5,6 +5,12 @@
   "type": "object",
   "required": ["schemaVersion", "replayable", "clockPolicy", "requests", "channels"],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "replayable": { "const": false } }, "required": ["replayable"] },
+      "then": { "required": ["notReplayableReasons"], "properties": { "notReplayableReasons": { "minItems": 1 } } }
+    }
+  ],
   "properties": {
     "schemaVersion": { "const": "2.0.0" },
     "replayable": { "type": "boolean" },

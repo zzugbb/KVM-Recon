@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, Download, FolderOpen, Play } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, Download, FolderOpen, Play } from 'lucide-react';
 
 import { APP_VERSION } from '../version';
 import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageStatusText } from './stage';
@@ -48,9 +48,10 @@ interface StatusPayload {
   job: StatusJob | null;
   export: { zipPath: string; fileName: string; status: { captureIntegrity: string } } | null;
   recovery: {
-    kind: 'recovered' | 'exported' | 'refused' | 'failed';
+    kind: 'recovered' | 'exported' | 'discarded' | 'retained' | 'refused' | 'failed';
     jobId?: string;
     zipPath?: string;
+    workspacePath?: string;
     reason?: string;
     error?: string;
     conservative?: boolean;
@@ -135,16 +136,32 @@ export function App() {
     }
   }
 
+  function retainWorkspace() {
+    if (!window.confirm('原始工作区将保留在本机，且不是已验证的 Capture Pack。保留后可以开始下一台。确定继续吗？')) return;
+    void run(() => window.kvmRecon!.retainWorkspace());
+  }
+
   const preloadMissing = typeof window !== 'undefined' && !window.kvmRecon?.startCapture;
   const job = status?.job ?? null;
   const recovery = status?.recovery ?? null;
   // 恢复作业待导出期间不能开始新作业（与恢复卡文案承诺一致，主进程同样拒绝）
   const canStart =
-    !job && !busy && target.trim().length > 0 && !preloadMissing && recovery?.kind !== 'recovered';
+    !job && !busy && target.trim().length > 0 && !preloadMissing &&
+    recovery?.kind !== 'recovered' && recovery?.kind !== 'refused' && recovery?.kind !== 'failed';
   const canStop = job?.state === 'capturing' && !busy;
   const canExport = job && job.state !== 'exported' && !busy;
-  const canDiscard = job?.state === 'exported' && !busy;
+  // 已导出作业可清理；零观察事实（无事务/通道/动作行）的已收尾作业也允许
+  // 直接丢弃（主进程 checkUnexportedDiscard 门禁复核，界面只做宽判）
+  const canDiscard =
+    job &&
+    !busy &&
+    (job.state === 'exported' ||
+      (job.state === 'stopped' &&
+        job.counts.httpTransactions === 0 &&
+        job.counts.channels === 0 &&
+        job.counts.actions === 0));
   const canExportRecovered = recovery?.kind === 'recovered' && !busy;
+  const canDiscardRecovered = canExportRecovered;
   const canReveal = job?.state === 'exported' && Boolean(status?.export) && !busy;
 
   const stage = derivePageStage({
@@ -200,6 +217,18 @@ export function App() {
                 >
                   <Download size={14} aria-hidden /> 导出恢复作业
                 </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void run(() => window.kvmRecon!.discardRecoveredCapture())}
+                  disabled={!canDiscardRecovered}
+                  title="仅确认没有任何已知现场证据时可丢弃；否则保留原始资料"
+                >
+                  丢弃恢复作业
+                </button>
+                <button type="button" className="secondary" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
+                  <Archive size={14} aria-hidden /> 保留原始资料并继续
+                </button>
               </div>
             </>
           ) : recovery.kind === 'exported' ? (
@@ -208,14 +237,26 @@ export function App() {
               （{recovery.conservative ? '硬崩溃保守摘要' : '真实摘要'}，包为{' '}
               {recovery.captureIntegrity ?? '未知完整度'}）。
             </p>
+          ) : recovery.kind === 'discarded' ? (
+            <p>
+              恢复作业 {recovery.jobId} 已丢弃：{recovery.reason}
+            </p>
+          ) : recovery.kind === 'retained' ? (
+            <p>作业 {recovery.jobId} 的原始资料已保留在 <code>{recovery.workspacePath}</code>。这不是已验证的采集包。</p>
           ) : recovery.kind === 'refused' ? (
-            <p>
-              拒绝恢复作业 {recovery.jobId ?? ''}：{recovery.reason}
-            </p>
+            <>
+              <p>拒绝恢复作业 {recovery.jobId ?? ''}：{recovery.reason}</p>
+              <button type="button" className="secondary" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
+                <Archive size={14} aria-hidden /> 保留原始资料并继续
+              </button>
+            </>
           ) : (
-            <p>
-              恢复作业 {recovery.jobId ?? ''} 失败：{recovery.error}
-            </p>
+            <>
+              <p>恢复作业 {recovery.jobId ?? ''} 失败：{recovery.error}</p>
+              <button type="button" className="secondary" onClick={() => void run(() => window.kvmRecon!.revealWorkspaceFolder())} disabled={busy} title="打开原始工作区供人工检查">
+                <FolderOpen size={14} aria-hidden /> 打开原始资料目录
+              </button>
+            </>
           )}
         </div>
       ) : null}
@@ -405,6 +446,11 @@ export function App() {
           >
             采集下一台
           </button>
+          {job?.state === 'stopped' ? (
+            <button type="button" className="secondary" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
+              <Archive size={14} aria-hidden /> 保留原始资料并继续
+            </button>
+          ) : null}
         </div>
       </footer>
 

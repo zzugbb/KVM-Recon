@@ -54,16 +54,16 @@ interface CaptureExportInfo {
   zipPath: string;
   fileName: string;
   status: {
-    captureIntegrity: 'COMPLETE' | 'INCOMPLETE' | 'LEGACY_UNVERIFIED';
+    captureIntegrity: 'COMPLETE' | 'INCOMPLETE';
     workflowStatus: string;
-    classificationStatus: string;
   };
 }
 
 interface RecoveryNotice {
-  kind: 'recovered' | 'exported' | 'refused' | 'failed';
+  kind: 'recovered' | 'exported' | 'discarded' | 'retained' | 'refused' | 'failed';
   jobId?: string;
   zipPath?: string;
+  workspacePath?: string;
   reason?: string;
   error?: string;
   conservative?: boolean;
@@ -102,7 +102,10 @@ declare global {
       stopCapture(): Promise<StatusResult>;
       exportCapture(zipDir?: string): Promise<StatusResult>;
       exportRecoveredCapture(zipDir?: string): Promise<StatusResult>;
+      discardRecoveredCapture(): Promise<StatusResult>;
+      retainWorkspace(): Promise<StatusResult>;
       revealExportFolder(): Promise<{ ok: true } | IpcError>;
+      revealWorkspaceFolder(): Promise<{ ok: true } | IpcError>;
       discardCapture(): Promise<StatusResult>;
     };
   }

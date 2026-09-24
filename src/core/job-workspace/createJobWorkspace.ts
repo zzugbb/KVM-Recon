@@ -27,6 +27,7 @@
  * artifactPaths() 只返回包内工件。
  */
 
+import { createReadStream } from 'node:fs';
 import {
   mkdir,
   open,
@@ -42,6 +43,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
+import type { Readable } from 'node:stream';
 
 import { acquireProcessMutex, ProcessMutexHeldError } from './processMutex';
 
@@ -177,6 +179,12 @@ export interface JobWorkspace {
   writeArtifact(path: string, content: string | Uint8Array): Promise<void>;
   appendJsonl(path: string, row: unknown): Promise<void>;
   readArtifact(path: string): Promise<Buffer>;
+  /**
+   * 工件只读字节流（与 readArtifact 同一身份校验/路径归一化）：无界
+   * journal、storage.json、正文等大文件逐块消费，不整体载入内存。
+   * 文件在流打开后才被删除时由流自身报错（调用方按读取失败记账）。
+   */
+  openArtifactStream(path: string): Promise<Readable>;
   /** 包内工件相对路径（排序后；不含 workspace.json 与 .tmp/）。 */
   artifactPaths(): Promise<string[]>;
   /** fsync 所有打开的 JSONL 句柄。 */
@@ -197,8 +205,14 @@ export interface JobWorkspace {
   markExported(): Promise<void>;
   /** 关闭句柄；目录保留（active 状态下崩溃可恢复；finalized-unexported 可再恢复导出）。 */
   close(): Promise<void>;
-  /** 关闭句柄并删除整个作业目录（未导出的 finalized 拒绝删除）。 */
-  cleanup(): Promise<void>;
+  /**
+   * 关闭句柄并删除整个作业目录（未导出的 finalized 拒绝删除）。
+   * allowUnexportedDiscard：零观察事实丢弃放宽——调用方必须先过
+   * checkUnexportedDiscard 门禁（无观察行且无其他已知现场证据）才允许置位。
+   */
+  cleanup(options?: { allowUnexportedDiscard?: boolean }): Promise<void>;
+  /** 无法装配正式包时，原样移入 retained/ 并释放 current 单作业槽位；绝不删除现场资料。 */
+  retainUnexported(): Promise<string>;
 }
 
 const defaultStatfs: StatFsProbe = path => statfs(path) as Promise<StatFsLike>;
@@ -636,6 +650,13 @@ function createWorkspace(
         path === WORKSPACE_MARKER_FILE ? path : normalizeArtifactPath(path);
       return readFile(join(dir, normalized));
     },
+    async openArtifactStream(path) {
+      assertOpen();
+      await assertSameInstance();
+      const normalized =
+        path === WORKSPACE_MARKER_FILE ? path : normalizeArtifactPath(path);
+      return createReadStream(join(dir, normalized));
+    },
     async artifactPaths() {
       assertOpen();
       await assertSameInstance();
@@ -777,8 +798,9 @@ function createWorkspace(
       });
       await closePromise;
     },
-    async cleanup() {
-      if (state === 'finalized' && !exported) {
+    async cleanup(options?: { allowUnexportedDiscard?: boolean }) {
+      const allowUnexported = options?.allowUnexportedDiscard === true;
+      if (state === 'finalized' && !exported && !allowUnexported) {
         throw new JobWorkspaceExportRequiredError(
           `作业 ${init.jobId} 已收尾但尚未导出，拒绝删除资料`,
         );
@@ -791,7 +813,7 @@ function createWorkspace(
         const status = await readCurrentMarker(dirname(dir));
         if (!status.ok) return;
         if (status.marker.workspaceId !== marker.workspaceId) return;
-        if (status.marker.state === 'finalized' && !status.marker.exported) {
+        if (status.marker.state === 'finalized' && !status.marker.exported && !allowUnexported) {
           throw new JobWorkspaceExportRequiredError(
             `作业 ${status.marker.jobId} 已收尾但尚未导出，拒绝删除资料`,
           );
@@ -799,6 +821,38 @@ function createWorkspace(
         const existing = (await readFile(join(dir, WORKSPACE_OWNER_FILE), 'utf8').catch(() => '')).trim();
         if (existing && existing !== ownerToken) return;
         await rm(dir, { recursive: true, force: true });
+      } finally {
+        await release();
+      }
+    },
+    async retainUnexported() {
+      if (state !== 'finalized' || exported) {
+        throw new Error('只能保留已收尾且未导出的作业');
+      }
+      await this.close();
+      const rootDir = dirname(dir);
+      const release = await acquireRootMutex(rootDir, LIFECYCLE_MUTEX_WAIT_MS);
+      try {
+        const status = await readCurrentMarker(rootDir);
+        if (!status.ok || status.marker.workspaceId !== marker.workspaceId ||
+            status.marker.state !== 'finalized' || status.marker.exported) {
+          throw new JobWorkspaceIdentityError(`作业 ${init.jobId} 已不再对应待保留的 current 目录`);
+        }
+        const owner = await readFile(join(dir, WORKSPACE_OWNER_FILE), 'utf8').catch(error => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+          throw error;
+        });
+        if (owner.trim()) throw new Error('作业仍被其他实例持有，拒绝移动');
+        const retainedDir = join(rootDir, 'retained');
+        await mkdir(retainedDir, { recursive: true });
+        const retainedPath = join(retainedDir, `${marker.jobId}-${marker.workspaceId}`);
+        const alreadyExists = await stat(retainedPath).then(() => true, error => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+          throw error;
+        });
+        if (alreadyExists) throw new Error('保留目录已存在，拒绝覆盖');
+        await rename(dir, retainedPath);
+        return retainedPath;
       } finally {
         await release();
       }

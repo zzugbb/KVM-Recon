@@ -20,7 +20,6 @@
   },
   "captureIntegrity": "COMPLETE",
   "workflowStatus": "KVM_REACHED",
-  "classificationStatus": "UNKNOWN",
   "security": {
     "dataHandling": "UNREDACTED",
     "containsSensitiveData": true

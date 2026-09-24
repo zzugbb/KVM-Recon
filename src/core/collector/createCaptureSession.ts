@@ -27,6 +27,8 @@ import { createBrowserStateCollector } from './createBrowserStateCollector';
 import { createRealtimeCollector } from './createRealtimeCollector';
 import { buildHarIntoWorkspace, HAR_CREATOR, HAR_PATH } from './harBuilder';
 import { wrapNetlogIntoWorkspace } from './netlogTransform';
+import { readStorageSnapshotFacts } from './storageSnapshotFacts';
+import { scanStreamForNeedles } from './chunkedNeedleScan';
 import type { CdpSession } from './cdpSession';
 import { deriveWorkflowStatus, workflowFactsSignature, type WorkflowFacts } from './workflowStatusEngine';
 import { deriveRelations, deriveValueFlow } from './valueFlowEngine';
@@ -446,31 +448,14 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       let storageValues: Array<{ key: string; value: string }> = [];
       let storageCapturedAt = now();
       try {
-        const raw = JSON.parse(
-          (await workspace.readArtifact('raw/browser/storage.json')).toString('utf8'),
-        ) as {
-          capturedAt?: unknown;
-          cookies?: unknown;
-          sessionStorage?: unknown;
-          localStorage?: unknown;
-        };
-        if (typeof raw.capturedAt === 'string') storageCapturedAt = raw.capturedAt;
-        if (Array.isArray(raw.cookies)) {
-          storageCookies = raw.cookies.filter(
-            (cookie): cookie is { name: string; value: string } =>
-              !!cookie &&
-              typeof (cookie as { name?: unknown }).name === 'string' &&
-              typeof (cookie as { value?: unknown }).value === 'string',
-          );
-        }
-        // sessionStorage / localStorage：键值为字符串的对象（storage 快照步产物）
-        for (const source of [raw.sessionStorage, raw.localStorage]) {
-          if (!source || typeof source !== 'object' || Array.isArray(source)) continue;
-          for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
-            if (typeof value !== 'string') continue;
-            storageValues.push({ key, value });
-          }
-        }
+        // 流式提取：storage.json 的 indexedDb records 内联无上界，
+        // 只走查证据图实际消费的字段，不整体载入
+        const storageStream = await workspace.openArtifactStream('raw/browser/storage.json');
+        storageStream.setEncoding('utf8');
+        const snapshot = await readStorageSnapshotFacts(storageStream);
+        if (snapshot.capturedAt !== null) storageCapturedAt = snapshot.capturedAt;
+        storageCookies = snapshot.storageCookies;
+        storageValues = snapshot.storageValues;
       } catch (error) {
         // storage.json 是快照步产物；读取失败不牵连其余派生链
         evidence.droppedEvent('value-flow-storage-read', error);
@@ -488,6 +473,24 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
           return null;
         }
       };
+      // 干草堆侧分块扫描：needle 长于正文总字节数时数学上不可能命中，
+      // 跳过读取（诚实预筛，不是截断）；其余逐块滚动扫描，不整体载入
+      const scanBody = async (
+        ref: PackV2BodyRef,
+        needles: ReadonlyArray<Buffer>,
+      ): Promise<ReadonlySet<Buffer> | null> => {
+        if (needles.length === 0) return new Set<Buffer>();
+        const candidates = needles.filter(
+          needle => needle.byteLength > 0 && needle.byteLength <= ref.bytes,
+        );
+        if (candidates.length === 0) return new Set<Buffer>();
+        try {
+          const stream = await workspace.openArtifactStream(ref.path);
+          return await scanStreamForNeedles(stream, candidates);
+        } catch {
+          return null;
+        }
+      };
       const derived = await deriveValueFlow(
         {
           transactions: http.transactionRows(),
@@ -497,7 +500,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
           storageValues,
           storageCapturedAt,
         },
-        { readBody },
+        { readBody, scanBody },
       );
       await workspace.writeArtifact('ai/value-flow.json', json2(derived.valueFlow));
       const relations = deriveRelations(

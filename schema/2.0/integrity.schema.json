@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "const": "2.0.0" },
-    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE", "LEGACY_UNVERIFIED"] },
+    "captureIntegrity": { "enum": ["COMPLETE", "INCOMPLETE"] },
     "reasons": {
       "type": "array",
       "items": {
