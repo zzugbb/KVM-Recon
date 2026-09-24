@@ -24,7 +24,7 @@ describe('App（单屏单作业工作台）', () => {
     expect(html).toContain('Viewer 活动');
     expect(html).toContain('完整性校验');
     expect(html).toContain('HTTP');
-    expect(html).toContain('Targets');
+    expect(html).toContain('目标');
     expect(html).toContain('WS');
     expect(html).toContain('已写入');
     expect(html).toContain('缺失');
@@ -32,14 +32,14 @@ describe('App（单屏单作业工作台）', () => {
     expect(html).toContain('等待输入');
   });
 
-  it('生命周期按钮在场：停止并收尾 / 导出 / 打开所在文件夹 / 采集下一台', () => {
+  it('空闲态只显示可用入口，不占位展示其他生命周期操作', () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain('停止并收尾');
-    expect(html).toContain('导出采集包');
-    expect(html).toContain('打开所在文件夹');
-    expect(html).toContain('采集下一台');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<svg[^>]*>.*?导出采集包/s);
+    expect(html).toContain('开始采集');
+    expect(html).not.toContain('停止并收尾');
+    expect(html).not.toContain('导出采集包');
+    expect(html).not.toContain('打开所在文件夹');
+    expect(html).not.toContain('采集下一台');
   });
 
   it('高级诊断默认折叠（details 未展开）', () => {

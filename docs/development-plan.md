@@ -17,7 +17,7 @@ Capture Pack 2.0 的详细契约见 [0.3 开发规范](v0.3-development-spec.md)
 
 ## 3. 当前状态
 
-**0.3.0 阶段 0–5 已在主分支落地；运行版本仍是 0.2.10（未发新安装包）。**
+**0.3.0 阶段 0–5 已在主分支落地；当前源码版本为 0.3.0，尚未正式发版。**
 
 - 阶段 0（契约）：Capture Pack 2.0 的完整度与工作流状态、`schema/2.0/`（包内自校验）、随机 URL Mock KVM、完整度失败 Fixture 与样例包一致性验证器。
 - 阶段 1（工作区）：单作业 `JobWorkspace`（跨进程互斥、磁盘水位、finalize 不可变）、SHA-256 内容寻址 `BodyStore`、流式 ZIP64 导出。
@@ -27,7 +27,7 @@ Capture Pack 2.0 的详细契约见 [0.3 开发规范](v0.3-development-spec.md)
 - 阶段 5（界面收口）：`stage.ts` 八阶段纯函数派生（idle/launching/capturing-login/capturing-viewer/finalizing/complete/incomplete/exported + 四步阶段条三态；已收尾但未派生 COMPLETE 一律按 incomplete，不主张未验证的完整）；界面重排为规范 §5 单屏单作业工作台（深石墨色板、稳定宽度计数器、最近事实 feed、高级诊断 `<details>` 默认折叠、lucide-react 图标）；`capture:status` 载荷扩展（计数器 / 包工件字节记账 / 收尾后预导出完整度 / 最近事实 / 磁盘余量与日志尾部）；导出收口（INCOMPLETE 按钮明确「导出未完整包」、「打开所在文件夹」路径由主进程决定、「采集下一台」丢弃清理）；删除 0.2.x 死 CSS 选择器。
 - 阶段 5 之后的修正：原始日志与正文流式读取，Replay 动态值闭环，启动失败和崩溃恢复的证据保留；曾加入的离线协议分类 Analyzer 已移除，协议分类不属于采集器职责。
 - 0.2.x 运行链路与五项人为大小上限已删除；新链路不脱敏，大小受磁盘容量与 Chromium/CDP 可观察能力约束。`workflowStatus` 从观察事实派生，完整度由十项门禁判断；`COMPLETE` 只与 `KVM_REACHED` 组合。
-- 阶段 6 已开始：现场/家庭旧包只读清点、第二批现场 HAR 离线回放、Mock 端到端与本机 macOS 双架构打包已验证；真机、同设备 2.0 新包对比、Windows 安装和断网安装仍待验证。详见 [阶段 6 验证记录](phase-6-validation.md)。
+- 阶段 6 已开始：现场/家庭旧包只读清点、第二批现场 HAR 离线回放、Mock 端到端、本机 macOS 双架构打包及一台家庭 BMC 的 2.0 实采与旧包对比已验证；该设备 Viewer 的 `No Signal` 正是现场正常 KVM 画面，本设备采集验收通过。Windows 安装和断网安装仍待验证。详见 [阶段 6 验证记录](phase-6-validation.md)。
 
 进行中：阶段 6（全量验收）。
 

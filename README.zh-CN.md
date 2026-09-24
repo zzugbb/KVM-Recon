@@ -10,7 +10,7 @@ Offline BMC/KVM Evidence Capture / BMC KVM 离线证据采集工具。
 
 KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登录 BMC → 打开 HTML5 KVM」时浏览器实际观察到的请求、正文、脚本、实时通道与画面，并手动导出 Capture Pack 2.0。采集不依赖厂商、型号或协议族规则。包内资料**未脱敏**，离场后由工程师或 AI 研究适配。
 
-主分支正在开发 0.3.0；GitHub 已发布的 0.2.10 是旧格式和旧界面，不能把旧包的 YES/PARTIAL/NO 当作 2.0 完整度结论。
+主分支代码版本为 0.3.0，仍待 Windows 与安装验收，尚未正式发布。GitHub 已发布的 0.2.10 是旧格式和旧界面，不能把旧包的 YES/PARTIAL/NO 当作 2.0 完整度结论。
 
 界面与现场说明目前是中文。GitHub 访客请看英文 [README.md](README.md)。
 
@@ -32,7 +32,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登�
 - **macOS**：ad-hoc 签名。从浏览器下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。
 - **Windows**：无 Authenticode 签名。SmartScreen 若提示已保护你的电脑或未知发布者，点「更多信息 → 仍要运行」。
 
-0.3.0 开发版流程见 [现场说明](docs/field-guide.md)。已发布 0.2.10 的旧说明可从对应 Git 标签获取。
+0.3.0 候选版流程见 [现场说明](docs/field-guide.md)。已发布 0.2.10 的旧说明可从对应 Git 标签获取。
 
 ## 现场流程
 
@@ -68,11 +68,11 @@ npm run dev
 索引见 `docs/README.md`。
 
 - `docs/v0.3-development-spec.md`：0.3.0 权威开发规范（阶段 0–5 已实现，阶段 6 待验收）
-- `docs/field-guide.md`：0.3.0 开发版现场操作
+- `docs/field-guide.md`：0.3.0 候选版现场操作
 - `docs/releasing.md`：构建与发布安装包
 - `docs/development-plan.md`：项目边界与当前状态
 - `schema/2.0/`：Capture Pack 2.0 JSON Schema
-- `CHANGELOG.md`：版本记录；发新版时把 `[Unreleased]` 收成版本号
+- `CHANGELOG.md`：版本记录；0.3.0 章节待安装验收后填写发布日期
 - `CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`LICENSE`
 
 ## 安全与边界

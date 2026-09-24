@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, Archive, Download, FolderOpen, Play } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArrowRight, Check, ChevronDown, Circle, Download, FolderOpen, LoaderCircle, Play, Square } from 'lucide-react';
 
 import { APP_VERSION } from '../version';
 import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageStatusText } from './stage';
@@ -171,6 +171,7 @@ export function App() {
     launching: launching && !job,
   });
   const bar = stageBarOf(stage);
+  const incompleteFinalStep = (stage === 'incomplete' || stage === 'exported') && job?.captureIntegrity !== 'COMPLETE';
   const exportLabel =
     job && job.state === 'stopped' && job.captureIntegrity !== 'COMPLETE' ? '导出未完整包' : '导出采集包';
 
@@ -281,11 +282,17 @@ export function App() {
       </section>
 
       <section className="stage-bar" aria-label="采集阶段">
-        {STAGE_BAR_STEPS.map((step, index) => (
-          <span key={step} className={`stage-step stage-${bar[index]}`}>
-            {step}
-          </span>
-        ))}
+        {STAGE_BAR_STEPS.map((step, index) => {
+          const state = incompleteFinalStep && index === 3 ? 'warning' : bar[index];
+          return (
+            <span key={step} className={`stage-step stage-${state}`} aria-current={state === 'active' ? 'step' : undefined}>
+              <span className="stage-marker" aria-hidden="true">
+                {state === 'done' ? <Check size={17} /> : state === 'warning' ? <AlertTriangle size={16} /> : state === 'active' ? <LoaderCircle size={16} /> : <Circle size={12} />}
+              </span>
+              <span className="stage-name">{step}</span>
+            </span>
+          );
+        })}
       </section>
 
       <section className="status-line" aria-label="当前状态" role="status">
@@ -320,7 +327,7 @@ export function App() {
           HTTP <span className="mono counter">{job?.counts.httpTransactions ?? 0}</span>
         </span>
         <span>
-          Targets <span className="mono counter">{job?.counts.targets ?? 0}</span>
+          目标 <span className="mono counter">{job?.counts.targets ?? 0}</span>
         </span>
         <span>
           WS <span className="mono counter">{job?.counts.websocketChannels ?? 0}</span>
@@ -333,13 +340,14 @@ export function App() {
         </span>
       </section>
 
-      <section className="recent-facts" aria-label="最近事实">
+      <section className={`recent-facts${job ? ' has-job' : ''}`} aria-label="最近事实">
         <h3>最近事实</h3>
         {job && job.recentFacts.length > 0 ? (
           <ul className="facts-list">
             {job.recentFacts.map((fact, index) => (
               <li key={`${fact.occurredAt}-${index}`}>
-                <span className="mono fact-time">{formatTime(fact.occurredAt)}</span> {fact.text}
+                <span className="mono fact-time">{formatTime(fact.occurredAt)}</span>
+                <span className="fact-text">{fact.text}</span>
               </li>
             ))}
           </ul>
@@ -348,10 +356,56 @@ export function App() {
         )}
       </section>
 
-      <footer className="action-bar">
-        <details className="advanced-diagnostics">
+      {job ? <div className="action-bar" aria-label="作业操作">
+        {job?.state === 'capturing' ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void run(() => window.kvmRecon!.stopCapture())}
+            disabled={!canStop}
+            title="停止并收尾"
+          >
+            <Square size={14} aria-hidden /> 停止并收尾
+          </button>
+        ) : null}
+        {job?.state === 'stopped' ? (
+          <button
+            type="button"
+            onClick={() => void run(() => window.kvmRecon!.exportCapture())}
+            disabled={!canExport}
+            title={exportLabel}
+          >
+            <Download size={14} aria-hidden /> {exportLabel}
+          </button>
+        ) : null}
+        {canDiscard ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void run(() => window.kvmRecon!.discardCapture())}
+            disabled={busy}
+            title="清理本作业临时目录并采集下一台"
+          >
+            <ArrowRight size={14} aria-hidden /> {job?.state === 'exported' ? '采集下一台' : '舍弃空作业并继续'}
+          </button>
+        ) : null}
+      </div> : null}
+
+      {status?.export ? (
+        <div className="export-summary">
+          <span>已导出：<code>{status.export.zipPath}</code>（{status.export.status.captureIntegrity}）</span>
+          {canReveal ? (
+            <button type="button" className="secondary" onClick={() => void run(() => window.kvmRecon!.revealExportFolder())} title="打开所在文件夹">
+              <FolderOpen size={14} aria-hidden /> 打开所在文件夹
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <details className="advanced-diagnostics">
           <summary>
-            <Activity size={14} aria-hidden /> 高级诊断
+            <span><Activity size={14} aria-hidden /> 高级诊断</span>
+            <ChevronDown size={15} className="diagnostics-chevron" aria-hidden="true" />
           </summary>
           <div className="diagnostics-body">
             {job ? (
@@ -399,55 +453,17 @@ export function App() {
                 {job.diagnostics.captureWindowLogTail.length > 0 ? (
                   <pre className="log-tail">{job.diagnostics.captureWindowLogTail.join('\n')}</pre>
                 ) : null}
+                {job.state === 'stopped' ? (
+                  <button type="button" className="secondary retain-button" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
+                    <Archive size={14} aria-hidden /> 保留原始资料并继续
+                  </button>
+                ) : null}
               </>
             ) : (
               <p className="muted">空闲：暂无诊断信息。</p>
             )}
           </div>
-        </details>
-        <div className="actions">
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => void run(() => window.kvmRecon!.stopCapture())}
-            disabled={!canStop}
-            title="停止并收尾"
-          >
-            停止并收尾
-          </button>
-          <button
-            type="button"
-            onClick={() => void run(() => window.kvmRecon!.exportCapture())}
-            disabled={!canExport}
-            title={exportLabel}
-          >
-            <Download size={14} aria-hidden /> {exportLabel}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => void run(() => window.kvmRecon!.revealExportFolder())}
-            disabled={!canReveal}
-            title="打开所在文件夹"
-          >
-            <FolderOpen size={14} aria-hidden /> 打开所在文件夹
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => void run(() => window.kvmRecon!.discardCapture())}
-            disabled={!canDiscard}
-            title="采集下一台（清理本作业临时目录）"
-          >
-            采集下一台
-          </button>
-          {job?.state === 'stopped' ? (
-            <button type="button" className="secondary" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
-              <Archive size={14} aria-hidden /> 保留原始资料并继续
-            </button>
-          ) : null}
-        </div>
-      </footer>
+      </details>
 
       {error ? (
         <p className="error-card" role="alert">
@@ -455,11 +471,6 @@ export function App() {
         </p>
       ) : null}
 
-      {status?.export ? (
-        <p className="export-summary">
-          已导出：<code>{status.export.zipPath}</code>（{status.export.status.captureIntegrity}）
-        </p>
-      ) : null}
     </div>
   );
 }

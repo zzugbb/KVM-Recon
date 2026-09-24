@@ -2,10 +2,9 @@
 
 本文件记录用户可见变更，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-- **日常开发**：把尚未随安装包发出的改动写在 `[Unreleased]`。
-- **发布新版本**：把 `[Unreleased]` 里的条目移到新版本标题下（如 `[0.1.1] - YYYY-MM-DD`），同步 `package.json` 的 `version`，再打 `v*` 标签。GitHub Release 说明可从该版本章节复制。
+- 0.3.0 代码已准备；Windows 与安装验收后填写发布日期、打标签并发布。后续未发布的变更再记入 `[Unreleased]`。
 
-## [Unreleased]
+## [0.3.0] - 待发布
 
 ### Added
 
@@ -15,7 +14,7 @@
 ### Changed
 
 - 完整度只评价工作流与证据门禁；未知协议也可得到 COMPLETE，缺失或不可读取的资料必须明确记为 INCOMPLETE。
-- 工作台改为单作业流程，支持崩溃恢复、原始资料保留和未完整包导出；HAR 大正文按块写出，不再为生成副本整份载入内存。
+- 工作台改为单作业流程，支持崩溃恢复、原始资料保留和未完整包导出；过程状态、事实列表及诊断区重排；HAR 大正文按块写出，不再为生成副本整份载入内存。
 - TLS/Redfish 仅作为通用补充事实；包内资料未脱敏，应按敏感数据保管。
 
 ### Removed

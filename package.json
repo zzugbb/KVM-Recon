@@ -1,6 +1,6 @@
 {
   "name": "kvm-recon",
-  "version": "0.2.10",
+  "version": "0.3.0",
   "description": "Offline BMC/KVM Evidence Capture / BMC KVM 离线证据采集工具。",
   "main": "dist/main/index.js",
   "scripts": {

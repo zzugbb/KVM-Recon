@@ -22,6 +22,8 @@
 
 ## 发布到 GitHub Releases
 
+0.3.0 的源码版本与 CHANGELOG 已预置；先用下文 **Build installers** 下载候选安装包，在 Windows 和断网环境完成验收。验收通过前不要创建 `v0.3.0` 标签或正式 Release。
+
 当前 Release workflow 用 `gh release upload` 上传附件，**要求 GitHub Release 已经存在**。只打 tag 并推送不够：没有对应 Release 时，构建产物无法挂上。
 
 顺序：
@@ -33,11 +35,11 @@
 → workflow 构建并上传附件
 ```
 
-1. 更新 `package.json` 的 `version` 与 `CHANGELOG.md`，提交到 `main`。
+1. 核对 `package.json` 的 `version` 与 `CHANGELOG.md`；0.3.0 验收通过后给该章节填写发布日期，再提交到 `main`。
 2. 创建 GitHub Release（标签如 `vX.Y.Z`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
 3. 标签匹配 `v*` 后，workflow 会构建安装包并挂到**已有** Release，再附 `SHA256SUMS.txt`。也可在 Actions 里手动运行 **Release**，填写同一个已有标签（例如 `vX.Y.Z`）。
 
-仓库里的 `CHANGELOG.md` 是版本历史：平时改动写在 `[Unreleased]`，发新版时挪到新版本号下。GitHub Release 说明可从该版本章节复制，不必再改 README。
+仓库里的 `CHANGELOG.md` 是版本历史：后续未发版改动写在 `[Unreleased]`，正式发版时给对应版本章节填写日期。GitHub Release 说明可从该章节复制。
 
 下一版重复上述步骤，使用新的版本号和标签。若某次构建成功但 Release 上没有安装包，在 Actions 打开 **Release** → Run workflow，填同一个已有标签即可补传。
 

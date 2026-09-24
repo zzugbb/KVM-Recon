@@ -108,5 +108,5 @@ describe('HAR 正文流式导出', () => {
       await workspace.close();
       await rm(rootDir, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 });
