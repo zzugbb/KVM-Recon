@@ -6,6 +6,8 @@
   --border: #313b40;
   --text-primary: #f2f4f5;
   --text-secondary: #9da5ad;
+  --text-label: #c3cad0;
+  --text-placeholder: #6f7880;
   --accent: #42c7b7;
   --success: #4bc27a;
   --warning: #e5aa45;
@@ -16,8 +18,19 @@
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 }
 
+:root {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #3a454b transparent;
+}
+
+/* 尺寸统一用 rem：大屏上字号与间距随根字号一起平滑放大（15px → 17px） */
+html {
+  font-size: clamp(15px, calc(8.5px + 0.45vw), 17px);
 }
 
 html,
@@ -29,21 +42,24 @@ body {
 body {
   background: var(--page-bg);
   color: var(--text-primary);
-  font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+  font: 1rem/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', sans-serif;
 }
 
+/* 常规窗口保持 1200px；大屏按视口加宽，上限 1680px */
 #root {
-  max-width: 1440px;
+  max-width: clamp(1200px, 84vw, 1680px);
   margin: 0 auto;
-  padding: 0 36px 36px;
+  padding: 0 2rem;
 }
 
+/* 一屏高：采集中最近事实吃掉剩余高度并在区域内滚动，主操作不会被推远 */
 .app-shell {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding-top: 20px;
+  gap: 1rem;
+  height: 100vh;
+  padding: 1.2rem 0 1.6rem;
 }
 
 /* ---- 顶栏 ---- */
@@ -52,21 +68,51 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 0 14px;
+  gap: 1rem;
+  padding: 0.2rem 0 0.9rem;
   border-bottom: 1px solid var(--border);
 }
 
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.brand-mark {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 6px;
+}
+
 .app-name {
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 1.33rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.app-version {
+  padding: 0 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
 }
 
 .sensitive-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.8rem;
   color: var(--warning);
-  border: 1px solid var(--warning);
+  background: rgba(229, 170, 69, 0.08);
+  border: 1px solid rgba(229, 170, 69, 0.7);
   border-radius: var(--radius-small);
-  padding: 2px 10px;
-  font-size: 12px;
+  font-size: 0.867rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -75,9 +121,9 @@ body {
 code,
 .mono {
   font-family: var(--mono);
-  font-size: 0.95em;
+  font-size: 0.92em;
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-small);
   padding: 0 4px;
 }
@@ -87,13 +133,13 @@ p {
 }
 
 h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
+  margin: 0 0 0.5rem;
+  font-size: 1.067rem;
 }
 
 h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 0.5rem;
+  font-size: 0.933rem;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -108,10 +154,10 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 120px;
-  min-height: 34px;
-  padding: 6px 14px;
+  gap: 0.45rem;
+  min-width: 8rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 1.05rem;
   background: var(--accent);
   color: #0d1512;
   border: 1px solid transparent;
@@ -148,58 +194,205 @@ button.secondary:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-button:focus-visible,
-summary:focus-visible {
+button:focus-visible {
   outline: 2px solid var(--info);
   outline-offset: 3px;
 }
 
+.spin {
+  animation: stage-spin 1.2s linear infinite;
+}
+
 input {
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 3rem;
+  padding: 0.55rem 0.85rem;
   background: var(--page-bg);
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   font: inherit;
+  font-size: 1.067rem;
   width: 100%;
+}
+
+input::placeholder {
+  color: var(--text-placeholder);
 }
 
 input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(66, 199, 183, 0.12);
 }
 
 input:disabled {
   opacity: 0.55;
 }
 
-/* ---- 输入行 ---- */
+/* ---- 当前作业标题（采集开始后替代表单：采的是哪台设备要一眼可见） ---- */
+
+.job-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.6rem;
+  min-width: 0;
+}
+
+.job-subject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 2rem;
+  min-width: 0;
+}
+
+.job-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.job-field-label {
+  flex: none;
+  padding: 0 0.4rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.job-target {
+  font-family: var(--mono);
+  font-size: 1.33rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.job-device {
+  font-size: 1.133rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.job-device.muted {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.job-id {
+  color: var(--text-secondary);
+  font-size: 0.867rem;
+}
+
+/* ---- 当前状态面板（页面主角） ---- */
+
+.status-panel {
+  --tone: var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1.3rem;
+  padding: 1.45rem 1.6rem 1.35rem;
+  background: var(--workspace-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+}
+
+.status-panel.tone-info { --tone: var(--info); }
+.status-panel.tone-accent { --tone: var(--accent); }
+.status-panel.tone-success { --tone: var(--success); }
+.status-panel.tone-warning { --tone: var(--warning); }
+
+.status-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.6rem;
+}
+
+.status-copy {
+  min-width: 0;
+}
+
+.status-title {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-hint {
+  margin-top: 0.4rem;
+  color: var(--text-secondary);
+}
+
+.status-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0.5rem;
+  color: var(--warning);
+  font-size: 0.933rem;
+}
+
+.primary-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.primary-actions button {
+  min-width: 9rem;
+  min-height: 2.8rem;
+  padding: 0.5rem 1.2rem;
+}
+
+/* ---- 新建作业表单（空闲时位于状态面板内） ---- */
 
 .target-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
   align-items: end;
-  gap: 12px;
-  padding: 4px 0 18px;
-  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+  margin: 0;
 }
 
 .target-row label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  gap: 0.4rem;
+  color: var(--text-label);
+  font-size: 0.867rem;
+  font-weight: 500;
   min-width: 0;
 }
 
-/* ---- 阶段条 ---- */
+.target-input {
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.target-row > button {
+  min-width: 9rem;
+  min-height: 3rem;
+}
+
+/* ---- 阶段条（状态面板内） ---- */
 
 .stage-bar {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 8px 0 2px;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
 }
 
 .stage-step {
@@ -207,10 +400,10 @@ input:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
+  gap: 0.45rem;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.933rem;
   min-width: 0;
 }
 
@@ -218,9 +411,9 @@ input:disabled {
   content: '';
   position: absolute;
   z-index: 0;
-  top: 16px;
-  left: calc(50% + 24px);
-  width: calc(100% - 48px);
+  top: 1.066rem;
+  left: calc(50% + 1.6rem);
+  width: calc(100% - 3.2rem);
   height: 1px;
   background: var(--border);
 }
@@ -234,8 +427,8 @@ input:disabled {
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 2.133rem;
+  height: 2.133rem;
   flex: none;
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -265,7 +458,8 @@ input:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stage-active .stage-marker svg { animation: none; }
+  .stage-active .stage-marker svg,
+  .spin { animation: none; }
 }
 
 .stage-done {
@@ -286,69 +480,179 @@ input:disabled {
   background: rgba(229, 170, 69, 0.1);
 }
 
-/* ---- 状态行 / 计数器 ---- */
+/* ---- 状态面板内的提示 / 缺失明细 / 导出结果 ---- */
 
-.status-line {
-  padding: 0 4px;
-  color: var(--text-primary);
+.panel-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0.65rem 0.95rem;
+  color: var(--failure);
+  background: rgba(227, 93, 101, 0.08);
+  border-left: 3px solid var(--failure);
+  border-radius: var(--radius-small);
+  overflow-wrap: anywhere;
 }
 
-.status-label {
-  color: var(--info);
+.panel-alert svg {
+  flex: none;
+  margin-top: 0.3rem;
+}
+
+.incomplete-reasons {
+  padding-top: 1.05rem;
+  border-top: 1px solid var(--border);
+}
+
+.incomplete-reasons h3 {
+  margin-bottom: 0.65rem;
+  color: var(--warning);
   font-weight: 600;
 }
+
+.incomplete-reasons ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.incomplete-reasons li {
+  padding: 0.65rem 0.95rem;
+  background: rgba(229, 170, 69, 0.06);
+  border-radius: var(--radius-small);
+}
+
+.reason-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.65rem;
+}
+
+.reason-title {
+  font-weight: 600;
+}
+
+.reason-code {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.reason-summary {
+  margin-top: 0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.933rem;
+}
+
+.export-path {
+  padding-top: 1.05rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ---- 指标条 ---- */
 
 .counters {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 13px;
+  background: var(--workspace-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.counter {
-  display: inline-block;
-  min-width: 4ch;
-  text-align: right;
+.counter-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.95rem 1.35rem;
+  min-width: 0;
+}
+
+.counter-cell + .counter-cell {
+  border-left: 1px solid var(--border);
+}
+
+.counter-label {
+  color: var(--text-secondary);
+  font-size: 0.867rem;
+}
+
+.counter-value {
+  font-family: var(--mono);
+  font-size: 1.75rem;
+  line-height: 1.25;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  background: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ---- 最近事实 ---- */
+.counter-value.tone-success { color: var(--success); }
+.counter-value.tone-failure { color: var(--failure); }
+
+/*
+ * ---- 最近事实（采集中占满剩余高度并内部滚动；空闲时只占紧凑高度） ----
+ * 高级诊断展开时两者按 2:3 分摊剩余高度：页面本身不滚动，
+ * 只有并排的两个滚动区域，不出现嵌套滚动条。
+ */
 
 .recent-facts {
-  padding: 4px 0 20px;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex: 2 1 0;
+  min-height: 6.5rem;
+  background: var(--workspace-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
-.recent-facts.has-job {
-  min-height: min(45vh, 480px);
+.recent-facts.is-idle {
+  flex: none;
+  min-height: 0;
+}
+
+.recent-facts h3 {
+  justify-content: space-between;
+  margin: 0;
+  padding: 0.8rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.section-meta {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 
 .facts-list {
+  flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: min(55vh, 640px);
   overflow-y: auto;
-  font-size: 13px;
+  font-size: 0.933rem;
   color: var(--text-primary);
 }
 
 .facts-list li {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 12px;
-  padding: 5px 8px;
+  grid-template-columns: 5.3rem minmax(0, 1fr);
+  gap: 0.95rem;
+  padding: 0.45rem 1.2rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .facts-list li:nth-child(even) {
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .fact-text {
@@ -357,128 +661,157 @@ input:disabled {
 }
 
 .fact-time {
+  font-family: var(--mono);
   color: var(--text-secondary);
-  background: none;
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- 完整度缺失明细 ---- */
-
-.incomplete-reasons {
-  padding: 12px 16px;
-  background: var(--workspace-bg);
-  border: 1px solid var(--failure);
-  border-radius: var(--radius);
-}
-
-.incomplete-reasons h3 {
-  color: var(--failure);
-}
-
-.incomplete-reasons ul {
-  margin: 0;
-  padding-left: 20px;
+.facts-empty {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 1.6rem;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 /* ---- 恢复卡 / 消息 ---- */
 
 .recovery-card {
-  padding: 12px 16px;
+  padding: 0.95rem 1.2rem;
   background: var(--workspace-bg);
   border: 1px solid var(--warning);
   border-radius: var(--radius);
 }
 
+.recovery-card.is-resolved {
+  border-color: var(--border);
+}
+
+.recovery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.recovery-head h2 {
+  margin: 0 0 0.5rem;
+}
+
+.icon-button {
+  min-width: 0;
+  min-height: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  margin: -0.4rem -0.4rem 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+
+.icon-button:hover:not(:disabled) {
+  filter: none;
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
 .recovery-card .actions {
-  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.recovery-note {
+  margin-top: 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.867rem;
 }
 
 .error-card {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 0.65rem 0.95rem;
   color: var(--failure);
   border: 1px solid var(--failure);
   border-radius: var(--radius);
   background: var(--workspace-bg);
 }
 
-.export-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 14px;
-  border: 1px solid rgba(75, 194, 122, 0.35);
-  border-radius: var(--radius-small);
-  background: rgba(75, 194, 122, 0.06);
-  color: var(--text-secondary);
-}
-
-.export-summary span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-/* ---- 底部操作区 ---- */
-
-.action-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+/* ---- 高级诊断 ---- */
 
 .advanced-diagnostics {
+  display: flex;
+  flex-direction: column;
+  flex: none;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--workspace-bg);
   min-width: 0;
   width: 100%;
+  overflow: hidden;
 }
 
-.advanced-diagnostics summary {
-  display: flex;
-  align-items: center;
+.advanced-diagnostics.is-open:not(.is-idle) {
+  flex: 3 1 0;
+  min-height: 9rem;
+}
+
+.diagnostics-toggle {
+  flex: none;
   justify-content: space-between;
-  padding: 8px 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.65rem 1.05rem;
+  background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.933rem;
+  font-weight: 400;
   user-select: none;
-  font-size: 13px;
-  list-style: none;
 }
 
-.advanced-diagnostics summary::-webkit-details-marker {
-  display: none;
+.diagnostics-toggle:hover:not(:disabled) {
+  filter: none;
+  color: var(--text-primary);
 }
 
-.advanced-diagnostics summary span {
+.diagnostics-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+.diagnostics-toggle span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
 
-.advanced-diagnostics[open] summary {
+.advanced-diagnostics.is-open .diagnostics-toggle {
   color: var(--text-primary);
   border-bottom: 1px solid var(--border);
 }
 
-.advanced-diagnostics[open] .diagnostics-chevron {
+.advanced-diagnostics.is-open .diagnostics-chevron {
   transform: rotate(180deg);
 }
 
 .diagnostics-body {
-  padding: 14px 18px 18px;
-  font-size: 13px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.95rem 1.2rem 1.2rem;
+  font-size: 0.933rem;
 }
 
 .diagnostics-body dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 10px 24px;
+  gap: 0.65rem 1.6rem;
   margin: 0;
 }
 
@@ -492,26 +825,33 @@ input:disabled {
   overflow-wrap: anywhere;
 }
 
+/* 日志尾部不单独滚动，随诊断内容区一起滚动 */
 .log-tail {
-  margin: 12px 0 0;
-  padding: 8px 10px;
-  max-height: 300px;
-  overflow-y: auto;
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.65rem;
   background: var(--page-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.8rem;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
 .retain-button {
-  margin-top: 18px;
+  margin-top: 1.2rem;
 }
 
 @media (max-width: 900px) {
+  .status-head {
+    flex-direction: column;
+  }
+
+  .primary-actions {
+    justify-content: flex-start;
+  }
+
   .target-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -521,20 +861,33 @@ input:disabled {
     justify-self: start;
   }
 
+  .counter-cell {
+    padding: 0.8rem 0.95rem;
+  }
+
+  .counter-value {
+    font-size: 1.45rem;
+  }
 }
 
 @media (max-width: 620px) {
-  #root { padding: 0 16px 24px; }
+  #root { padding: 0 1rem; }
   .top-bar { flex-wrap: wrap; gap: 8px; }
   .target-row { grid-template-columns: minmax(0, 1fr); }
   .target-row > button { grid-column: 1; width: 100%; }
-  .stage-step { font-size: 11px; }
-  .stage-step:not(:last-child)::after { left: calc(50% + 19px); width: calc(100% - 38px); }
-  .stage-marker { width: 28px; height: 28px; }
-  .counters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .action-bar button { width: 100%; }
-  .export-summary { align-items: flex-start; flex-direction: column; }
-  .recent-facts.has-job { min-height: min(42vh, 360px); }
+  .primary-actions,
+  .primary-actions button { width: 100%; }
+  .status-title { font-size: 1.33rem; }
+  .stage-step { font-size: 0.8rem; }
+  .stage-marker { width: 1.87rem; height: 1.87rem; }
+  .stage-step:not(:last-child)::after { top: 0.93rem; left: calc(50% + 1.3rem); width: calc(100% - 2.6rem); }
+  .counters { grid-template-columns: minmax(0, 1fr); }
+  .counter-cell {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .counter-cell + .counter-cell { border-left: 0; border-top: 1px solid var(--border); }
   .diagnostics-body dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .diagnostics-body dd { margin-bottom: 8px; }
 }

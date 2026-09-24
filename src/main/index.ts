@@ -73,6 +73,10 @@ interface CaptureStatusJob {
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
+  /** 现场输入的 BMC 地址原文（界面作业标题；渲染层刷新后本地输入已丢失，必须由主进程下发）。 */
+  targetLabel: string;
+  /** 解析后的完整目标 URL。 */
+  targetUrl: string;
   /** stop 序列进行中（手动与自动收尾共用路径；界面「正在收尾」瞬态）。 */
   finalizing: boolean;
   /** 稳定宽度计数器（规范 §5.2）。 */
@@ -124,6 +128,9 @@ interface RecoveryNotice {
   workflowStatus?: string;
   targetUrl?: string;
   deviceLabel?: string;
+  /** 恢复作业的只读丢弃门禁结果（kind=recovered，后台检查完成前缺省）：界面据此置灰丢弃按钮，点击时主进程仍复核。 */
+  discardable?: boolean;
+  discardNote?: string;
   /** 本次导出的实际完整度（kind=exported）：照实显示，不得硬编码 INCOMPLETE。 */
   captureIntegrity?: string;
 }
@@ -172,6 +179,8 @@ function statusJobSync(): CaptureStatusJob | null {
     windowsOpen: controller.windowsOpen(),
     storageLimited: controller.session.workspace.storageLimited,
     windowsLabel: controller.session.workspace.deviceLabel ?? '',
+    targetLabel: controller.target.originalInput || controller.target.host,
+    targetUrl: `${controller.target.scheme}://${controller.target.host}:${controller.target.port}/`,
     finalizing: controller.finalizing(),
     counts: {
       httpTransactions: facts.transactions.length,
@@ -595,6 +604,26 @@ function createMainWindow() {
 }
 
 /**
+ * 恢复作业的只读丢弃门禁（界面置灰「丢弃恢复作业」用）。检查完成前
+ * discardable 缺省，界面按不可丢弃处理；点击丢弃时 capture:discardRecovered 仍会复核。
+ */
+async function checkRecoveredDiscard(pending: RecoveredPendingJob) {
+  let discardCheck: { ok: boolean; note: string };
+  try {
+    discardCheck = await checkUnexportedDiscard(pending.workspace);
+  } catch (error) {
+    // 门禁读取失败（工作区文件不可读等）：按不可丢弃展示，现场资料保留；
+    // 只影响按钮置灰，点击丢弃时 capture:discardRecovered 仍会重新检查
+    discardCheck = { ok: false, note: `无法确认作业为空：${errorMessage(error)}` };
+  }
+  // 检查期间用户可能已导出 / 保留 / 丢弃：只更新仍待处理的同一份恢复作业
+  if (recoveredPending !== pending || recoveryNotice?.kind !== 'recovered' || recoveryNotice.jobId !== pending.jobId) {
+    return;
+  }
+  recoveryNotice = { ...recoveryNotice, discardable: discardCheck.ok, discardNote: discardCheck.note };
+}
+
+/**
  * 启动时崩溃恢复（规范 §4.2：只提示不自动写 ZIP）。
  * 恢复止步于 finalize：finalized-unexported 挂起为待导出，由用户在
  * 恢复卡上手动选择目录导出（capture:exportRecovered）。
@@ -620,6 +649,8 @@ async function recoverPreviousJob() {
       targetUrl: result.targetUrl,
       deviceLabel: result.deviceLabel,
     };
+    // 丢弃门禁要流式数完观察行，大作业耗时明显：不阻塞主窗口创建，结果随状态轮询下发
+    void checkRecoveredDiscard(recoveredPending);
     return;
   }
   if (result.kind === 'refused') {

@@ -68,6 +68,8 @@ export interface ProductionCaptureExportResult extends ExportJobWorkspaceZipResu
 
 export interface ProductionCaptureController {
   readonly session: CaptureSession;
+  /** 本作业的采集目标（现场输入解析结果，界面作业标题用）。 */
+  readonly target: ProductionCaptureTarget;
   /** 匿名 probe + 主窗口挂载 + 首次导航（采集器必须在首次导航前就绪）。 */
   start(): Promise<void>;
   /** 认证 probe 复验 + 采集会话收尾（窗口保留供快照，收尾后再关）。 */
@@ -466,6 +468,7 @@ export async function createProductionCapture(
 
   return {
     session: captureSession,
+    target: init.target,
     start,
     stop,
     exportPack,

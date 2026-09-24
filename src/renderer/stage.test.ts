@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageStatusText } from './stage';
+import { STAGE_BAR_STEPS, derivePageStage, stageBarOf, stageHintText, stageStatusText, stageToneOf } from './stage';
+
+const ALL_STAGES = ['idle', 'launching', 'capturing-login', 'capturing-viewer', 'finalizing', 'complete', 'incomplete', 'exported'] as const;
 
 /**
  * 规范 §5.3：主窗口只表现 8 个阶段；阶段条四步三态。
@@ -89,5 +91,40 @@ describe('stageBarOf（阶段条三态）', () => {
 
   it('阶段条步骤与规范 §5.2 一致（四步）', () => {
     expect([...STAGE_BAR_STEPS]).toEqual(['连接目标', '登录活动', 'Viewer 活动', '完整性校验']);
+  });
+});
+
+describe('stageHintText（下一步提示）', () => {
+  it('每个阶段都有非空提示且不出现 0.2.x 交互词', () => {
+    for (const stage of ALL_STAGES) {
+      const text = stageHintText(stage);
+      expect(text.length).toBeGreaterThan(0);
+      for (const banned of ['暂停', '复验', '截图', '对比']) {
+        expect(text).not.toContain(banned);
+      }
+    }
+  });
+
+  it('反例：未完整阶段不承诺完整，只提示可导出未完整包', () => {
+    expect(stageHintText('incomplete')).toContain('未完整包');
+    expect(stageHintText('incomplete')).not.toContain('门禁全部通过');
+  });
+});
+
+describe('stageToneOf（状态面板色调）', () => {
+  it('进行中为 info、收尾为 accent、完整为 success、不完整为 warning', () => {
+    expect(stageToneOf('idle')).toBe('neutral');
+    expect(stageToneOf('capturing-login')).toBe('info');
+    expect(stageToneOf('capturing-viewer')).toBe('info');
+    expect(stageToneOf('finalizing')).toBe('accent');
+    expect(stageToneOf('complete')).toBe('success');
+    expect(stageToneOf('incomplete')).toBe('warning');
+  });
+
+  it('反例：导出后按导出结果着色，非 COMPLETE（含未知）不得显示成功色', () => {
+    expect(stageToneOf('exported', 'COMPLETE')).toBe('success');
+    expect(stageToneOf('exported', 'INCOMPLETE')).toBe('warning');
+    expect(stageToneOf('exported', null)).toBe('warning');
+    expect(stageToneOf('exported')).toBe('warning');
   });
 });

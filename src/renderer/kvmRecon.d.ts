@@ -20,6 +20,8 @@ interface CaptureStatusJob {
   windowsOpen: boolean;
   storageLimited: boolean;
   windowsLabel: string;
+  targetLabel: string;
+  targetUrl: string;
   /** stop 序列进行中（手动与自动收尾共用路径；界面「正在收尾」瞬态）。 */
   finalizing: boolean;
   /** 稳定宽度计数器（规范 §5.2）。 */
@@ -71,6 +73,9 @@ interface RecoveryNotice {
   workflowStatus?: string;
   targetUrl?: string;
   deviceLabel?: string;
+  /** 恢复作业的只读丢弃门禁结果：非 true（含检查中的缺省）时界面置灰丢弃按钮。 */
+  discardable?: boolean;
+  discardNote?: string;
   /** 本次导出的实际完整度（kind=exported）：照实显示，不得硬编码 INCOMPLETE。 */
   captureIntegrity?: string;
 }
