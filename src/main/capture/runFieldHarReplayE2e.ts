@@ -71,9 +71,10 @@ function firstByteDiff(expected: Buffer, actual: Buffer): { offset: number; deta
 /** HAR → 回放条目（同 method+path 去重，保留首条）。 */
 function parseHarEntries(har: {
   log: { entries: Array<Record<string, unknown>> };
-}): { entries: HarEntry[]; total: number } {
+}): { entries: HarEntry[]; total: number; skippedUpgrades: number } {
   const seen = new Set<string>();
   const entries: HarEntry[] = [];
+  let skippedUpgrades = 0;
   for (const raw of har.log.entries) {
     const request = raw.request as
       | { method: string; url: string; postData?: { text?: string } }
@@ -87,6 +88,11 @@ function parseHarEntries(har: {
         }
       | undefined;
     if (!request || !response) continue;
+    if (response.status === 101) {
+      // HAR 的 WS 升级不是可由 fetch 重放的 HTTP 正文；WS 帧由专项测试校验。
+      skippedUpgrades += 1;
+      continue;
+    }
     let path: string;
     try {
       path = new URL(request.url).pathname + new URL(request.url).search;
@@ -113,7 +119,7 @@ function parseHarEntries(har: {
       redirectUrl: response.redirectURL || null,
     });
   }
-  return { entries, total: har.log.entries.length };
+  return { entries, total: har.log.entries.length, skippedUpgrades };
 }
 
 function entryBody(entry: HarEntry): Buffer | null {
@@ -124,9 +130,18 @@ function entryBody(entry: HarEntry): Buffer | null {
   return Buffer.from(entry.bodyText, 'utf8');
 }
 
+function replayContentType(entry: HarEntry): string {
+  if (entry.encoding === 'base64' || !entry.bodyText ||
+      !/^(?:text\/|application\/(?:json|javascript|x-javascript|xml)|image\/svg\+xml)/i.test(entry.contentType)) {
+    return entry.contentType;
+  }
+  // HAR text 是已解码的 Unicode；本地回放按 UTF-8 重新编码后必须显式声明。
+  return `${entry.contentType.replace(/;\s*charset=(?:"[^"]*"|[^;]*)/i, '')}; charset=utf-8`;
+}
+
 export async function runFieldHarReplayE2e(harPath: string) {
   const har = JSON.parse(await readFile(harPath, 'utf8'));
-  const { entries, total } = parseHarEntries(har);
+  const { entries, total, skippedUpgrades } = parseHarEntries(har);
   if (entries.length === 0) {
     fail(`HAR 无可回放条目：${harPath}`);
   }
@@ -172,7 +187,7 @@ export async function runFieldHarReplayE2e(harPath: string) {
       return;
     }
     served += 1;
-    if (entry.redirectUrl) {
+    if (entry.redirectUrl && [300, 301, 302, 303, 307, 308].includes(entry.status)) {
       const redirectPath = (() => {
         try {
           const parsed = new URL(entry.redirectUrl);
@@ -186,8 +201,10 @@ export async function runFieldHarReplayE2e(harPath: string) {
       res.end();
       return;
     }
-    res.statusCode = entry.status;
-    res.setHeader('content-type', entry.contentType);
+    // Chrome HAR 可把缓存正文附在 304 上；本地服务必须用 200 才能让
+    // Chromium 将这些字节作为新响应正文交给 CDP。原始 304 仍留在源 HAR。
+    res.statusCode = entry.status === 304 && entry.bodyText ? 200 : entry.status;
+    res.setHeader('content-type', replayContentType(entry));
     const body = entryBody(entry);
     if (body) res.end(body);
     else res.end();
@@ -370,7 +387,7 @@ export async function runFieldHarReplayE2e(harPath: string) {
   server.close();
   await rm(workspacesRoot, { recursive: true, force: true }).catch(() => undefined);
   console.log(
-    `${FIELD_HAR_REPLAY_E2E_PASSED} har=${harPath} entries=${entries.length}/${harSum} bodies=${hashChecked} requests=${requestChecked} maxBody=${biggestBody} zip=${exportResult.zipPath}`,
+    `${FIELD_HAR_REPLAY_E2E_PASSED} har=${harPath} entries=${entries.length}/${harSum} wsUpgradesNotReplayed=${skippedUpgrades} bodies=${hashChecked} requests=${requestChecked} maxBody=${biggestBody} zip=${exportResult.zipPath}`,
   );
   app.exit(0);
 }
