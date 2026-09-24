@@ -10,7 +10,7 @@ Offline BMC/KVM evidence capture.
 
 KVM-Recon is an offline desktop client that records browser-visible evidence while an operator logs into a BMC and opens HTML5 KVM. It manually exports a Capture Pack 2.0 containing HTTP bodies, scripts, browser state, screenshots, and realtime channel data. Capture does not depend on vendor or protocol-family rules. Packs are **unredacted** and must be handled as sensitive data.
 
-The main branch is at 0.3.0, pending Windows and installer acceptance before publication. The published 0.2.10 release uses an older UI and pack format; its YES/PARTIAL/NO result is not a Capture Pack 2.0 integrity verdict.
+The current version is 0.3.0 and uses Capture Pack 2.0. Historical 0.2.x packs and their YES/PARTIAL/NO results are not Capture Pack 2.0 integrity verdicts.
 
 The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
@@ -32,7 +32,7 @@ Current builds **do not use paid Apple / Microsoft developer certificates**:
 - **macOS**: ad-hoc signature. If Gatekeeper says the developer cannot be verified after a browser download, allow it in **System Settings → Privacy & Security**.
 - **Windows**: no Authenticode signature. If SmartScreen says Windows protected your PC or the publisher is unknown, choose **More info → Run anyway**.
 
-0.3.0 candidate field instructions (Chinese) are in [docs/field-guide.md](docs/field-guide.md). The published 0.2.10 instructions remain available from its Git tag.
+0.3.0 field instructions (Chinese) are in [docs/field-guide.md](docs/field-guide.md). Historical 0.2.x instructions remain available from their Git tags.
 
 ## Field workflow
 
@@ -67,12 +67,12 @@ npm run dev
 
 Index: `docs/README.md`.
 
-- `docs/v0.3-development-spec.md`: authoritative 0.3.0 specification (phases 0–5 implemented; phase 6 pending)
-- `docs/field-guide.md`: 0.3.0 candidate field workflow (Chinese)
+- `docs/v0.3-development-spec.md`: 0.3.0 data contract and implementation specification
+- `docs/field-guide.md`: 0.3.0 field workflow (Chinese)
 - `docs/releasing.md`: build and publish installers
 - `docs/development-plan.md`: product boundary and current status
 - `schema/2.0/`: Capture Pack 2.0 JSON Schema
-- `CHANGELOG.md`: version history; date the 0.3.0 section after installer acceptance
+- `CHANGELOG.md`: version history
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE`
 
 ## Safety and limits

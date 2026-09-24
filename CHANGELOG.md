@@ -2,9 +2,9 @@
 
 本文件记录用户可见变更，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-- 0.3.0 代码已准备；Windows 与安装验收后填写发布日期、打标签并发布。后续未发布的变更再记入 `[Unreleased]`。
+- 后续未发布的变更记入 `[Unreleased]`；正式发布时按版本归档。
 
-## [0.3.0] - 待发布
+## [0.3.0] - 2026-09-24
 
 ### Added
 
