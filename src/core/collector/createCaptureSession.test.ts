@@ -955,6 +955,51 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect(derivePackIntegrity(session.integrityEvidence()).reasons).toContain('INCOMPLETE_BODY_MISSING');
   });
 
+  it('内联请求正文单次落盘失败后仍提交事务，并以缺口阻止 COMPLETE', async () => {
+    const session = await startSession({
+      jobId: 'job-inline-post-data-write-failed',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({ responseBodies: { 'req-inline-write-failed': { body: 'ok' } } });
+    await session.attachCdp(fake.cdp);
+    const originalTrackWrite = session.workspace.trackInFlightWrite.bind(session.workspace);
+    let injected = false;
+    const lease = vi.spyOn(session.workspace, 'trackInFlightWrite').mockImplementation(() => {
+      if (!injected && (new Error().stack ?? '').includes('createBodyStore')) {
+        injected = true;
+        throw new Error('injected single body writer failure');
+      }
+      return originalTrackWrite();
+    });
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-inline-write-failed',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: {},
+        postData: 'account=operator',
+      },
+    });
+    await until(() => (session.evidence().diagnostics().gapCounts.missingBodies ?? 0) > 0);
+    lease.mockRestore();
+    expect(injected).toBe(true);
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-inline-write-failed',
+      response: { status: 200, headers: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-inline-write-failed' });
+    await session.stop();
+
+    const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].requestBody).toBeUndefined();
+    expect(rows[0].responseBody).toBeDefined();
+    expect(session.integrityEvidence().missingBodies.some(gap => gap.id === 'req-inline-write-failed')).toBe(true);
+    expect(derivePackIntegrity(session.integrityEvidence()).reasons).toContain('INCOMPLETE_BODY_MISSING');
+  }, 15_000);
+
   it('CDP 响应正文命令挂死时有界退出并记正文缺口', async () => {
     const session = await startSession({
       jobId: 'job-cdp-body-timeout',

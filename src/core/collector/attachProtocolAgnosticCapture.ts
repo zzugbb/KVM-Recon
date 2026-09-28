@@ -1358,11 +1358,18 @@ export async function attachProtocolAgnosticCapture(
       });
       const inlinePostData = stringValue(request.postData);
       if (inlinePostData) {
-        const ref = await input.http.storeBody(Buffer.from(inlinePostData, 'utf8'));
-        if (!input.http.patchHop(id, { requestBody: ref })) {
-          // 行已 commit（storeBody 落盘期间跨附件交错收尾）：正文已取出但无法
-          // 再关联——显式记账，不得无痕丢弃
-          input.evidence.recordGap('missingBodies', id, '请求正文晚于 commit 到达，未落进行（行已落盘）');
+        try {
+          const ref = await input.http.storeBody(Buffer.from(inlinePostData, 'utf8'));
+          if (!input.http.patchHop(id, { requestBody: ref })) {
+            // 行已 commit（storeBody 落盘期间跨附件交错收尾）：正文已取出但无法
+            // 再关联——显式记账，不得无痕丢弃
+            input.evidence.recordGap('missingBodies', id, '请求正文晚于 commit 到达，未落进行（行已落盘）');
+          }
+        } catch (error) {
+          // 捕获内联请求正文落盘失败：单次 I/O 错误不一定触发磁盘水位门禁。
+          // 策略：保留 HTTP 事务并记正文缺口，避免后续响应成功时误判 COMPLETE。
+          input.evidence.recordGap('missingBodies', id, '内联请求正文落盘失败');
+          input.evidence.droppedEvent('Network.requestWillBeSent.postData', error);
         }
       } else if (request.hasPostData === true) {
         try {

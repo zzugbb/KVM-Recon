@@ -23,6 +23,8 @@
 
 样例包重新生成并通过逐字节一致性测试（12/12），样例结构化文件通过 Capture Pack 2.0 Schema 自校验。另只读核对一个 308 条目的 2.0 ZIP：307 条 checksum 覆盖其余全部条目，逐项 SHA-256 均一致；此包不作为上表家庭设备记录的同一包身份背书。本机 `npm run package:dir` 生成 macOS arm64 应用目录，签名校验通过，应用版本为 0.3.0；这不是 DMG、Windows 安装包或真机兼容性验收。
 
+同日追加复核发现三条单次 BodyStore 写入失败的缺口漏记路径：内联 HTTP 请求正文、脚本写入器打开、WebCrypto 正文导致调用行未落盘。已分别补记正文、源码或 journal 缺口，并用故障注入测试验证会派生 INCOMPLETE。修复后重新执行 `npm run typecheck`、`npm test`（603/603）、`npm run build`、`npm run test:e2e`（含三份代表现场 HAR）、`npm run package:dir`、`git diff --check`，均通过。16 份 HAR 全量回放仍为本节前述修复之前的离线验收记录；此次写入失败分支修改未重跑整批。未进行新的真机采集或 Windows 安装验证。
+
 ## 覆盖边界
 
 其他厂商/固件、复杂 popup/OOPIF/ServiceWorker 及真实 WebRTC/WebTransport 未取得同等级真机证据，不额外要求这台 `No Signal` 设备重采。单测和 Mock 故障注入不能替代所有现场操作；对 Chromium 不可观察的资料仍须显式记录缺口，不能承诺所有设备必然 COMPLETE。

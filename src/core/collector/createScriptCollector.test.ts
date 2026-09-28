@@ -1,12 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { PackV2ScriptsIndex } from '../capture-pack-v2/types';
 import { startJobWorkspace } from '../job-workspace/createJobWorkspace';
 import { createCollectorEvidence } from './collectorEvidence';
 import { createScriptCollector } from './createScriptCollector';
+import { derivePackIntegrity } from '../capture-pack-v2/packStatus';
 
 describe('ScriptCollector 大源码', () => {
   it('单脚本超过 2 MiB、总源码超过 8 MiB 且超过 24 个脚本均完整落盘', async () => {
@@ -59,6 +60,44 @@ describe('ScriptCollector 大源码', () => {
         expect((await workspace.readArtifact(script.bodyRef!.path)).length).toBe(script.bodyRef!.bytes);
       }
       expect(evidence.diagnostics().gapCounts.missingWorkerSources ?? 0).toBe(0);
+    } finally {
+      await workspace.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('脚本写入器打开失败仍保留索引行与源码缺口', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'kvm-recon-script-open-failure-'));
+    const workspace = await startJobWorkspace({
+      jobId: 'script-open-failure', rootDir, deviceLabel: 'test', safetyMarginBytes: 1,
+    });
+    try {
+      const evidence = createCollectorEvidence();
+      const collector = createScriptCollector(workspace, evidence);
+      const lease = vi.spyOn(workspace, 'trackInFlightWrite').mockImplementationOnce(() => {
+        throw new Error('injected single body writer failure');
+      });
+      await collector.addParsed({
+        scriptId: 'viewer-script',
+        targetId: 'target-1',
+        url: 'https://bmc.test/viewer.js',
+        source: 'function viewer() {}',
+      });
+      lease.mockRestore();
+      await collector.flush();
+
+      const index = JSON.parse((await workspace.readArtifact('raw/scripts/index.json')).toString('utf8')) as PackV2ScriptsIndex;
+      expect(index.scripts).toHaveLength(1);
+      expect(index.scripts[0].bodyRef).toBeUndefined();
+      const summary = evidence.summary({
+        collectorReadyBeforeFirstNavigation: true,
+        rawJournalsClosed: true,
+        browserStateWritten: true,
+        evidenceReferencesClosed: true,
+        workflowStatus: 'KVM_REACHED',
+      });
+      expect(summary.missingWorkerSources).toHaveLength(1);
+      expect(derivePackIntegrity(summary).reasons).toContain('INCOMPLETE_WORKER_SOURCE');
     } finally {
       await workspace.close();
       await rm(rootDir, { recursive: true, force: true });

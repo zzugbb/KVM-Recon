@@ -105,18 +105,21 @@ export function createScriptCollector(workspace: JobWorkspace, evidence: Collect
         return;
       }
 
-      const writer = await files.openWriter();
+      let writer: Awaited<ReturnType<typeof files.openWriter>> | undefined;
       let bodyRef;
       try {
+        writer = await files.openWriter();
         await writer.write(bytes);
         bodyRef = await writer.finish();
       } catch (error) {
-        // 捕获脚本源码落盘失败：磁盘不足或工作区不可写
-        // 策略：abort 后仍登记无 body 的条目，并记证据缺口
-        try {
-          await writer.abort();
-        } catch (abortError) {
-          void abortError;
+        // 捕获脚本写入器打开或源码落盘失败：磁盘不足或工作区不可写。
+        // 策略：仍登记无 body 的条目并记缺口，避免遗漏脚本却误判 COMPLETE。
+        if (writer) {
+          try {
+            await writer.abort();
+          } catch (abortError) {
+            void abortError;
+          }
         }
         recordMissingSource(id, kind, input.url || null, `落盘失败：${error instanceof Error ? error.message : String(error)}`);
         scripts.push(entry);

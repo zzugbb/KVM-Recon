@@ -95,10 +95,17 @@ export function createRuntimeCryptoCollector(
       };
       const input = decodeB64(parsed.inputB64);
       const output = decodeB64(parsed.outputB64);
-      if (input) row.inputRef = await store(input);
-      if (output) row.outputRef = await store(output);
-      if (!row.outputRef && isRecord(parsed.outputMeta)) {
-        row.outputRef = await store(Buffer.from(JSON.stringify(parsed.outputMeta), 'utf8'));
+      try {
+        if (input) row.inputRef = await store(input);
+        if (output) row.outputRef = await store(output);
+        if (!row.outputRef && isRecord(parsed.outputMeta)) {
+          row.outputRef = await store(Buffer.from(JSON.stringify(parsed.outputMeta), 'utf8'));
+        }
+      } catch (error) {
+        // 捕获 crypto 正文写入失败：该调用行尚未写入 journal，单次 I/O 错误
+        // 不一定触发磁盘水位门禁。按缺行记账，避免误判 raw journal 完整。
+        evidence.recordGap('journalWriteFailures', row.id, 'crypto 调用正文落盘失败，调用行未写入');
+        throw error;
       }
       if (typeof parsed.error === 'string' && parsed.error) row.error = parsed.error;
       if (!row.inputRef && !row.outputRef && !row.error) {
