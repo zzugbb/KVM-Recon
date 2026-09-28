@@ -19,3 +19,4 @@
 采集器不要求选择协议族，也不按厂商决定是否保存正文。TLS/Redfish 是可选补充事实，探测失败不阻断浏览器采集。包的 `captureIntegrity` 与 `workflowStatus` 依据观察到的证据和门禁得出，并不保证任意设备都能只凭一包完成网关 Adapter。
 
 **安全：**Capture Pack 2.0 不脱敏，可能含明文凭据、Cookie、Token 和 KVM 通道 payload。不要上传公网、公开 Issue 或未经授权的共享位置。将包按内部敏感资料保存和传输。
+采集窗口为兼容自签证书和旧版 Viewer 放宽了浏览器安全限制；只连接可信 BMC，并在受控的管理网络中操作。

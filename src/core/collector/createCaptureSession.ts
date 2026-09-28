@@ -60,6 +60,9 @@ export interface CaptureSessionInit extends JobWorkspaceInit {
   now?: () => string;
   mainEnvironment?: MainEnvironment;
   netlog?: NetlogSource;
+  /** CDP 命令挂死反例可注入短超时；生产使用 attach 层默认预算。 */
+  rootCommandTimeoutMs?: number;
+  bodyCommandTimeoutMs?: number;
 }
 
 const EMPTY_IF_MISSING_JSONL = [
@@ -174,6 +177,20 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   // 挂载后即采集一次——硬崩溃后恢复导出仍能装配出带真实环境的 manifest。
   const targetFacts = parseCaptureTarget(init.targetUrl ?? null);
   let pageEnvironment: PageEnvironment | null = null;
+  const currentEnvironment = (): PackV2Environment | null => {
+    if (!init.mainEnvironment) return null;
+    // 页面 Runtime.evaluate 失败时仍可用主进程真实环境装配保守包；
+    // 缺失的页面字段必须在 stop 阶段记 browserState 缺口，绝不判 COMPLETE。
+    return {
+      chromium: init.mainEnvironment.chromium,
+      electron: init.mainEnvironment.electron,
+      os: init.mainEnvironment.os,
+      userAgent: pageEnvironment?.userAgent ?? 'unavailable',
+      language: pageEnvironment?.language ?? 'unavailable',
+      timezone: pageEnvironment?.timezone ?? 'unavailable',
+      screen: pageEnvironment?.screen ?? 'unavailable',
+    };
+  };
   // 派生引擎只读事实快照与派生入口：
   // 派生失败绝不阻断收尾——退回诚实下限 TARGET_OPENED 并显式记账。
   const collectWorkflowFacts = (): WorkflowFacts => ({
@@ -218,18 +235,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       deviceLabel: workspace.deviceLabel,
       targetUrl: workspace.targetUrl,
       target: targetFacts,
-      environment:
-        pageEnvironment && init.mainEnvironment
-          ? {
-              chromium: init.mainEnvironment.chromium,
-              electron: init.mainEnvironment.electron,
-              os: init.mainEnvironment.os,
-              userAgent: pageEnvironment.userAgent,
-              language: pageEnvironment.language,
-              timezone: pageEnvironment.timezone,
-              screen: pageEnvironment.screen,
-            }
-          : null,
+      environment: currentEnvironment(),
       workflowStatus,
       stopped,
       evidenceSummary: stopped
@@ -290,6 +296,13 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
         const pageEnv = await primaryAttached.collectPageEnvironment();
         if (pageEnv) pageEnvironment = pageEnv;
       });
+    }
+    if (!pageEnvironment && init.mainEnvironment) {
+      evidence.recordGap(
+        'browserState',
+        'pageEnvironment',
+        '页面环境读取失败；导出仅保留主进程环境与 unavailable 占位字段',
+      );
     }
     // popup 根的 Storage + 最终状态也逐根采集。Cookie 是 profile 级，
     // 但 sessionStorage 是 browsing-context 级，主根快照不能代表 popup。
@@ -565,6 +578,8 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
             windowId: context?.windowId,
             rootWindowRole: context?.windowRole,
             rootOpenerTargetId: context?.openerTargetId,
+            rootCommandTimeoutMs: init.rootCommandTimeoutMs,
+            bodyCommandTimeoutMs: init.bodyCommandTimeoutMs,
           });
         } catch (error) {
           // 挂载中途失败（enable 序列某步抛出）：附件被丢弃，但已进共享
@@ -617,17 +632,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       return stopPromise;
     },
     environment() {
-      const main = init.mainEnvironment;
-      if (!pageEnvironment || !main) return null;
-      return {
-        chromium: main.chromium,
-        electron: main.electron,
-        os: main.os,
-        userAgent: pageEnvironment.userAgent,
-        language: pageEnvironment.language,
-        timezone: pageEnvironment.timezone,
-        screen: pageEnvironment.screen,
-      };
+      return currentEnvironment();
     },
     evidence() {
       return evidence;

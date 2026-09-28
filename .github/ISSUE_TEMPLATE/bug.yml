@@ -13,7 +13,7 @@ body:
     attributes:
       label: 影响范围
       options:
-        - 探测 / 指纹
+        - 连接探测 / TLS / Redfish
         - 采集窗口 / HTTP / WebSocket
         - 导出 / Capture Pack
         - 桌面 UI

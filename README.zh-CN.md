@@ -10,7 +10,7 @@ Offline BMC/KVM Evidence Capture / BMC KVM 离线证据采集工具。
 
 KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登录 BMC → 打开 HTML5 KVM」时浏览器实际观察到的请求、正文、脚本、实时通道与画面，并手动导出 Capture Pack 2.0。采集不依赖厂商、型号或协议族规则。包内资料**未脱敏**，离场后由工程师或 AI 研究适配。
 
-当前源码版本为 0.3.0，尚待正式发布，使用 Capture Pack 2.0。历史 0.2.x 版本的旧包和 YES/PARTIAL/NO 结果不能当作 2.0 完整度结论。
+0.3.0 使用 Capture Pack 2.0。历史 0.2.x 版本的旧包和 YES/PARTIAL/NO 结果不能当作 2.0 完整度结论。
 
 界面与现场说明目前是中文。GitHub 访客请看英文 [README.md](README.md)。
 
@@ -25,7 +25,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登�
 
 ## 下载
 
-0.3.0 正式安装包尚未发布。发版后从 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 `docs/releasing.md`。
+待 0.3.0 安装包出现在 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 后，从那里获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 [发布指南](docs/releasing.md)。
 
 当前构建**未使用 Apple / 微软付费开发者证书**：
 
@@ -59,8 +59,8 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测与 Mock KVM 样例、Schema、导出验证。现场语料通过 `KVM_RECON_FIELD_COLLECTION_2` 可选启用；未设置时跳过现场 HAR 回放。
-- `npm run test:e2e`：Electron 真实浏览器采集与协议 Fixture 回放（需先 build）。
+- `npm test`：单测与 Mock KVM 样例、Schema、导出验证。
+- `npm run test:e2e`：Electron 真实浏览器采集与协议 Fixture 回放（需先 build）。设置 `KVM_RECON_FIELD_COLLECTION_2` 可选启用现场 HAR 回放；若还设置 `KVM_RECON_FIELD_HAR_ALL=1`，则回放全部 16 份 HAR。未设置语料目录时，现场 HAR 回放会跳过。
 - `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
 
 ## 文档

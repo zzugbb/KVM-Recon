@@ -2,7 +2,7 @@
   "schemaVersion": "2.0.0",
   "tool": {
     "name": "KVM-Recon",
-    "version": "0.3.0-dev",
+    "version": "0.3.0",
     "buildId": "sample"
   },
   "job": {

@@ -10,7 +10,7 @@ Offline BMC/KVM evidence capture.
 
 KVM-Recon is an offline desktop client that records browser-visible evidence while an operator logs into a BMC and opens HTML5 KVM. It manually exports a Capture Pack 2.0 containing HTTP bodies, scripts, browser state, screenshots, and realtime channel data. Capture does not depend on vendor or protocol-family rules. Packs are **unredacted** and must be handled as sensitive data.
 
-The current source version is 0.3.0, pending its official release, and uses Capture Pack 2.0. Historical 0.2.x packs and their YES/PARTIAL/NO results are not Capture Pack 2.0 integrity verdicts.
+Version 0.3.0 uses Capture Pack 2.0. Historical 0.2.x packs and their YES/PARTIAL/NO results are not Capture Pack 2.0 integrity verdicts.
 
 The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
@@ -25,7 +25,7 @@ Capture Pack 2.0 reports only `captureIntegrity` (COMPLETE/INCOMPLETE) and `work
 
 ## Download
 
-Official 0.3.0 installers have not been released yet. After release, get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) and check `SHA256SUMS.txt`. Maintainer release steps are in `docs/releasing.md`.
+Get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) once the 0.3.0 assets are available, and check `SHA256SUMS.txt`. Maintainer release steps are in [docs/releasing.md](docs/releasing.md).
 
 Current builds **do not use paid Apple / Microsoft developer certificates**:
 
@@ -59,8 +59,8 @@ npm run test:e2e
 npm run dev
 ```
 
-- `npm test`: unit tests plus Mock KVM, schema, and export checks. The optional field HAR replay uses `KVM_RECON_FIELD_COLLECTION_2`.
-- `npm run test:e2e`: Electron browser capture and protocol-fixture replay (build first).
+- `npm test`: unit tests plus Mock KVM, schema, and export checks.
+- `npm run test:e2e`: Electron browser capture and protocol-fixture replay (build first). Optional field HAR replay uses `KVM_RECON_FIELD_COLLECTION_2`; set `KVM_RECON_FIELD_HAR_ALL=1` as well to replay all 16 HAR files.
 - `npm run package:mac` / `npm run package:win`: local installers; tagged `v*` releases are documented in `docs/releasing.md`
 
 ## Docs

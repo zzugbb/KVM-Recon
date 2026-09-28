@@ -62,10 +62,10 @@ SHA-256 寻址的正文 blob）；`raw/websocket/*/frames.bin`（二进制 paylo
 frames.index.jsonl 描述）；`raw/browser/dom-snapshots/*`、`raw/browser/screenshots/*`；
 `raw/http/session.har`（HAR 1.2 互操作副本，见 [HAR 1.2](http://www.softwareishard.com/blog/har-12-spec/)）。
 
-阶段 0 说明（规范 §19）：
+维护要求（规范 §19、§22）：
 
-- 本目录 Schema 覆盖阶段 0 类型已固化的全部结构化文件；阶段 1-4 实现
-  `JobWorkspace` / `BodyStore` / 采集器 / `EvidenceGraph` 时如需扩展行字段，
+- 本目录 Schema 覆盖当前 Capture Pack 2.0 的结构化文件；今后扩展
+  `JobWorkspace` / `BodyStore` / 采集器 / `EvidenceGraph` 导出的字段时，
   必须同步更新本目录与 `types.ts`，再更新测试与样例包。
 - `examples/capture-pack-v2/` 是与这些 Schema 保持同步的样例包。
 - 旧 1.x 包不能按 2.0 Schema 验证，更不能据此宣称 2.0 的 COMPLETE。

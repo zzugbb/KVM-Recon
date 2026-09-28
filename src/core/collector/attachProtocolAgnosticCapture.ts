@@ -43,6 +43,8 @@ import type {
 } from '../capture-pack-v2/types';
 
 const DEFAULT_NETWORK_ENABLE_TIMEOUT_MS = 5000;
+const DEFAULT_ROOT_COMMAND_TIMEOUT_MS = 15000;
+const DEFAULT_BODY_COMMAND_TIMEOUT_MS = 120000;
 const OPTIONAL_CDP_TIMEOUT_MS = 3000;
 const SCRIPT_SOURCE_TIMEOUT_MS = 15000;
 const LARGE_SCRIPT_SOURCE_TIMEOUT_MS = 60000;
@@ -147,6 +149,8 @@ export interface AttachProtocolAgnosticCaptureInput {
   /** popup 根的 opener 根 target ID（Electron 窗口树血缘，CDP target 事件不携带）。 */
   rootOpenerTargetId?: string;
   networkEnableTimeoutMs?: number;
+  rootCommandTimeoutMs?: number;
+  bodyCommandTimeoutMs?: number;
 }
 
 /**
@@ -293,68 +297,48 @@ const STORAGE_DUMP_EXPRESSION = `(() => {
 })()`;
 
 /** IndexedDB 只读枚举（只 open 既有版本 / readonly 事务，不写入）。 */
-const INDEXEDDB_DUMP_EXPRESSION = `(async () => {
+export const INDEXEDDB_DUMP_EXPRESSION = `(async () => {
   try {
-    if (!indexedDB || !indexedDB.databases) return [];
-    const asPromise = (request) => new Promise((resolve) => {
-      try {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve(null);
-      } catch (_error) { resolve(null); }
+    if (!indexedDB || !indexedDB.databases) return null;
+    const asPromise = (request) => new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
     });
     const out = [];
     const databases = await indexedDB.databases();
     for (const db of databases) {
-      await new Promise((resolveDb) => {
-        let settled = false;
-        const done = () => { if (!settled) { settled = true; resolveDb(null); } };
-        let request;
-        try { request = indexedDB.open(db.name); } catch (_error) { done(); return; }
-        request.onsuccess = async () => {
-          const conn = request.result;
-          try {
-            const names = Array.from(conn.objectStoreNames || []);
-            for (const name of names) {
-              await new Promise((resolveStore) => {
-                let settledStore = false;
-                const doneStore = () => { if (!settledStore) { settledStore = true; resolveStore(null); } };
-                let tx;
-                try { tx = conn.transaction(name, 'readonly'); } catch (_error) { doneStore(); return; }
-                try {
-                  const store = tx.objectStore(name);
-                  Promise.all([asPromise(store.getAll()), asPromise(store.getAllKeys())]).then((results) => {
-                    const values = results[0];
-                    const keys = results[1];
-                    if (values && keys) {
-                      for (let i = 0; i < values.length; i++) {
-                        out.push({ database: db.name, objectStore: name, record: { key: keys[i], value: values[i] } });
-                      }
-                    }
-                    doneStore();
-                  }, doneStore);
-                } catch (_error) { doneStore(); }
-              });
-            }
-          } finally {
-            try { conn.close(); } catch (_error) {}
-            done();
-          }
-        };
-        request.onerror = () => done();
+      const conn = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(db.name);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('IndexedDB open failed'));
         request.onupgradeneeded = () => {
           try { if (request.transaction) request.transaction.abort(); } catch (_error) {}
-          done();
+          reject(new Error('IndexedDB database changed during snapshot'));
         };
       });
+      try {
+        for (const name of Array.from(conn.objectStoreNames || [])) {
+          const store = conn.transaction(name, 'readonly').objectStore(name);
+          const [values, keys] = await Promise.all([asPromise(store.getAll()), asPromise(store.getAllKeys())]);
+          if (!Array.isArray(values) || !Array.isArray(keys) || values.length !== keys.length) {
+            throw new Error('IndexedDB keys and values do not match');
+          }
+          for (let i = 0; i < values.length; i++) {
+            out.push({ database: db.name, objectStore: name, record: { key: keys[i], value: values[i] } });
+          }
+        }
+      } finally {
+        conn.close();
+      }
     }
     return out;
-  } catch (_error) { return []; }
+  } catch (_error) { return null; }
 })()`;
 
 /** CacheStorage 只读枚举（cache.match 读副本，不消费存储内容）。 */
-const CACHE_STORAGE_DUMP_EXPRESSION = `(async () => {
+export const CACHE_STORAGE_DUMP_EXPRESSION = `(async () => {
   try {
-    if (!caches || !caches.keys) return [];
+    if (!caches || !caches.keys) return null;
     const out = [];
     const names = await caches.keys();
     for (const cacheName of names) {
@@ -364,20 +348,17 @@ const CACHE_STORAGE_DUMP_EXPRESSION = `(async () => {
         let responseB64 = null;
         let status = null;
         let contentType = null;
-        try {
-          const response = await cache.match(request);
-          if (response) {
-            status = response.status;
-            try { contentType = response.headers.get('content-type'); } catch (_error) {}
-            const bytes = new Uint8Array(await response.arrayBuffer());
-            let bin = '';
-            const step = 0x8000;
-            for (let i = 0; i < bytes.length; i += step) {
-              bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
-            }
-            responseB64 = btoa(bin);
-          }
-        } catch (_error) {}
+        const response = await cache.match(request);
+        if (!response) throw new Error('CacheStorage response disappeared during snapshot');
+        status = response.status;
+        contentType = response.headers.get('content-type');
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        let bin = '';
+        const step = 0x8000;
+        for (let i = 0; i < bytes.length; i += step) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+        }
+        responseB64 = btoa(bin);
         out.push({
           origin: location.origin,
           cacheName: cacheName,
@@ -389,7 +370,7 @@ const CACHE_STORAGE_DUMP_EXPRESSION = `(async () => {
       }
     }
     return out;
-  } catch (_error) { return []; }
+  } catch (_error) { return null; }
 })()`;
 
 const ENVIRONMENT_EXPRESSION = `(() => {
@@ -479,6 +460,8 @@ export async function attachProtocolAgnosticCapture(
   let phase: 'live' | 'drain' | 'closed' = 'live';
   let ready = false;
   let navigationSeen = false;
+  const rootCommandTimeoutMs = input.rootCommandTimeoutMs ?? DEFAULT_ROOT_COMMAND_TIMEOUT_MS;
+  const bodyCommandTimeoutMs = input.bodyCommandTimeoutMs ?? DEFAULT_BODY_COMMAND_TIMEOUT_MS;
 
   function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -808,9 +791,15 @@ export async function attachProtocolAgnosticCapture(
   }
 
   async function storeRequestBody(hopId: string, requestId: string, sessionId?: string): Promise<void> {
-    const result = await loggedSend('Network.getRequestPostData', { requestId }, sessionId);
-    const postData = isRecord(result) ? stringValue(result.postData) : '';
-    if (!postData) return;
+    const result = await awaitWithTimeout(
+      loggedSend('Network.getRequestPostData', { requestId }, sessionId),
+      bodyCommandTimeoutMs,
+      'Network.getRequestPostData timed out',
+    );
+    if (!isRecord(result) || typeof result.postData !== 'string') {
+      throw new Error('CDP 请求正文响应缺少 postData 字符串');
+    }
+    const postData = result.postData;
     const ref = await input.http.storeBody(Buffer.from(postData, 'utf8'));
     if (!input.http.patchHop(hopId, { requestBody: ref })) {
       // 行已 commit（跨附件 detach 强制收尾的交错窗口）：正文已取出但无法再
@@ -824,7 +813,11 @@ export async function attachProtocolAgnosticCapture(
    * 正文已取出但无法再关联——由调用方显式记账，不得无痕丢弃。
    */
   async function storeResponseBody(hopId: string, requestId: string, sessionId?: string): Promise<boolean> {
-    const result = await loggedSend('Network.getResponseBody', { requestId }, sessionId);
+    const result = await awaitWithTimeout(
+      loggedSend('Network.getResponseBody', { requestId }, sessionId),
+      bodyCommandTimeoutMs,
+      'Network.getResponseBody timed out',
+    );
     const bytes = decodeCdpBody(result);
     const ref = await input.http.storeBody(bytes);
     return input.http.patchHop(hopId, { responseBody: ref });
@@ -845,11 +838,22 @@ export async function attachProtocolAgnosticCapture(
     }
     await enableDomains(attachedSessionId, targetType, targetId);
     try {
-      await loggedSend('Runtime.runIfWaitingForDebugger', {}, attachedSessionId);
+      await awaitWithTimeout(
+        loggedSend('Runtime.runIfWaitingForDebugger', {}, attachedSessionId),
+        OPTIONAL_CDP_TIMEOUT_MS,
+        'Runtime.runIfWaitingForDebugger timed out',
+      );
     } catch (error) {
       // 捕获目标未处于 waitForDebugger：旧目标或已自行恢复
-      // 策略：不阻断主会话采集
-      void error;
+      // 超时无法确认目标是否继续执行，记挂载缺口；明确 CDP 拒绝命令
+      // 可能只是目标没有等待，保留主会话采集。
+      if (errorMessage(error).includes('timed out')) {
+        input.evidence.recordGap(
+          'targetAttachFailures',
+          targetId,
+          `Runtime.runIfWaitingForDebugger 超时：${errorMessage(error)}`,
+        );
+      }
     }
     try {
       await installObserver(attachedSessionId);
@@ -903,8 +907,10 @@ export async function attachProtocolAgnosticCapture(
         OPTIONAL_CDP_TIMEOUT_MS,
         'DOM 快照 timed out',
       );
-      const value =
-        isRecord(result) && isRecord(result.result) ? stringValue(result.result.value) : '';
+      const value = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
+      if (typeof value !== 'string' || value.length === 0 || (isRecord(result) && result.exceptionDetails)) {
+        throw new Error('DOM 快照未返回有效 HTML');
+      }
       await input.browser.addDomSnapshot(label, value, { targetId, occurredAt: input.now() });
       return true;
     } catch (error) {
@@ -1584,7 +1590,7 @@ export async function attachProtocolAgnosticCapture(
 
   try {
     if (!(typeof input.cdp.isAttached === 'function' && input.cdp.isAttached())) {
-      await input.cdp.attach('1.3');
+      await awaitWithTimeout(input.cdp.attach('1.3'), rootCommandTimeoutMs, 'CDP attach timed out');
     }
     await awaitWithTimeout(
       loggedSend('Network.enable', {}),
@@ -1592,17 +1598,30 @@ export async function attachProtocolAgnosticCapture(
       'Network.enable timed out before the renderer committed a document',
     );
     try {
-      await loggedSend('Network.setCacheDisabled', { cacheDisabled: true });
+      await awaitWithTimeout(
+        loggedSend('Network.setCacheDisabled', { cacheDisabled: true }),
+        rootCommandTimeoutMs,
+        'Network.setCacheDisabled timed out',
+      );
     } catch (error) {
       // 捕获禁用缓存失败：规范 §7.1 要求禁用；失败记账但不阻断
       input.evidence.droppedEvent('Network.setCacheDisabled', error);
+      input.evidence.recordGap(
+        'targetAttachFailures',
+        input.rootTargetId,
+        'Network.setCacheDisabled 失败：缓存命中的正文观察可能不完整',
+      );
     }
     try {
-      await loggedSend('Target.setAutoAttach', {
-        autoAttach: true,
-        waitForDebuggerOnStart: true,
-        flatten: true,
-      });
+      await awaitWithTimeout(
+        loggedSend('Target.setAutoAttach', {
+          autoAttach: true,
+          waitForDebuggerOnStart: true,
+          flatten: true,
+        }),
+        rootCommandTimeoutMs,
+        'Target.setAutoAttach timed out',
+      );
     } catch (error) {
       // 捕获旧 Chromium 不支持 Target.setAutoAttach
       // 策略：主会话 Network 采集继续，子 Target 缺口显式记账
@@ -1612,20 +1631,26 @@ export async function attachProtocolAgnosticCapture(
         `Target.setAutoAttach 失败（子 Target 可能漏挂）：${errorMessage(error)}`,
       );
     }
-    await loggedSend('Runtime.enable', {});
-    await loggedSend('Debugger.enable', {});
-    await loggedSend('Runtime.addBinding', { name: OBSERVER_BINDING_NAME });
-    await loggedSend('Page.enable', {});
-    await loggedSend('Page.addScriptToEvaluateOnNewDocument', {
-      source: OBSERVER_INSTRUMENTATION_SOURCE,
-    });
+    await awaitWithTimeout(loggedSend('Runtime.enable', {}), rootCommandTimeoutMs, 'Runtime.enable timed out');
+    await awaitWithTimeout(loggedSend('Debugger.enable', {}), rootCommandTimeoutMs, 'Debugger.enable timed out');
+    await awaitWithTimeout(
+      loggedSend('Runtime.addBinding', { name: OBSERVER_BINDING_NAME }),
+      rootCommandTimeoutMs,
+      'Runtime.addBinding timed out',
+    );
+    await awaitWithTimeout(loggedSend('Page.enable', {}), rootCommandTimeoutMs, 'Page.enable timed out');
+    await awaitWithTimeout(
+      loggedSend('Page.addScriptToEvaluateOnNewDocument', { source: OBSERVER_INSTRUMENTATION_SOURCE }),
+      rootCommandTimeoutMs,
+      'Page.addScriptToEvaluateOnNewDocument timed out',
+    );
     try {
-      await loggedSend('Log.enable', {});
+      await awaitWithTimeout(loggedSend('Log.enable', {}), rootCommandTimeoutMs, 'Log.enable timed out');
     } catch (error) {
       input.evidence.droppedEvent('Log.enable', error);
     }
     try {
-      await loggedSend('Browser.enable', {});
+      await awaitWithTimeout(loggedSend('Browser.enable', {}), rootCommandTimeoutMs, 'Browser.enable timed out');
     } catch (error) {
       input.evidence.droppedEvent('Browser.enable', error);
     }
@@ -1647,7 +1672,9 @@ export async function attachProtocolAgnosticCapture(
       void cleanupError;
     }
     try {
-      await input.cdp.detach?.();
+      if (input.cdp.detach) {
+        await awaitWithTimeout(input.cdp.detach(), rootCommandTimeoutMs, 'CDP detach timed out');
+      }
     } catch (cleanupError) {
       void cleanupError;
     }
@@ -1780,9 +1807,12 @@ export async function attachProtocolAgnosticCapture(
               cacheName: stringValue(entry.cacheName),
               requestUrl: stringValue(entry.requestUrl),
             };
-            const responseB64 = stringValue(entry.responseB64);
-            if (responseB64) {
+            const responseB64 = entry.responseB64;
+            if (typeof responseB64 === 'string') {
               try {
+                if (responseB64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(responseB64)) {
+                  throw new Error('CacheStorage 正文编码无效');
+                }
                 row.responseRef = await input.browser.storeCacheBody(Buffer.from(responseB64, 'base64'));
               } catch (error) {
                 // 正文取出但落盘失败 = 步骤失败，不得伪装成
@@ -1790,6 +1820,9 @@ export async function attachProtocolAgnosticCapture(
                 input.evidence.droppedEvent('cache-body', error);
                 cacheStorageOk = false;
               }
+            } else {
+              input.evidence.droppedEvent('cache-body', new Error('CacheStorage 条目缺少响应正文'));
+              cacheStorageOk = false;
             }
             cacheStorage.push(row);
           }
@@ -1921,14 +1954,20 @@ export async function attachProtocolAgnosticCapture(
               cacheName: stringValue(entry.cacheName),
               requestUrl: stringValue(entry.requestUrl),
             };
-            const responseB64 = stringValue(entry.responseB64);
-            if (responseB64) {
+            const responseB64 = entry.responseB64;
+            if (typeof responseB64 === 'string') {
               try {
+                if (responseB64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(responseB64)) {
+                  throw new Error('CacheStorage 正文编码无效');
+                }
                 row.responseRef = await input.browser.storeCacheBody(Buffer.from(responseB64, 'base64'));
               } catch (error) {
                 input.evidence.droppedEvent('popup-cache-body', error);
                 cacheStorageOk = false;
               }
+            } else {
+              input.evidence.droppedEvent('popup-cache-body', new Error('CacheStorage 条目缺少响应正文'));
+              cacheStorageOk = false;
             }
             cacheStorage.push(row);
           }
@@ -1961,12 +2000,19 @@ export async function attachProtocolAgnosticCapture(
     },
     async collectPageEnvironment() {
       try {
-        const result = await loggedSend('Runtime.evaluate', {
-          expression: ENVIRONMENT_INSTRUMENTATION_SOURCE,
-          returnByValue: true,
-        });
+        const result = await awaitWithTimeout(
+          loggedSend('Runtime.evaluate', {
+            expression: ENVIRONMENT_INSTRUMENTATION_SOURCE,
+            returnByValue: true,
+          }),
+          rootCommandTimeoutMs,
+          '页面环境采集 timed out',
+        );
         const remote = isRecord(result) && isRecord(result.result) ? result.result.value : undefined;
-        if (!isRecord(remote)) return null;
+        if (!isRecord(remote) || (isRecord(result) && result.exceptionDetails) || !stringValue(remote.userAgent)) {
+          input.evidence.droppedEvent('page-environment', new Error('页面环境返回形状无效'));
+          return null;
+        }
         return {
           userAgent: stringValue(remote.userAgent),
           language: stringValue(remote.language),

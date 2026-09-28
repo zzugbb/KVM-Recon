@@ -26,6 +26,7 @@ import {
 } from './capture/productionCaptureController';
 import { getCaptureWindowLogLines, getCaptureWindowLogs, isCaptureSession, recordCaptureWindowLog } from './capture/captureWindowDiagnostics';
 import { finalizeFailedStart } from './capture/failedStartFinalizer';
+import { completeSuccessfulExport } from './capture/completeSuccessfulExport';
 import { MAX_RECENT_FACTS, recentFactsOf, type RecentFactEntry } from './capture/recentFacts';
 import {
   isE2eCaptureControllerLaunch,
@@ -144,6 +145,7 @@ interface RecoveredPendingJob {
 
 let activeController: ProductionCaptureController | null = null;
 let lastExport: (ProductionCaptureExportResult & { zipPath: string }) | null = null;
+let lastStatusJob: CaptureStatusJob | null = null;
 let recoveryNotice: RecoveryNotice | null = null;
 let recoveredPending: RecoveredPendingJob | null = null;
 // exportRecovered 进行中标志：ipcMain.handle 不串行化，并发 invoke 会绕过
@@ -172,7 +174,7 @@ function statusJobSync(): CaptureStatusJob | null {
       : null;
   const gapLines = (gaps: ReadonlyArray<{ id: string; detail?: string }>): string[] =>
     gaps.map(gap => (gap.detail ? `${gap.id}：${gap.detail}` : gap.id));
-  return {
+  const job: CaptureStatusJob = {
     jobId: controller.session.workspace.jobId,
     state: lastExport ? 'exported' : stopped ? 'stopped' : 'capturing',
     workflowStatus: evidenceSummary.workflowStatus,
@@ -209,6 +211,8 @@ function statusJobSync(): CaptureStatusJob | null {
       disk: null,
     },
   };
+  lastStatusJob = job;
+  return job;
 }
 
 async function statusJob(): Promise<CaptureStatusJob | null> {
@@ -238,6 +242,27 @@ async function statusPayload(): Promise<CaptureStatusPayload> {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function exportedStatusFallback(
+  controller: ProductionCaptureController,
+  result: ProductionCaptureExportResult,
+): CaptureStatusPayload {
+  return {
+    ok: true,
+    job:
+      lastStatusJob?.jobId === controller.session.workspace.jobId
+        ? {
+            ...lastStatusJob,
+            state: 'exported',
+            finalizing: false,
+            captureIntegrity: result.status.captureIntegrity,
+            incompleteReasons: [...result.derived.reasons],
+          }
+        : null,
+    export: lastExport,
+    recovery: recoveryNotice,
+  };
 }
 
 function registerCaptureHandlers() {
@@ -307,6 +332,18 @@ function registerCaptureHandlers() {
     if (captureExportInFlight || retainingInFlight) {
       return { ok: false as const, error: '作业正在导出或保留，请等待本次操作完成。' };
     }
+    if (lastExport) {
+      // 导出已落盘且自校验通过：重复点击或状态读取故障后的重试
+      // 应返回同一份成功结果，绝不能再写第二份 ZIP。
+      const controller = activeController;
+      return completeSuccessfulExport({
+        artifact: lastExport,
+        status: statusPayload,
+        fallbackStatus: () => exportedStatusFallback(controller, lastExport!),
+        onPostExportError: (step, error) =>
+          recordCaptureWindowLog(`capture-export-${step}-failed ${errorMessage(error)}`),
+      });
+    }
     captureExportInFlight = true;
     try {
       // 导出前先收尾（窗口保留：收尾快照需要活页面；导出成功后再关）
@@ -329,8 +366,15 @@ function registerCaptureHandlers() {
       }
       const result = await activeController.exportPack(zipDir);
       lastExport = result;
-      await activeController.closeWindows();
-      return { ...(await statusPayload()), zipPath: result.zipPath, fileName: result.fileName };
+      const controller = activeController;
+      return completeSuccessfulExport({
+        artifact: result,
+        closeWindows: () => controller.closeWindows(),
+        status: statusPayload,
+        fallbackStatus: () => exportedStatusFallback(controller, result),
+        onPostExportError: (step, error) =>
+          recordCaptureWindowLog(`capture-export-${step}-failed ${errorMessage(error)}`),
+      });
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
     } finally {
@@ -393,7 +437,13 @@ function registerCaptureHandlers() {
         // 句柄由进程退出兜底释放；导出事实已持久化（markExported 在 close 前）
         recordCaptureWindowLog(`recovered-export-close-failed ${errorMessage(error)}`);
       }
-      return { ...(await statusPayload()), zipPath: result.zipPath, fileName: result.fileName };
+      return completeSuccessfulExport({
+        artifact: result,
+        status: statusPayload,
+        fallbackStatus: () => ({ ok: true, job: null, export: lastExport, recovery: recoveryNotice }),
+        onPostExportError: (step, error) =>
+          recordCaptureWindowLog(`recovered-export-${step}-failed ${errorMessage(error)}`),
+      });
     } catch (error) {
       return { ok: false as const, error: errorMessage(error) };
     } finally {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Archive, ArrowRight, Check, ChevronDown, Circle, Download, FolderOpen, LoaderCircle, Play, ShieldAlert, Square, X } from 'lucide-react';
 
 import { APP_VERSION } from '../version';
@@ -47,6 +47,7 @@ interface StatusPayload {
   ok: true;
   job: StatusJob | null;
   export: { zipPath: string; fileName: string; status: { captureIntegrity: string } } | null;
+  postExportWarnings?: string[];
   recovery: {
     kind: 'recovered' | 'exported' | 'discarded' | 'retained' | 'refused' | 'failed';
     jobId?: string;
@@ -62,6 +63,12 @@ interface StatusPayload {
     discardNote?: string;
     captureIntegrity?: string;
   } | null;
+}
+
+function isStatusPayload(value: unknown): value is StatusPayload {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Record<string, unknown>;
+  return result.ok === true && 'job' in result && 'export' in result && 'recovery' in result;
 }
 
 function formatBytes(bytes: number): string {
@@ -109,24 +116,40 @@ export function App() {
   const [deviceLabel, setDeviceLabel] = useState('');
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [error, setError] = useState('');
+  const [statusError, setStatusError] = useState('');
   const [busy, setBusy] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
+  const statusRequestSerial = useRef(0);
 
   async function refreshStatus() {
     if (!window.kvmRecon?.getCaptureStatus) return;
-    const result = (await window.kvmRecon.getCaptureStatus()) as StatusPayload | { ok: false; error: string };
-    if (result.ok) {
-      setStatus(result);
-    } else {
-      setError(result.error);
+    const requestSerial = ++statusRequestSerial.current;
+    try {
+      const result = (await window.kvmRecon.getCaptureStatus()) as StatusPayload | { ok: false; error: string };
+      if (requestSerial !== statusRequestSerial.current) return;
+      if (result.ok) {
+        setStatus(result);
+        setStatusError('');
+      } else {
+        setStatusError(`状态更新失败：${result.error}`);
+      }
+    } catch (statusFailure) {
+      // 捕获状态 IPC 拒绝（主进程状态派生异常等）：保留最后已知作业，明确提示状态不可用；
+      // 轮询继续重试，避免未处理 Promise 或旧状态被误认为实时结果。
+      if (requestSerial === statusRequestSerial.current) {
+        setStatusError(`状态更新失败：${statusFailure instanceof Error ? statusFailure.message : String(statusFailure)}`);
+      }
     }
   }
 
   useEffect(() => {
     void refreshStatus();
     const timer = setInterval(() => void refreshStatus(), 2000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      statusRequestSerial.current += 1;
+    };
   }, []);
 
   async function run(action: () => Promise<{ ok: boolean } & Record<string, unknown>>) {
@@ -135,7 +158,44 @@ export function App() {
     try {
       const result = await action();
       if ('ok' in result && result.ok) {
-        await refreshStatus();
+        if (isStatusPayload(result)) {
+          // stop/export/discard 已返回操作后的完整状态；立即采用，避免二次 status 失败
+          // 让成功导出仍停在“可导出”并诱导用户重复操作。
+          statusRequestSerial.current += 1;
+          setStatus(result);
+          setStatusError('');
+          if (result.postExportWarnings?.length) {
+            setError(`采集包已导出；后续处理提示：${result.postExportWarnings.join('；')}`);
+          }
+        } else if (typeof result.zipPath === 'string' && result.zipPath) {
+          // 导出已成功但主进程暂时只能返回 ZIP 路径：先锁定为已导出，
+          // 避免状态查询失败时保留“可导出”按钮而诱导重复写包。
+          statusRequestSerial.current += 1;
+          setStatus(previous => {
+            if (!previous) return previous;
+            if (previous.job) {
+              return {
+                ...previous,
+                job: { ...previous.job, state: 'exported', captureIntegrity: null },
+                export: {
+                  zipPath: result.zipPath as string,
+                  fileName: typeof result.fileName === 'string' ? result.fileName : '',
+                  status: { captureIntegrity: '待状态同步' },
+                },
+              };
+            }
+            if (previous.recovery?.kind === 'recovered') {
+              return {
+                ...previous,
+                recovery: { ...previous.recovery, kind: 'exported', zipPath: result.zipPath as string, captureIntegrity: '待状态同步' },
+              };
+            }
+            return previous;
+          });
+          await refreshStatus();
+        } else {
+          await refreshStatus();
+        }
       } else {
         setError(String(('error' in result && result.error) || '操作失败'));
       }
@@ -172,7 +232,7 @@ export function App() {
   const shownRecovery = recovery && !(recoveryResolved && dismissedNotice === noticeKey) ? recovery : null;
   // 恢复作业待导出期间不能开始新作业（与恢复卡文案承诺一致，主进程同样拒绝）
   const canStart =
-    !job && !busy && target.trim().length > 0 && !preloadMissing &&
+    status !== null && !statusError && !job && !status.export && !busy && target.trim().length > 0 && !preloadMissing &&
     recovery?.kind !== 'recovered' && recovery?.kind !== 'refused' && recovery?.kind !== 'failed';
   const canStop = job?.state === 'capturing' && !job.finalizing && !busy;
   const canExport = job?.state === 'stopped' && !busy;
@@ -191,7 +251,7 @@ export function App() {
   const canDiscardRecovered = canExportRecovered && recovery?.discardable === true;
   const canReveal = job?.state === 'exported' && Boolean(status?.export) && !busy;
 
-  const stage = derivePageStage({
+  const derivedStage = derivePageStage({
     job: job
       ? {
           state: job.state,
@@ -202,8 +262,10 @@ export function App() {
       : null,
     launching: launching && !job,
   });
+  const stage = !job && status?.export ? 'exported' : derivedStage;
   const bar = stageBarOf(stage);
-  const incompleteFinalStep = (stage === 'incomplete' || stage === 'exported') && job?.captureIntegrity !== 'COMPLETE';
+  const incompleteFinalStep = (stage === 'incomplete' || stage === 'exported') &&
+    (status?.export?.status.captureIntegrity ?? job?.captureIntegrity) !== 'COMPLETE';
   const exportLabel =
     job && job.state === 'stopped' && job.captureIntegrity !== 'COMPLETE' ? '导出未完整包' : '导出采集包';
   const tone = stageToneOf(stage, status?.export?.status.captureIntegrity ?? null);
@@ -394,10 +456,19 @@ export function App() {
                 </button>
               ) : null}
             </div>
+          ) : status?.export ? (
+            <div className="primary-actions" aria-label="已导出作业操作">
+              <button type="button" className="secondary" onClick={() => void run(() => window.kvmRecon!.revealExportFolder())} disabled={busy} title="打开所在文件夹">
+                <FolderOpen size={15} aria-hidden /> 打开所在文件夹
+              </button>
+              <button type="button" onClick={() => void run(() => window.kvmRecon!.discardCapture())} disabled={busy} title="清理本作业临时目录并采集下一台">
+                <ArrowRight size={16} aria-hidden /> 采集下一台
+              </button>
+            </div>
           ) : null}
         </div>
 
-        {!job ? (
+        {!job && !status?.export ? (
           <form
             className="target-row"
             aria-label="新建采集作业"
@@ -447,9 +518,9 @@ export function App() {
           })}
         </div>
 
-        {error ? (
+        {error || statusError ? (
           <p className="panel-alert" role="alert">
-            <AlertTriangle size={15} aria-hidden /> <span>{error}</span>
+            <AlertTriangle size={15} aria-hidden /> <span>{[error, statusError].filter(Boolean).join('；')}</span>
           </p>
         ) : null}
 
@@ -459,7 +530,7 @@ export function App() {
           </p>
         ) : null}
 
-        {job && job.state === 'stopped' && job.incompleteReasons.length > 0 ? (
+        {job && job.state !== 'capturing' && job.incompleteReasons.length > 0 ? (
           <div className="incomplete-reasons" aria-label="完整度缺失明细">
             <h3>
               <AlertTriangle size={15} aria-hidden /> 采集不完整：{job.incompleteReasons.length} 项原因
@@ -489,11 +560,11 @@ export function App() {
       </section>
 
       <section className="counters" aria-label="采集计数">
-        <Counter label="HTTP" value={job?.counts.httpTransactions ?? 0} />
-        <Counter label="目标" value={job?.counts.targets ?? 0} />
-        <Counter label="WS" value={websockets} tone={websockets > 0 ? 'success' : undefined} />
-        <Counter label="已写入" value={formatBytes(job?.bytesWritten ?? 0)} />
-        <Counter label="已记录缺口" value={missing} tone={missing > 0 ? 'failure' : undefined} />
+        <Counter label="HTTP" value={job?.counts.httpTransactions ?? (status?.export ? '—' : 0)} />
+        <Counter label="目标" value={job?.counts.targets ?? (status?.export ? '—' : 0)} />
+        <Counter label="WS" value={job ? websockets : (status?.export ? '—' : 0)} tone={websockets > 0 ? 'success' : undefined} />
+        <Counter label="已写入" value={job ? formatBytes(job.bytesWritten) : (status?.export ? '—' : '0 B')} />
+        <Counter label="已记录缺口" value={job ? missing : (status?.export ? '—' : 0)} tone={missing > 0 ? 'failure' : undefined} />
       </section>
 
       <section className={`recent-facts${job ? '' : ' is-idle'}`} aria-label="最近事实">
@@ -512,7 +583,7 @@ export function App() {
           </ul>
         ) : (
           <p className="facts-empty">
-            {job ? '暂无事实记录。' : '开始采集后，这里会实时显示窗口挂载、页面导航和通道建立等事实。'}
+            {job ? '暂无事实记录。' : status?.export ? '导出已完成；详细采集事实暂不可用。' : '开始采集后，这里会实时显示窗口挂载、页面导航和通道建立等事实。'}
           </p>
         )}
       </section>

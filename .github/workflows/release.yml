@@ -48,6 +48,10 @@ jobs:
             echo "发布标签 $TAG_NAME 与 package.json 版本 $version 不一致"
             exit 1
           fi
+          if ! grep -Eq "^## \\[$version\\]( - [0-9]{4}-[0-9]{2}-[0-9]{2})?$" CHANGELOG.md; then
+            echo "CHANGELOG.md 缺少 $version 的版本章节"
+            exit 1
+          fi
       - run: npm ci
       - run: npm run build
       - name: Build macOS packages
@@ -93,6 +97,10 @@ jobs:
           version=$(node -p "require('./package.json').version")
           if [ "$TAG_NAME" != "v$version" ]; then
             echo "发布标签 $TAG_NAME 与 package.json 版本 $version 不一致"
+            exit 1
+          fi
+          if ! grep -Eq "^## \\[$version\\]( - [0-9]{4}-[0-9]{2}-[0-9]{2})?$" CHANGELOG.md; then
+            echo "CHANGELOG.md 缺少 $version 的版本章节"
             exit 1
           fi
       - run: npm ci

@@ -15,7 +15,7 @@ npm run build
 npm run test:e2e
 ```
 
-`npm test` 含单测和离线采集/导出闭环。现场 HAR 回放使用 `KVM_RECON_FIELD_COLLECTION_2` 指向本机语料目录；未设置则跳过。`npm run test:e2e` 覆盖 Electron 启动、原生 popup、生产采集 Controller、主/弹窗、请求正文、脚本、窗口血缘和 ZIP 自校验，需要先 `npm run build`。
+`npm test` 含单测和离线采集/导出闭环。`npm run test:e2e` 覆盖 Electron 启动、原生 popup、生产采集 Controller、主/弹窗、请求正文、脚本、窗口血缘和 ZIP 自校验，需要先 `npm run build`。现场 HAR 回放属于 `test:e2e`：设置 `KVM_RECON_FIELD_COLLECTION_2` 指向本机语料目录；需全量回放时再设置 `KVM_RECON_FIELD_HAR_ALL=1`，未设置目录则跳过。
 
 ## 可以做的改动
 
@@ -51,4 +51,4 @@ npm run test:e2e
 
 ## 发布
 
-按 `docs/releasing.md`：先把 `CHANGELOG.md` 的 `[Unreleased]` 收成新版本号并同步 `package.json` 的 `version`，再打 `v*` 标签。试构建可在 Actions 中运行 **Build installers**。
+按 `docs/releasing.md`：0.3.0 的 `CHANGELOG.md` 章节、`package.json` 与锁文件版本已就位；本轮变更验证并提交到 `main` 后，由维护者创建 GitHub Release 和 `v0.3.0` 标签。后续版本再把 `[Unreleased]` 收成新版本章节并同步源码版本。试构建可在 Actions 中运行 **Build installers**。

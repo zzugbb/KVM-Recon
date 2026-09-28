@@ -99,6 +99,12 @@ function createFakeCdp(options?: {
   scriptSources?: Record<string, { scriptSource?: string; bytecode?: string }>;
   indexedDb?: Array<Record<string, unknown>>;
   cacheStorage?: Array<Record<string, unknown>>;
+  /** 模拟 CDP 返回异常形状：getResponseBody 的缺失字段不得被当成零字节正文。 */
+  invalidResponseBodyIds?: string[];
+  /** 模拟 CDP 声明有请求正文，但 getRequestPostData 返回缺失字段。 */
+  invalidRequestPostDataIds?: string[];
+  /** 模拟 Runtime.evaluate 带 exceptionDetails 的无效 DOM 结果。 */
+  invalidDomResult?: boolean;
   environment?: { userAgent: string; language: string; timezone: string; screen: string };
   domHtml?: string;
   screenshotData?: string;
@@ -109,6 +115,8 @@ function createFakeCdp(options?: {
   frameTree?: Record<string, unknown>;
   /** 注入失败（模拟）：命令名精确匹配 → sendCommand 抛错。 */
   failingCommands?: string[];
+  /** 命令永久不返回，用短注入超时验证 start/drain 不会永久等待。 */
+  hangingCommands?: string[];
   /** 仅指定 scriptId 的 getScriptSource 失败。 */
   failingScriptIds?: string[];
   /** 注入失败（模拟）：Runtime.evaluate 的 expression 含任一子串 → 抛错。 */
@@ -127,6 +135,9 @@ function createFakeCdp(options?: {
       if (options?.failingCommands?.includes(command)) {
         throw new Error(`注入命令失败（模拟）：${command}`);
       }
+      if (options?.hangingCommands?.includes(command)) {
+        return new Promise<never>(() => {});
+      }
       if (command === 'Runtime.evaluate') {
         const expression = String((params as { expression?: string })?.expression ?? '');
         if (options?.failingEvaluates?.some(fragment => expression.includes(fragment))) {
@@ -135,6 +146,7 @@ function createFakeCdp(options?: {
       }
       if (command === 'Network.getResponseBody') {
         const requestId = String((params as { requestId?: string })?.requestId ?? '');
+        if (options?.invalidResponseBodyIds?.includes(requestId)) return {};
         return (
           options?.responseBodies?.[requestId] ?? {
             body: '{"ok":true}',
@@ -144,6 +156,7 @@ function createFakeCdp(options?: {
       }
       if (command === 'Network.getRequestPostData') {
         const requestId = String((params as { requestId?: string })?.requestId ?? '');
+        if (options?.invalidRequestPostDataIds?.includes(requestId)) return {};
         return { postData: options?.postData?.[requestId] ?? '' };
       }
       if (command === 'Network.getCookies') {
@@ -192,6 +205,9 @@ function createFakeCdp(options?: {
           return { result: { type: 'object', value: options?.cacheStorage ?? [] } };
         }
         if (expression.includes('document.documentElement')) {
+          if (options?.invalidDomResult) {
+            return { exceptionDetails: { text: 'evaluation failed' }, result: { type: 'object' } };
+          }
           return { result: { type: 'string', value: options?.domHtml ?? '<html><body></body></html>' } };
         }
         return {};
@@ -882,6 +898,120 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect(dropped['Network.getResponseBody']).toBeGreaterThanOrEqual(2);
   });
 
+  it('CDP getResponseBody 返回缺 body 字段时，不得发布零字节正文或判 COMPLETE', async () => {
+    const session = await startSession({
+      jobId: 'job-cdp-body-missing-field',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({ invalidResponseBodyIds: ['req-invalid-body'] });
+    await session.attachCdp(fake.cdp);
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-invalid-body',
+      type: 'Script',
+      request: { method: 'GET', url: 'http://bmc.test/viewer.js', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-invalid-body',
+      response: { status: 200, headers: { 'content-type': 'application/javascript' } },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-invalid-body' });
+    await session.stop();
+
+    const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(rows[0].responseBody).toBeUndefined();
+    expect(session.integrityEvidence().missingBodies.some(gap => gap.id === 'req-invalid-body')).toBe(true);
+    expect(derivePackIntegrity(session.integrityEvidence()).reasons).toContain('INCOMPLETE_BODY_MISSING');
+  });
+
+  it('CDP 声明有请求正文但 getRequestPostData 缺字段时记缺口', async () => {
+    const session = await startSession({
+      jobId: 'job-cdp-post-data-missing-field',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({ invalidRequestPostDataIds: ['req-missing-post-data'] });
+    await session.attachCdp(fake.cdp);
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-missing-post-data',
+      type: 'XHR',
+      request: {
+        method: 'POST',
+        url: 'http://bmc.test/api/login',
+        headers: {},
+        hasPostData: true,
+      },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-missing-post-data',
+      response: { status: 200, headers: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-missing-post-data' });
+    await session.stop();
+
+    const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(rows[0].requestBody).toBeUndefined();
+    expect(session.integrityEvidence().missingBodies.some(gap => gap.id === 'req-missing-post-data')).toBe(true);
+    expect(derivePackIntegrity(session.integrityEvidence()).reasons).toContain('INCOMPLETE_BODY_MISSING');
+  });
+
+  it('CDP 响应正文命令挂死时有界退出并记正文缺口', async () => {
+    const session = await startSession({
+      jobId: 'job-cdp-body-timeout',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+      bodyCommandTimeoutMs: 20,
+    });
+    const fake = createFakeCdp({ hangingCommands: ['Network.getResponseBody'] });
+    await session.attachCdp(fake.cdp);
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-timeout',
+      type: 'Script',
+      request: { method: 'GET', url: 'http://bmc.test/viewer.js', headers: {} },
+    });
+    fake.emit('Network.responseReceived', {
+      requestId: 'req-timeout',
+      response: { status: 200, headers: {} },
+    });
+    fake.emit('Network.loadingFinished', { requestId: 'req-timeout' });
+    await session.stop();
+    expect(session.integrityEvidence().missingBodies.some(gap => gap.id === 'req-timeout')).toBe(true);
+  });
+
+  it('根 CDP 必需命令挂死时有界拒绝挂载', async () => {
+    const session = await startSession({
+      jobId: 'job-cdp-root-timeout',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+      rootCommandTimeoutMs: 20,
+    });
+    const fake = createFakeCdp({ hangingCommands: ['Runtime.enable'] });
+    await expect(session.attachCdp(fake.cdp)).rejects.toThrow('Runtime.enable timed out');
+    await session.stop();
+  });
+
+  it('页面环境不可读时保留主进程环境供 INCOMPLETE 包导出', async () => {
+    const session = await startSession({
+      jobId: 'job-page-environment-unavailable',
+      rootDir: await newRootDir(),
+      targetUrl: 'http://bmc.test/',
+      safetyMarginBytes: 1,
+      mainEnvironment: { chromium: 'Chromium', electron: 'Electron', os: 'test-os' },
+    });
+    await session.attachCdp(createFakeCdp().cdp);
+    await session.stop();
+
+    expect(session.environment()).toMatchObject({
+      chromium: 'Chromium',
+      electron: 'Electron',
+      userAgent: 'unavailable',
+    });
+    expect(session.integrityEvidence().browserStateGaps.some(gap => gap.id === 'pageEnvironment')).toBe(true);
+    expect(derivePackIntegrity(session.integrityEvidence()).reasons).toContain('INCOMPLETE_BROWSER_STATE');
+    const facts = JSON.parse((await session.workspace.readArtifact('catalog/capture-facts.json')).toString('utf8'));
+    expect(facts.environment.userAgent).toBe('unavailable');
+  });
+
   it('drain 期空链不解锁别名：先到的未知完成事件不是「已跟踪」证据', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
@@ -1180,6 +1310,30 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect(derived.reasons).toContain('INCOMPLETE_BROWSER_STATE');
   });
 
+  it('DOM 快照的 CDP 异常结果不能写成空 HTML 并判为成功', async () => {
+    const session = await startSession({
+      jobId: 'job-browser-state-dom-exception',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+    });
+    await session.attachCdp(createFakeCdp({ invalidDomResult: true }).cdp);
+    await session.stop();
+    expect(session.integrityEvidence().browserStateGaps.some(gap => gap.id === 'domSnapshot')).toBe(true);
+  });
+
+  it('CacheStorage 条目缺正文不能判存储快照成功', async () => {
+    const session = await startSession({
+      jobId: 'job-browser-state-cache-no-body',
+      rootDir: await newRootDir(),
+      safetyMarginBytes: 1,
+    });
+    await session.attachCdp(createFakeCdp({
+      cacheStorage: [{ origin: 'http://bmc.test', cacheName: 'shell', requestUrl: 'http://bmc.test/viewer' }],
+    }).cdp);
+    await session.stop();
+    expect(session.integrityEvidence().browserStateGaps.some(gap => gap.id === 'cacheStorage')).toBe(true);
+  });
+
   it('全部状态步骤成功 → browserStateWritten=true 且零缺口（正例）', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
@@ -1192,7 +1346,7 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
       cookies: [{ name: 'session', value: 's1' }],
       storage: { localStorage: { theme: 'dark' }, sessionStorage: { tab: '1' } },
       indexedDb: [{ database: 'app', objectStore: 'kv', record: { key: 'k', value: 'v' } }],
-      cacheStorage: [{ origin: 'http://bmc.test', cacheName: 'shell' }],
+      cacheStorage: [{ origin: 'http://bmc.test', cacheName: 'shell', requestUrl: 'http://bmc.test/viewer', responseB64: '' }],
     });
     await session.attachCdp(fake.cdp, { targetId: 'target-root' });
     await session.stop();

@@ -7,6 +7,7 @@
 | [v0.3-development-spec.md](v0.3-development-spec.md) | 0.3.0 开发者 / AI | 协议无关采集、Capture Pack 2.0 与验收规范 |
 | [field-guide.md](field-guide.md) | 现场操作员 | 单作业采集与手动导出流程 |
 | [development-plan.md](development-plan.md) | 开发者 | 已落地阶段、待验证事项与项目边界 |
+| [phase-6-validation.md](phase-6-validation.md) | 维护者 / 验收人员 | 发布前已执行验证与覆盖边界 |
 
 已发布 0.2.10 的旧格式文档可从对应 Git 标签查阅。旧现场资料留在原有外部目录用于回归，不属于当前仓库文档或示例包。
 

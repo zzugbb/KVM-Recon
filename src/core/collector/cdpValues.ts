@@ -53,9 +53,14 @@ export function safeFsId(id: string): string {
 }
 
 export function decodeCdpBody(result: unknown): Buffer {
-  if (!isRecord(result)) return Buffer.alloc(0);
-  const body = stringValue(result.body);
+  if (!isRecord(result) || typeof result.body !== 'string') {
+    throw new Error('CDP 正文响应缺少 body 字符串');
+  }
+  const body = result.body;
   if (result.base64Encoded === true) {
+    if (body.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body)) {
+      throw new Error('CDP 正文响应的 base64 编码无效');
+    }
     return Buffer.from(body, 'base64');
   }
   return Buffer.from(body, 'utf8');

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { deflateSync } from 'node:zlib';
 
+import { APP_VERSION } from '../../version';
 import { createMockKvmServer, type MockKvmHandle, type MockKvmUrlSet } from '../mock-kvm/createMockKvmServer';
 import { scanStreamForNeedles } from '../collector/chunkedNeedleScan';
 import { buildPackV2FileName } from './buildPackV2FileName';
@@ -463,7 +464,7 @@ export async function createSampleCapturePackV2(
       : 'unknown-start';
     const jobId = `${startedStamp}-${shortId}`;
     const endedAt = isoAt(startedAt, 15);
-    const sampleTool = { name: 'KVM-Recon', version: '0.3.0-dev', buildId: 'sample' } as const;
+    const sampleTool = { name: 'KVM-Recon', version: APP_VERSION, buildId: 'sample' } as const;
 
     // ---- 正文 blob store（SHA-256 寻址，去重） ----
     const httpBodies = new Map<string, string>();

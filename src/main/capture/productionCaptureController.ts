@@ -409,7 +409,7 @@ export async function createProductionCapture(
     }
     const environment = captureSession.environment();
     if (!environment) {
-      throw new Error(`页面环境缺失（无根窗口挂载），拒绝装配导出：${init.jobId}`);
+      throw new Error(`主进程环境缺失，拒绝装配导出：${init.jobId}`);
     }
     // workflowStatus 由采集会话从观察事实派生，不由控制器硬编码
     const evidenceSummary = captureSession.integrityEvidence();
