@@ -55,7 +55,7 @@ describe('App（单屏单作业工作台）', () => {
     expect(html).toContain('目标');
     expect(html).toContain('WS');
     expect(html).toContain('已写入');
-    expect(html).toContain('缺失');
+    expect(html).toContain('已记录缺口');
     expect(html).toContain('最近事实');
     expect(html).toContain('新建采集');
   });

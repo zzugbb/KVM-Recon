@@ -24,10 +24,30 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Verify release tag and version
+        shell: bash
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$TAG_NAME"; then
+            echo "发布标签不存在：$TAG_NAME"
+            exit 1
+          fi
+          tag_commit=$(git rev-parse "refs/tags/$TAG_NAME^{commit}")
+          if [ "$(git rev-parse HEAD)" != "$tag_commit" ]; then
+            echo "当前源码与发布标签不一致：$TAG_NAME"
+            exit 1
+          fi
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG_NAME" != "v$version" ]; then
+            echo "发布标签 $TAG_NAME 与 package.json 版本 $version 不一致"
+            exit 1
+          fi
       - run: npm ci
       - run: npm run build
       - name: Build macOS packages
@@ -51,10 +71,30 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Verify release tag and version
+        shell: bash
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$TAG_NAME"; then
+            echo "发布标签不存在：$TAG_NAME"
+            exit 1
+          fi
+          tag_commit=$(git rev-parse "refs/tags/$TAG_NAME^{commit}")
+          if [ "$(git rev-parse HEAD)" != "$tag_commit" ]; then
+            echo "当前源码与发布标签不一致：$TAG_NAME"
+            exit 1
+          fi
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG_NAME" != "v$version" ]; then
+            echo "发布标签 $TAG_NAME 与 package.json 版本 $version 不一致"
+            exit 1
+          fi
       - run: npm ci
       - run: npm run build
       - name: Build unsigned Windows packages

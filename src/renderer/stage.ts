@@ -65,7 +65,7 @@ export function stageBarOf(stage: PageStage): StageStepState[] {
 }
 
 /** §5.3 阶段表的用户可见状态短句。 */
-export function stageStatusText(stage: PageStage): string {
+export function stageStatusText(stage: PageStage, stopInFlight = false): string {
   switch (stage) {
     case 'idle':
       return '新建采集';
@@ -76,7 +76,7 @@ export function stageStatusText(stage: PageStage): string {
     case 'capturing-viewer':
       return '请打开 HTML5 KVM';
     case 'finalizing':
-      return '已检测到远程控制台，正在收尾';
+      return stopInFlight ? '正在收尾' : '已检测到远程控制台，等待稳定后收尾';
     case 'complete':
       return '采集完整，可以导出';
     case 'incomplete':
@@ -87,7 +87,7 @@ export function stageStatusText(stage: PageStage): string {
 }
 
 /** 状态标题下的下一步提示：只说现场人员此刻要做什么（规范 §5.1：不显示大段说明）。 */
-export function stageHintText(stage: PageStage): string {
+export function stageHintText(stage: PageStage, stopInFlight = false): string {
   switch (stage) {
     case 'idle':
       return '填写 BMC 地址后开始采集，工具会打开隔离的采集窗口。';
@@ -98,7 +98,7 @@ export function stageHintText(stage: PageStage): string {
     case 'capturing-viewer':
       return '登录已确认。点击设备的远程控制台 / HTML5 KVM，并保持弹窗打开。';
     case 'finalizing':
-      return '请保持 Viewer 窗口打开，画面稳定后自动收尾，无需操作。';
+      return stopInFlight ? '正在保存已观察到的资料，请稍候。' : '请保持 Viewer 窗口打开；稳定后会自动收尾。';
     case 'complete':
       return '十项门禁全部通过，点击导出并选择保存位置。';
     case 'incomplete':

@@ -78,6 +78,16 @@ const DRAIN_METHODS = new Set([
   'Network.loadingFailed',
   'Network.requestWillBeSentExtraInfo',
   'Network.responseReceivedExtraInfo',
+  // 已打开的实时通道在排空期仍可能持续发送。帧与页面观察器事件
+  // 必须进入事件链，不能只留下不参与完整度门禁的 droppedEvent 计数。
+  'Network.webSocketCreated',
+  'Network.webSocketWillSendHandshakeRequest',
+  'Network.webSocketHandshakeResponseReceived',
+  'Network.webSocketFrameSent',
+  'Network.webSocketFrameReceived',
+  'Network.webSocketFrameError',
+  'Network.webSocketClosed',
+  'Runtime.bindingCalled',
 ]);
 
 /**
@@ -87,6 +97,11 @@ const DRAIN_METHODS = new Set([
  * 提交，晚于宽限到达的头由 extraInfo 分支按 droppedEvent 显式记账。
  */
 const RESPONSE_EXTRA_INFO_COMMIT_GRACE_MS = 50;
+
+// 只约束尚未处理的高流量 CDP 事件，不限制整个作业的帧数或总字节数。
+// 控制事件（Target/HTTP 生命周期）始终入队，避免暂停子 target 或截断请求链。
+const MAX_QUEUED_HIGH_VOLUME_EVENTS = 256;
+const MAX_QUEUED_HIGH_VOLUME_BYTES = 8 * 1024 * 1024;
 
 /** 观察脚本上报的 render-surface 种类全集（§7.3 第 2 组事实）。 */
 const RENDER_SURFACE_KINDS = new Set<RenderSurfaceKind>([
@@ -459,6 +474,8 @@ export async function attachProtocolAgnosticCapture(
   const pendingFinishCommits = new Map<string, ReturnType<typeof setTimeout>>();
   let eventQueue = Promise.resolve();
   let sourceQueue = Promise.resolve();
+  let queuedHighVolumeEvents = 0;
+  let queuedHighVolumeBytes = 0;
   let phase: 'live' | 'drain' | 'closed' = 'live';
   let ready = false;
   let navigationSeen = false;
@@ -467,7 +484,27 @@ export async function attachProtocolAgnosticCapture(
     return error instanceof Error ? error.message : String(error);
   }
 
-  function enqueueEvent(work: () => Promise<void>, method?: string): void {
+  function highVolumeBytes(method: string | undefined, params: Record<string, unknown> | undefined): number {
+    if (!method || !params) return 0;
+    if (method === 'Network.webSocketFrameSent' || method === 'Network.webSocketFrameReceived') {
+      const response = isRecord(params.response) ? params.response : {};
+      return 1024 + stringValue(response.payloadData).length * 2;
+    }
+    if (method === 'Runtime.bindingCalled') {
+      return 1024 + stringValue(params.payload).length * 2;
+    }
+    if (method === 'Network.dataReceived' || method === 'Network.eventSourceMessageReceived') {
+      return 1024 + stringValue(params.data).length * 2;
+    }
+    return 0;
+  }
+
+  function enqueueEvent(
+    work: () => Promise<void>,
+    method?: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ): void {
     if (phase === 'closed') {
       // 丢弃必须记账（规范 §3：没有记账的静默丢弃等于编造「没有发生过」）
       if (method) {
@@ -479,12 +516,45 @@ export async function attachProtocolAgnosticCapture(
       input.evidence.droppedEvent(method, new Error('drain 阶段丢弃事件（收尾中不落盘）'));
       return;
     }
+    const estimatedBytes = highVolumeBytes(method, params);
+    if (
+      estimatedBytes > 0 &&
+      (queuedHighVolumeEvents >= MAX_QUEUED_HIGH_VOLUME_EVENTS ||
+        (queuedHighVolumeEvents > 0 &&
+          queuedHighVolumeBytes + estimatedBytes > MAX_QUEUED_HIGH_VOLUME_BYTES))
+    ) {
+      // CDP push 无背压接口。积压超限时只舍弃大流量事件，并把原始
+      // journal 缺行持久作证；WS 另记通道缺口，绝不把缺帧算作 COMPLETE。
+      input.evidence.droppedEvent(method!, new Error('高流量事件待处理积压超限'));
+      input.evidence.recordGap('journalWriteFailures', method!, '高流量 CDP 事件积压超限，原始事件未落盘');
+      if (method === 'Network.webSocketFrameSent' || method === 'Network.webSocketFrameReceived') {
+        const requestId = stringValue(params?.requestId);
+        input.evidence.recordGap(
+          'channelGaps',
+          socketChannelId(requestId, sessionId),
+          'WebSocket 帧因待处理积压超限未留存',
+        );
+      }
+      return;
+    }
+    if (estimatedBytes > 0) {
+      queuedHighVolumeEvents += 1;
+      queuedHighVolumeBytes += estimatedBytes;
+    }
     const run = async () => {
       try {
         await work();
       } catch (error) {
         // 事件链失败显式记账：不吞、不中断后续事件
         input.evidence.droppedEvent(method ?? 'unknown', error);
+        if (method === 'Network.webSocketFrameSent' || method === 'Network.webSocketFrameReceived') {
+          input.evidence.recordGap('channelGaps', method, `WebSocket 帧处理失败：${errorMessage(error)}`);
+        }
+      } finally {
+        if (estimatedBytes > 0) {
+          queuedHighVolumeEvents -= 1;
+          queuedHighVolumeBytes -= estimatedBytes;
+        }
       }
     };
     eventQueue = eventQueue.then(run, run);
@@ -1508,7 +1578,7 @@ export async function attachProtocolAgnosticCapture(
   ) => {
     // 「首个导航前就绪」按事件到达时刻判定（排队处理可能晚于 ready 置位）
     if (method === 'Page.frameNavigated' && !ready) navigationSeen = true;
-    enqueueEvent(() => handleEvent(method, params, sessionId), method);
+    enqueueEvent(() => handleEvent(method, params, sessionId), method, params, sessionId);
   };
   input.cdp.on('message', onCdpMessage);
 

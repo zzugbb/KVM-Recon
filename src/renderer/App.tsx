@@ -300,9 +300,14 @@ export function App() {
             </>
           ) : (
             <>
-              <p>恢复作业 {shownRecovery.jobId ?? ''} 失败：{shownRecovery.error}</p>
+              <p className="recovery-error-detail" role="region" aria-label="恢复错误详情" tabIndex={0}>
+                恢复作业 {shownRecovery.jobId ?? ''} 失败：{shownRecovery.error}
+              </p>
               <button type="button" className="secondary" onClick={() => void run(() => window.kvmRecon!.revealWorkspaceFolder())} disabled={busy} title="打开原始工作区供人工检查">
                 <FolderOpen size={14} aria-hidden /> 打开原始资料目录
+              </button>
+              <button type="button" className="secondary" onClick={retainWorkspace} disabled={busy} title="保留原始工作区并释放单作业入口">
+                <Archive size={14} aria-hidden /> 保留原始资料并继续
               </button>
             </>
           )}
@@ -314,11 +319,11 @@ export function App() {
           <div className="job-subject">
             <span className="job-field">
               <span className="job-field-label">BMC</span>
-              <span className="job-target" title={job.targetUrl}>{shownTarget || '—'}</span>
+              <span className="job-target" title={shownTarget}>{shownTarget || '—'}</span>
             </span>
             <span className="job-field">
               <span className="job-field-label">设备</span>
-              <span className={shownDeviceLabel ? 'job-device' : 'job-device muted'}>{shownDeviceLabel || '未填写设备说明'}</span>
+              <span className={shownDeviceLabel ? 'job-device' : 'job-device muted'} title={shownDeviceLabel || undefined}>{shownDeviceLabel || '未填写设备说明'}</span>
             </span>
           </div>
           <span className="job-id">
@@ -330,8 +335,8 @@ export function App() {
       <section className={`status-panel tone-${tone}`} aria-label="当前状态">
         <div className="status-head">
           <div className="status-copy" role="status">
-            <h1 className="status-title">{stageStatusText(stage)}</h1>
-            <p className="status-hint">{stageHintText(stage)}</p>
+            <h1 className="status-title">{stageStatusText(stage, job?.finalizing)}</h1>
+            <p className="status-hint">{stageHintText(stage, job?.finalizing)}</p>
             {job && job.state === 'capturing' && !job.windowsOpen ? (
               <p className="status-note">
                 <AlertTriangle size={15} aria-hidden /> 采集窗口已关闭，可以停止并收尾。
@@ -488,7 +493,7 @@ export function App() {
         <Counter label="目标" value={job?.counts.targets ?? 0} />
         <Counter label="WS" value={websockets} tone={websockets > 0 ? 'success' : undefined} />
         <Counter label="已写入" value={formatBytes(job?.bytesWritten ?? 0)} />
-        <Counter label="缺失" value={missing} tone={missing > 0 ? 'failure' : undefined} />
+        <Counter label="已记录缺口" value={missing} tone={missing > 0 ? 'failure' : undefined} />
       </section>
 
       <section className={`recent-facts${job ? '' : ' is-idle'}`} aria-label="最近事实">

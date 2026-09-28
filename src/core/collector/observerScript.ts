@@ -32,6 +32,20 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
     Object.defineProperty(root, '__kvmReconObserverInstalled', { value: true, enumerable: false });
   } catch (_error) { return; }
 
+  // 各页面 realm 的脚本会独立从 1 计数；随机前缀防止 popup/iframe 的通道 ID 撞车。
+  var realmId = (function () {
+    try {
+      var bytes = new Uint8Array(16);
+      root.crypto.getRandomValues(bytes);
+      var hex = '';
+      for (var i = 0; i < bytes.length; i++) hex += ('0' + bytes[i].toString(16)).slice(-2);
+      return hex;
+    } catch (_error) {
+      // getRandomValues 不可用时仍需跨 realm 区分；随机数只用作本地标识，不作密钥。
+      return Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+  })();
+
   function report(payload) {
     try {
       var fn = root[bindingName];
@@ -177,20 +191,17 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
 
   function elementSummary(el) {
     try {
-      if (!el || !el.tagName) return String(el);
-      var parts = [String(el.tagName).toLowerCase()];
-      if (el.id) parts.push('#' + el.id);
-      if (el.name) parts.push('[name=' + el.name + ']');
+      if (!el || !el.tagName) return 'element';
+      // 动作行只需定位结构；页面文字可能含凭据或巨型脚本，原始 DOM 由快照保存。
+      var short = function (value) { return String(value).slice(0, 80); };
+      var parts = [short(el.tagName).toLowerCase()];
+      if (el.id) parts.push('#' + short(el.id));
+      if (el.name) parts.push('[name=' + short(el.name) + ']');
       var cls = el.getAttribute && el.getAttribute('class');
-      if (cls) parts.push('.' + String(cls).split(/\\s+/)[0]);
-      var label =
-        el.getAttribute &&
-        (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title'));
-      var text = String(el.textContent || '').replace(/\\s+/g, ' ').trim();
-      var summary = parts.join('');
-      if (label) summary += ' "' + label + '"';
-      if (text) summary += ' text:' + text;
-      return summary;
+      if (cls) parts.push('.' + String(cls).slice(0, 80).split(/\\s+/)[0]);
+      var label = el.getAttribute && el.getAttribute('aria-label');
+      if (label) parts.push(' "' + short(label) + '"');
+      return parts.join('').slice(0, 240);
     } catch (_error) {
       return 'element';
     }
@@ -334,7 +345,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
         var instance = new (Function.prototype.bind.apply(NativePC, [null].concat(
           Array.prototype.slice.call(arguments)
         )))();
-        var pcId = 'pc-' + (pcSeq += 1);
+        var pcId = 'pc-' + realmId + '-' + (pcSeq += 1);
           report({
             kind: 'webrtc',
             pcId: pcId,
@@ -469,7 +480,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
         var instance = new (Function.prototype.bind.apply(NativeWT, [null].concat(
           Array.prototype.slice.call(arguments)
         )))();
-        var wtId = 'wt-' + (wtSeq += 1);
+        var wtId = 'wt-' + realmId + '-' + (wtSeq += 1);
         var closedReported = false;
           report({ kind: 'webtransport', wtId: wtId, eventKind: 'created', url: String(url) });
           try {
@@ -506,7 +517,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
                     kind: 'webtransport',
                     wtId: wtId,
                     eventKind: 'stream-opened',
-                    streamId: 'wts-' + (streamSeq += 1),
+                    streamId: 'wts-' + realmId + '-' + (streamSeq += 1),
                     direction: 'up'
                   });
                 }, function () {});
@@ -560,7 +571,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
         var source = new (Function.prototype.bind.apply(NativeES, [null].concat(
           Array.prototype.slice.call(arguments)
         )))();
-        var sseId = 'sse-' + (sseSeq += 1);
+        var sseId = 'sse-' + realmId + '-' + (sseSeq += 1);
           try {
             source.addEventListener('open', function () {
               emit(source, sseId, 'connected');

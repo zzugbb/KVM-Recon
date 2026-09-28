@@ -246,6 +246,7 @@ input:disabled {
   align-items: baseline;
   gap: 0.4rem 2rem;
   min-width: 0;
+  max-width: 100%;
 }
 
 .job-field {
@@ -253,6 +254,7 @@ input:disabled {
   align-items: baseline;
   gap: 0.6rem;
   min-width: 0;
+  max-width: 100%;
 }
 
 .job-field-label {
@@ -266,18 +268,26 @@ input:disabled {
 }
 
 .job-target {
+  display: block;
   font-family: var(--mono);
   font-size: 1.33rem;
   font-weight: 600;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
+  max-width: min(38vw, 36rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-device {
+  display: block;
   font-size: 1.133rem;
   font-weight: 600;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
+  max-width: min(38vw, 36rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-device.muted {
@@ -728,6 +738,17 @@ input:disabled {
   margin-top: 0.6rem;
   color: var(--text-secondary);
   font-size: 0.867rem;
+}
+
+.recovery-error-detail {
+  max-height: 7rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.recovery-error-detail:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
 }
 
 .error-card {

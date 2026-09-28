@@ -149,6 +149,10 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
   let referencesClosed = false;
   let stopped = false;
   let stopPromise: Promise<void> | null = null;
+  // 逻辑采集边界是 stop() 调用时刻。drain 继续补齐此前排队或在途请求的
+  // 事实，也允许落下随后到达的实时尾帧；这些额外事实不延长作业时间窗。
+  // 多根附件的 drain 结束时刻各异，不能用最后一个附件的完成时刻作边界。
+  let captureEndedAt: string | null = null;
   // Viewer 初始截图可由看门狗异步发起。手动 stop 也必须等它落定，
   // 否则 CDP 返回截图前 workspace 已 finalize，会将本可留存的截图误记为缺失。
   const pendingViewerInitialCaptures = new Set<Promise<boolean>>();
@@ -210,7 +214,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       jobId: workspace.jobId,
       workspaceId: workspace.workspaceId,
       startedAt: workspace.startedAt,
-      endedAt: stopped ? now() : null,
+      endedAt: stopped ? (captureEndedAt ?? now()) : null,
       deviceLabel: workspace.deviceLabel,
       targetUrl: workspace.targetUrl,
       target: targetFacts,
@@ -605,6 +609,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
       // 覆盖成 capture-failed 兜底（electronNetlogSource 二次 stop 返回 null）。
       if (stopPromise) return stopPromise;
       stopped = true;
+      captureEndedAt = now();
       if (workspace.storageLimited) {
         evidence.markStorageLimitReached();
       }

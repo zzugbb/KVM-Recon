@@ -215,6 +215,10 @@ class FakeWebTransport {
   constructor(_url?: string) {}
 
   close(): void {}
+
+  createBidirectionalStream(): Promise<object> {
+    return Promise.resolve({});
+  }
 }
 
 interface EventSourceLike {
@@ -233,22 +237,23 @@ type EventSourceClass = new (url: string) => EventSourceLike;
 function installObserver(
   eventSourceClass: EventSourceClass = FakeEventSource,
   cryptoSubtle?: object,
+  realmByte?: number,
+  documentOverride?: { addEventListener(type: string, listener: (event: unknown) => void): void },
 ) {
   const reports: Array<Record<string, unknown>> = [];
   const sandbox: Record<string, unknown> = {
     btoa: (text: string) => Buffer.from(text, 'binary').toString('base64'),
     unescape,
     location: { href: 'https://bmc.test/console' },
-    document: { addEventListener(): void {} },
-    crypto: cryptoSubtle
-      ? { subtle: cryptoSubtle }
-      : {
-          subtle: {
-            async digest(): Promise<string> {
-              return 'digest-result';
-            },
-          },
+    document: documentOverride ?? { addEventListener(): void {} },
+    crypto: {
+      subtle: cryptoSubtle ?? {
+        async digest(): Promise<string> {
+          return 'digest-result';
         },
+      },
+      ...(realmByte === undefined ? {} : { getRandomValues: (bytes: Uint8Array) => bytes.fill(realmByte) }),
+    },
     RTCPeerConnection: FakeRTCPeerConnection,
     WebTransport: FakeWebTransport,
     EventSource: eventSourceClass,
@@ -327,6 +332,73 @@ function installRenderSurfaceObserver() {
 }
 
 describe('观察脚本行为中立性（真实脚本在 vm 沙箱执行）', () => {
+  it('动作摘要只记录有界结构，不复制页面全文或修改原始 DOM', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const document = {
+      addEventListener(type: string, listener: (event: unknown) => void): void {
+        listeners.set(type, listener);
+      },
+    };
+    const { reports } = installObserver(FakeEventSource, undefined, 7, document);
+    const fullText = `页面私密内容 ${'A'.repeat(100_000)}`;
+    const target = {
+      tagName: 'BUTTON',
+      id: 'button-' + 'x'.repeat(1_000),
+      name: 'open-console',
+      textContent: fullText,
+      getAttribute(name: string): string | null {
+        return name === 'class' ? 'primary-action secondary' : null;
+      },
+    };
+    listeners.get('click')?.({ target });
+    const action = reports.find(report => report.kind === 'action');
+    expect(action?.elementSummary).toMatch(/^button#button-/);
+    expect(String(action?.elementSummary).length).toBeLessThanOrEqual(240);
+    expect(String(action?.elementSummary)).not.toContain('页面私密内容');
+    expect(target.textContent).toBe(fullText);
+    listeners.get('click')?.({
+      target: {
+        tagName: 'BUTTON', id: 'console', name: '', textContent: fullText,
+        getAttribute(name: string) { return name === 'aria-label' ? '打开控制台' : null; },
+      },
+    });
+    expect(reports.at(-1)?.elementSummary).toContain('打开控制台');
+    expect(String(reports.at(-1)?.elementSummary)).not.toContain('页面私密内容');
+  });
+
+  it('不同页面 realm 的 RTC、WebTransport、SSE 与流 ID 不碰撞，同 realm 内保持顺序', async () => {
+    const first = installObserver(FakeEventSource, undefined, 1);
+    const second = installObserver(FakeEventSource, undefined, 2);
+    const idsOf = async (installed: ReturnType<typeof installObserver>) => {
+      const { sandbox, reports } = installed;
+      const PC = sandbox.RTCPeerConnection as typeof FakeRTCPeerConnection;
+      const WT = sandbox.WebTransport as typeof FakeWebTransport;
+      const ES = sandbox.EventSource as typeof FakeEventSource;
+      new PC({});
+      new PC({});
+      const transport = new WT('https://bmc.test/wt');
+      await transport.createBidirectionalStream();
+      const source = new ES('https://bmc.test/events');
+      source.dispatch('open', {});
+      return {
+        pc: reports.filter(report => report.kind === 'webrtc' && report.eventKind === 'peer-connection-created').map(report => String(report.pcId)),
+        wt: String(reports.find(report => report.kind === 'webtransport' && report.eventKind === 'created')?.wtId),
+        stream: String(reports.find(report => report.kind === 'webtransport' && report.eventKind === 'stream-opened')?.streamId),
+        sse: String(reports.find(report => report.kind === 'sse' && report.eventKind === 'connected')?.sseId),
+      };
+    };
+    const a = await idsOf(first);
+    const b = await idsOf(second);
+    expect(a.pc[0]).toMatch(/^pc-[0-9a-f]{32}-1$/);
+    expect(a.pc[1]).toBe(a.pc[0]?.replace(/-1$/, '-2'));
+    for (const kind of ['pc', 'wt', 'stream', 'sse'] as const) {
+      const left = kind === 'pc' ? a.pc[0] : a[kind];
+      const right = kind === 'pc' ? b.pc[0] : b[kind];
+      expect(left).not.toBe(right);
+      expect(left).toMatch(/-[0-9a-f]{32}-1$/);
+    }
+  });
+
   it('SSE onmessage 赋值后页面回调仍被调用，且证据照常上报', () => {
     const { sandbox } = installObserver();
     const EventSource = sandbox.EventSource as typeof FakeEventSource;

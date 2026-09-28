@@ -30,10 +30,14 @@ describe('derivePageStage（页面阶段派生）', () => {
 
   it('KVM_REACHED 采集中 → finalizing（自动收尾等待稳定窗口）', () => {
     expect(derivePageStage({ job: job({ workflowStatus: 'KVM_REACHED' }), launching: false })).toBe('finalizing');
+    expect(stageStatusText('finalizing')).toContain('等待稳定');
+    expect(stageHintText('finalizing')).toContain('自动收尾');
   });
 
   it('finalizing 标志优先于工作流状态（手动/自动 stop 序列进行中）', () => {
     expect(derivePageStage({ job: job({ workflowStatus: 'TARGET_OPENED', finalizing: true }), launching: false })).toBe('finalizing');
+    expect(stageStatusText('finalizing', true)).toBe('正在收尾');
+    expect(stageHintText('finalizing', true)).toContain('正在保存');
   });
 
   it('反例：stop 序列进行中（workspace finalizing）载荷必须仍是 capturing + finalizing，不得提前报 stopped', () => {

@@ -122,7 +122,9 @@ function directionOf(value: unknown): 'up' | 'down' | undefined {
 }
 
 function decodeB64(value: unknown): Buffer | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
+  if (typeof value !== 'string') return null;
+  // 空串是有效的零字节消息；缺字段或编码损坏才是正文缺口。
+  if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return null;
   try {
     return Buffer.from(value, 'base64');
   } catch {
@@ -141,6 +143,25 @@ export function createRealtimeCollector(
   const sseChannels = new Map<string, SseChannelState>();
   const downloads = new Map<string, PackV2DownloadRow>();
   const webTransportGapRecorded = new Set<string>();
+  // 观察脚本的 ID 由每个执行环境生成；即使旧脚本在不同 target
+  // 重复使用 pc-1/sse-1，也不能把两个真实通道合并成一个目录行。
+  const channelIds = new Map<string, string>();
+  const usedChannelIds = new Set<string>();
+
+  function channelId(kind: string, targetId: string, reportedId: string): string {
+    const key = JSON.stringify([kind, targetId, reportedId]);
+    const known = channelIds.get(key);
+    if (known) return known;
+    let id = reportedId;
+    if (usedChannelIds.has(id)) {
+      id = `${targetId}::${reportedId}`;
+      let suffix = 2;
+      while (usedChannelIds.has(id)) id = `${targetId}::${reportedId}::${suffix++}`;
+    }
+    usedChannelIds.add(id);
+    channelIds.set(key, id);
+    return id;
+  }
 
   async function storeBody(bytes: Buffer): Promise<PackV2BodyRef> {
     const writer = await bodies.openWriter();
@@ -179,7 +200,7 @@ export function createRealtimeCollector(
   }
 
   async function recordWebRtc(payload: Record<string, unknown>, targetId: string, occurredAt: string): Promise<void> {
-    const peerConnectionId = stringValue(payload.pcId) || 'pc-unknown';
+    const peerConnectionId = channelId('webrtc', targetId, stringValue(payload.pcId) || 'pc-unknown');
     let channel = webRtcChannels.get(peerConnectionId);
     if (!channel) {
       channel = { targetId, createdAt: occurredAt, closedAt: null, up: 0, down: 0 };
@@ -206,8 +227,18 @@ export function createRealtimeCollector(
     if (kind === 'datachannel-message') {
       row.fin = payload.fin === false ? false : true;
       const bytes = decodeB64(payload.messageB64);
-      if (bytes) {
-        row.messageRef = await storeBody(bytes);
+      if (bytes !== null) {
+        try {
+          row.messageRef = await storeBody(bytes);
+        } catch (error) {
+          // 捕获 WebRTC 消息正文写入失败：磁盘空间或工作区写入异常。
+          // 策略：记录可导出的通道缺口并继续抛错，避免把该消息判为完整；
+          // 不记录错误文本，以免将私有路径等敏感值写进证据摘要。
+          evidence.recordGap('channelGaps', peerConnectionId, 'WebRTC DataChannel 消息正文落盘失败');
+          throw error;
+        }
+      } else {
+        evidence.recordGap('channelGaps', peerConnectionId, 'WebRTC DataChannel 消息正文缺失或 base64 编码无效');
       }
       if (direction === 'up') channel.up += 1;
       else if (direction === 'down') channel.down += 1;
@@ -221,7 +252,7 @@ export function createRealtimeCollector(
     targetId: string,
     occurredAt: string,
   ): Promise<void> {
-    const transportId = stringValue(payload.wtId) || 'wt-unknown';
+    const transportId = channelId('webtransport', targetId, stringValue(payload.wtId) || 'wt-unknown');
     let channel = webTransportChannels.get(transportId);
     if (!channel) {
       channel = {
@@ -260,7 +291,7 @@ export function createRealtimeCollector(
   }
 
   async function recordSse(payload: Record<string, unknown>, targetId: string, occurredAt: string): Promise<void> {
-    const sseId = stringValue(payload.sseId) || 'sse-unknown';
+    const sseId = channelId('sse', targetId, stringValue(payload.sseId) || 'sse-unknown');
     const url = stringValue(payload.url);
     let channel = sseChannels.get(sseId);
     if (!channel) {
@@ -291,8 +322,18 @@ export function createRealtimeCollector(
     if (retryMs !== undefined) row.retryMs = retryMs;
     if (kind === 'event') {
       const bytes = decodeB64(payload.dataB64);
-      if (bytes) {
-        row.dataRef = await storeBody(bytes);
+      if (bytes !== null) {
+        try {
+          row.dataRef = await storeBody(bytes);
+        } catch (error) {
+          // 捕获 SSE 事件正文写入失败：磁盘空间或工作区写入异常。
+          // 策略：记录可导出的通道缺口并继续抛错，避免把该事件判为完整；
+          // 不记录错误文本，以免将私有路径等敏感值写进证据摘要。
+          evidence.recordGap('channelGaps', sseId, 'SSE 事件正文落盘失败');
+          throw error;
+        }
+      } else {
+        evidence.recordGap('channelGaps', sseId, 'SSE 事件正文缺失或 base64 编码无效');
       }
       channel.down += 1;
     }

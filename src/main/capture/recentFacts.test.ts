@@ -11,7 +11,7 @@ import type {
 
 /**
  * 规范 §5.2「最近事实」：非敏感摘要、时间序、上限截断只影响展示。
- * 反例先行：URL query 里的会话 token 绝不进入摘要文本。
+ * 反例先行：URL path/query 里的会话 token 绝不进入摘要文本。
  */
 
 function factsOf(partial: Partial<WorkflowFacts>): WorkflowFacts {
@@ -59,15 +59,29 @@ describe('recentFactsOf（最近事实摘要）', () => {
       'channel-opened',
     ]);
     expect(entries[0].text).toContain('target-page-0001');
+    expect(entries[1].text).toContain('action-0001');
     expect(entries[2].text).toContain('ws-0001');
-    expect(entries[2].text).toContain('wss://10.10.8.111/stream');
+    expect(entries[2].text).toContain('wss://10.10.8.111');
   });
 
-  it('反例：URL query/fragment 里的 token 绝不进入摘要文本', () => {
+  it('动作最近事实只显示稳定 ID，不把设备页面文本放入轮询 IPC', () => {
+    const action: PackV2BrowserActionRow = {
+      id: 'action-0042',
+      occurredAt: '2026-09-23T10:00:02.000Z',
+      kind: 'click',
+      targetId: 'target-page-0001',
+      elementSummary: `button text:页面私密内容 ${'A'.repeat(100_000)}`,
+    };
+    const entries = recentFactsOf(factsOf({ actions: [action] }));
+    expect(entries[0].text).toBe('用户动作（click）：action-0042');
+    expect(entries[0].text).not.toContain('页面私密内容');
+  });
+
+  it('反例：URL path/query/fragment 里的 token 绝不进入摘要文本', () => {
     const channel: PackV2ChannelRow = {
       id: 'ws-0001',
       kind: 'websocket',
-      url: 'wss://10.10.8.111/stream?viewerToken=SECRET-TOKEN&sid=abc',
+      url: 'wss://10.10.8.111/SECRET-PATH/stream?viewerToken=SECRET-TOKEN&sid=abc',
       targetId: null,
       createdAt: '2026-09-23T10:00:03.000Z',
       closedAt: null,
@@ -75,9 +89,23 @@ describe('recentFactsOf（最近事实摘要）', () => {
     };
     const entries = recentFactsOf(factsOf({ channels: [channel] }));
     expect(entries).toHaveLength(1);
-    expect(entries[0].text).toContain('wss://10.10.8.111/stream');
+    expect(entries[0].text).toContain('wss://10.10.8.111');
     expect(entries[0].text).not.toContain('SECRET-TOKEN');
+    expect(entries[0].text).not.toContain('SECRET-PATH');
     expect(entries[0].text).not.toContain('?');
+  });
+
+  it('超长页面 ID 不撑大最近事实 IPC 载荷', () => {
+    const channel: PackV2ChannelRow = {
+      id: 'ws-' + 'x'.repeat(100_000),
+      kind: 'websocket',
+      url: 'wss://10.10.8.111/stream',
+      targetId: null,
+      createdAt: '2026-09-23T10:00:03.000Z',
+      closedAt: null,
+      payloadPath: null,
+    };
+    expect(recentFactsOf(factsOf({ channels: [channel] }))[0].text.length).toBeLessThan(300);
   });
 
   it('反例：URL 无法解析时只显示 ID，不显示原始串', () => {

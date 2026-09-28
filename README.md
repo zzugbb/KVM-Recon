@@ -10,7 +10,7 @@ Offline BMC/KVM evidence capture.
 
 KVM-Recon is an offline desktop client that records browser-visible evidence while an operator logs into a BMC and opens HTML5 KVM. It manually exports a Capture Pack 2.0 containing HTTP bodies, scripts, browser state, screenshots, and realtime channel data. Capture does not depend on vendor or protocol-family rules. Packs are **unredacted** and must be handled as sensitive data.
 
-The current version is 0.3.0 and uses Capture Pack 2.0. Historical 0.2.x packs and their YES/PARTIAL/NO results are not Capture Pack 2.0 integrity verdicts.
+The current source version is 0.3.0, pending its official release, and uses Capture Pack 2.0. Historical 0.2.x packs and their YES/PARTIAL/NO results are not Capture Pack 2.0 integrity verdicts.
 
 The in-app UI and the field guide are currently Chinese. This README is the English entry for GitHub visitors.
 
@@ -25,7 +25,7 @@ Capture Pack 2.0 reports only `captureIntegrity` (COMPLETE/INCOMPLETE) and `work
 
 ## Download
 
-Get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) and check `SHA256SUMS.txt`. Maintainer release steps are in `docs/releasing.md`.
+Official 0.3.0 installers have not been released yet. After release, get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) and check `SHA256SUMS.txt`. Maintainer release steps are in `docs/releasing.md`.
 
 Current builds **do not use paid Apple / Microsoft developer certificates**:
 
