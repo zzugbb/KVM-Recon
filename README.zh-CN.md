@@ -25,7 +25,7 @@ KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登�
 
 ## 下载
 
-待 0.3.0 安装包出现在 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 后，从那里获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 [发布指南](docs/releasing.md)。
+从 [v0.3.0 正式版](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 [发布指南](docs/releasing.md)。
 
 当前构建**未使用 Apple / 微软付费开发者证书**：
 

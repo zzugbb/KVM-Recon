@@ -25,7 +25,7 @@ Capture Pack 2.0 reports only `captureIntegrity` (COMPLETE/INCOMPLETE) and `work
 
 ## Download
 
-Get macOS and Windows installers from [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) once the 0.3.0 assets are available, and check `SHA256SUMS.txt`. Maintainer release steps are in [docs/releasing.md](docs/releasing.md).
+Get the 0.3.0 macOS and Windows installers from the [v0.3.0 release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0), and check `SHA256SUMS.txt`. Maintainer release steps are in [docs/releasing.md](docs/releasing.md).
 
 Current builds **do not use paid Apple / Microsoft developer certificates**:
 

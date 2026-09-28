@@ -22,7 +22,7 @@
 
 ## 发布到 GitHub Releases
 
-0.3.0 的源码版本、双语 README 和 `CHANGELOG.md` 的 0.3.0 章节已准备好。维护者可先用下文 **Build installers** 下载构建产物；将本轮变更提交到 `main`，确认本地验收和该提交的 CI 均通过后，即可创建 Release 和标签。CHANGELOG 不预填尚未发生的发布日期；实际发布日期以 GitHub Release 为准。
+0.3.0 已于 2026-09-28 [正式发布](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0)。以下流程供后续版本使用：维护者可先用下文 **Build installers** 试构建；将版本变更提交到 `main`，确认本地验收和该提交的 CI 均通过后，再创建对应 Release 和标签。实际发布日期以 GitHub Release 为准。
 
 当前 Release workflow 用 `gh release upload` 上传附件，**要求 GitHub Release 已经存在**。只打 tag 并推送不够：没有对应 Release 时，构建产物无法挂上。
 
@@ -35,11 +35,11 @@
 → workflow 构建并上传附件
 ```
 
-1. 核对 `package.json` 与 `package-lock.json` 的版本均为 `0.3.0`，`CHANGELOG.md` 有 `## [0.3.0]` 章节，并把本轮审查的变更提交到 `main`。Release workflow 会校验标签、版本和 CHANGELOG 章节。
+1. 核对 `package.json` 与 `package-lock.json` 的版本一致，`CHANGELOG.md` 有对应版本章节，并把待发布变更提交到 `main`。Release workflow 会校验标签、版本和 CHANGELOG 章节。
 2. 创建 GitHub Release（标签如 `vX.Y.Z`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
 3. 标签匹配 `v*` 后，workflow 会构建安装包并挂到**已有** Release，再附 `SHA256SUMS.txt`。也可在 Actions 里手动运行 **Release**，填写同一个已有标签（例如 `vX.Y.Z`）。
 
-仓库里的 `CHANGELOG.md` 是版本历史：后续未发版改动写在 `[Unreleased]`，GitHub Release 说明可从 0.3.0 章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
+仓库里的 `CHANGELOG.md` 是版本历史：后续未发版改动写在 `[Unreleased]`，GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
 
 下一版重复上述步骤，使用新的版本号和标签。若某次构建成功但 Release 上没有安装包，在 Actions 打开 **Release** → Run workflow，填同一个已有标签即可补传。
 

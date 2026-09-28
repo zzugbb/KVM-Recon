@@ -51,4 +51,4 @@ npm run test:e2e
 
 ## 发布
 
-按 `docs/releasing.md`：0.3.0 的 `CHANGELOG.md` 章节、`package.json` 与锁文件版本已就位；本轮变更验证并提交到 `main` 后，由维护者创建 GitHub Release 和 `v0.3.0` 标签。后续版本再把 `[Unreleased]` 收成新版本章节并同步源码版本。试构建可在 Actions 中运行 **Build installers**。
+0.3.0 已发布；后续版本按 `docs/releasing.md`：把 `[Unreleased]` 收成新版本章节，同步 `package.json` 与锁文件版本，验证并提交到 `main` 后由维护者创建对应标签和 GitHub Release。试构建可在 Actions 中运行 **Build installers**。
