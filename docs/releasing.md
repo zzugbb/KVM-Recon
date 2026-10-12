@@ -16,7 +16,7 @@
 | macOS | ad-hoc（不是 Apple 公证） | 无法验证开发者 | 「系统设置 → 隐私与安全性」允许 |
 | Windows | 无 Authenticode | SmartScreen：已保护你的电脑 / 未知发布者 | 「更多信息 → 仍要运行」 |
 
-现场步骤见 `docs/field-guide.md`。
+现场步骤见[现场指南](field-guide.md)。
 
 不要把本机 `release/` 目录提交进 git。
 
@@ -39,7 +39,7 @@
 2. 创建 GitHub Release（标签如 `vX.Y.Z`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
 3. 标签匹配 `v*` 后，workflow 会构建安装包并挂到**已有** Release，再附 `SHA256SUMS.txt`。也可在 Actions 里手动运行 **Release**，填写同一个已有标签（例如 `vX.Y.Z`）。
 
-仓库里的 `CHANGELOG.md` 是版本历史：后续未发版改动写在 `[Unreleased]`，GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
+仓库里的 `CHANGELOG.md` 是版本历史：计划在后续安装包发布的功能、行为修复或安全变化写在 `[Unreleased]`；纯文档整理及不改变应用行为的依赖维护无需逐项记录或更新版本号。GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
 
 下一版重复上述步骤，使用新的版本号和标签。若某次构建成功但 Release 上没有安装包，在 Actions 打开 **Release** → Run workflow，填同一个已有标签即可补传。
 
@@ -56,11 +56,9 @@ npm run package:mac
 
 Windows 安装包请用 GitHub 的 Windows runner（**Build installers** 或 **Release**），避免在 macOS 上交叉编译。产物目录为 `release/`。
 
-## 签名
+如以后启用 Apple Developer ID / 公证或 Windows 签名，证书通过仓库 Secrets 配置，不提交到 Git。
 
-当前默认：macOS 使用 ad-hoc 签名（不需要 Apple 账号）；Windows 不签名（无 Authenticode）。打开时的系统提示见上文表格与 `docs/field-guide.md`。
-
-若以后要用 Apple Developer ID 并公证，或 Windows Authenticode / EV 证书，把证书放在仓库 Secrets，不要写入 git。
+发布工作流负责版本门禁、构建、上传和 checksum，不运行单测或 E2E；因此发布前必须独立确认目标提交的 CI / 验收结果，试构建成功也不代表采集验证通过。
 
 ## 校验
 

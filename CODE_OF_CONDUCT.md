@@ -1,58 +1,44 @@
-# Contributor Covenant Code of Conduct
+# 社区行为准则
 
-KVM-Recon 社区行为准则采用 [Contributor Covenant](https://www.contributor-covenant.org) 2.1。公约以英文文本为准；中文说明见 `CONTRIBUTING.md`。
+本准则改编自 Contributor Covenant 2.1，以中文提供社区协作约定。贡献流程见[贡献指南](CONTRIBUTING.md)。
 
-行为问题请通过 GitHub 私下联系维护者，**不要**把 BMC 密码、Cookie 或未脱敏 Capture Pack 写进公开 Issue。安全漏洞请改走 `SECURITY.md`，不要和社区行为问题混用同一入口。
+## 我们的承诺
 
-## Our Pledge
+我们致力于让所有成员、贡献者和维护者都能在不受骚扰的环境中参与项目，不因年龄、体型、可见或不可见的残障、族裔、性征、性别认同与表达、经验、教育、社会经济地位、国籍、外貌、种族、种姓、肤色、宗教或性倾向受到歧视。
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual
-identity and orientation.
+我们以开放、友善、尊重和包容的方式交流，共同维护健康的协作环境。
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+## 行为要求
 
-## Our Standards
+欢迎以下行为：
 
-Examples of behavior that contributes to a positive environment:
+- 尊重不同观点、经历和感受，体谅他人。
+- 提供具体、建设性的反馈，也愿意接受合理意见。
+- 为自己的错误负责，并向受影响的人道歉。
+- 讨论问题时关注项目与社区的共同利益。
 
-- Demonstrating empathy and kindness toward other people
-- Being respectful of differing opinions, viewpoints, and experiences
-- Giving and gracefully accepting constructive feedback
-- Accepting responsibility and apologizing to those affected by our mistakes
-- Focusing on what is best not just for us as individuals, but for the overall community
+以下行为不可接受：
 
-Examples of unacceptable behavior:
+- 性暗示、色情内容或不受欢迎的性关注。
+- 嘲讽、侮辱、贬低、人身攻击或政治攻击。
+- 公开或私下骚扰。
+- 未经明确许可披露他人的住址、邮箱等私人信息。
+- 其他不符合专业协作环境的行为。
 
-- The use of sexualized language or imagery, and sexual attention or advances of any kind
-- Trolling, insulting or derogatory comments, and personal or political attacks
-- Public or private harassment
-- Publishing others' private information, such as a physical or email address, without their explicit permission
-- Other conduct which could reasonably be considered inappropriate in a professional setting
+## 维护者职责
 
-## Enforcement Responsibilities
+维护者负责解释和执行本准则，对不当、威胁、冒犯或有害行为采取适当、公平的纠正措施。必要时可删除、编辑或拒绝违反准则的评论、提交、Issue、文档或其他贡献，并说明处理理由。
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+## 适用范围
 
-## Scope
+本准则适用于项目的社区空间，也适用于个人公开代表项目时的行为，例如使用项目官方账号交流或作为项目代表参加活动。
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
+## 报告与处理
 
-## Enforcement
+请通过维护者在 GitHub 个人资料中公开的联系方式报告行为问题。如没有可用的私下联系方式，可在 Issue 中请求私下沟通渠道，但不要公开事件细节或私人信息。维护者会及时、公平地审查报告，并尊重报告者的隐私。
 
-Report Code of Conduct incidents to the maintainers by emailing the account that owns this repository or by opening a GitHub issue **without** secrets or private capture data. Do not use Security Advisories for interpersonal conduct reports; those are for product vulnerabilities (see `SECURITY.md`).
+不得在公开报告中附带 BMC 密码、Cookie、Token、未脱敏 Capture Pack 或其他内部资料。产品安全漏洞请按[安全说明](SECURITY.md)使用 Security Advisories，不与社区行为报告混用。
 
-All complaints will be reviewed and investigated promptly and fairly.
+## 来源
 
-## Attribution
-
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
-version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.
+本准则改编自 [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html)，可参阅[简体中文版本](https://www.contributor-covenant.org/zh-cn/version/2/1/code_of_conduct/)。本项目保留自己的报告渠道与处理说明。

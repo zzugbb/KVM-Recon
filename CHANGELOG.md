@@ -124,7 +124,7 @@
 ## [0.2.3] - 2026-08-25
 
 - 主窗口标题旁显示当前工具版本，与 `package.json` / 导出包 `manifest.tool.version` 一致
-- README 改为英文默认入口，并提供 [简体中文](README.zh-CN.md)；补充主窗口整页截图
+- README 改为英文默认入口，并提供 [简体中文](https://github.com/zzugbb/KVM-Recon/blob/v0.2.3/README.zh-CN.md)；补充主窗口整页截图
 - `schema/` 增补 `page/timeline.jsonl`、`tls/certificate.json` 及页面/探测等导出文件的独立 JSON Schema
 - 导出包根目录改为中文 `README.md`（阅读地图 + 适配前裁定），不再写 `artifacts/handover.md`
 - 精简 `docs/development-plan.md` 为当前状态与边界，不再展开已完成阶段清单

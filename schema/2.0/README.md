@@ -1,16 +1,12 @@
 # Capture Pack 2.0 JSON Schema
 
-> **版本范围：Capture Pack 2.0 / KVM-Recon 0.3.0。** 0.3.0 阶段 0 起与
-> `src/core/capture-pack-v2/types.ts` 逐字段同步（规范 §22：不再以「代码优先、
-> Schema 滞后」为常态）。修改类型时必须同步修改本目录与测试。
->
-> 当前仓库只维护 2.0 Schema；旧 1.x 格式可从已发布 Git 标签查阅。
+> 适用于 Capture Pack 2.0 / KVM-Recon 0.3.0。旧格式从已发布 Git 标签查阅。
 
 本目录是 Capture Pack 2.0 的独立 JSON Schema（33 个），方便出机房后用任意校验器核对 zip 内文件。
-权威规范是 `docs/v0.3-development-spec.md`；类型契约是 `src/core/capture-pack-v2/types.ts`。
-Schema 与类型冲突时，以规范与类型为准，并立即回改本目录。`packV2Consistency.ts`
+数据规范见[开发规范](../../docs/v0.3-development-spec.md)；类型契约是 `src/core/capture-pack-v2/types.ts`。
+Schema、类型与规范须保持一致；发现冲突时核对实现和契约，并同步修正，不绕过导出校验。`packV2Consistency.ts`
 导出时会按包内 `schema/` 副本对全部结构化文件执行 Schema 自校验（规范 §14 条件 10），
-因此 `ajv` 是运行时依赖。
+因此 `ajv` 是运行时依赖。导出器只复制本目录的 `*.schema.json`，本 README 是仓库维护说明，不属于离线包的必需文件。
 
 字段关系约束（负向用例见 `capturePackV2Schema.test.ts`）：
 
