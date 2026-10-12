@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="https://zzugbb.github.io/KVM-Recon/">Showcase</a> ·
+  <a href="#project-demo">Video</a> ·
   <a href="https://zzugbb.github.io/KVM-Recon/#cases">Cases</a> ·
   <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0">Download</a> ·
   <a href="docs/status.md#系统架构与技术实现">Architecture</a> ·
@@ -31,6 +32,14 @@ KVM-Recon is an offline macOS / Windows desktop client for server rooms without 
 Capture does not rely on vendor, model or protocol-family rules. The tool does not automate login, perform MITM, call external AI, generate adapters or fully decode video protocols. Original evidence is **unredacted** and must remain in controlled storage and handoff channels.
 
 The application version is **0.3.0**. Historical 0.2.x packs and YES / PARTIAL / NO results are not Capture Pack 2.0 integrity verdicts. The client UI and detailed guides are Chinese.
+
+## Project demo
+
+A 96-second project introduction video. Play the 720p version below (about 9.9 MB), or download the 1080p original.
+
+https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
+
+[Download 1080p original](https://github.com/zzugbb/KVM-Recon/raw/refs/heads/main/docs/assets/kvm-recon-promo-v3-1080p.mp4) · [Open interactive showcase](https://zzugbb.github.io/KVM-Recon/)
 
 ## Showcase
 

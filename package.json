@@ -84,6 +84,7 @@
       "README.md",
       "README.en.md",
       "docs/**/*",
+      "!docs/assets/**/*.mp4",
       "examples/**/*",
       "schema/**/*"
     ],

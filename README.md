@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="https://zzugbb.github.io/KVM-Recon/">在线展示</a> ·
+  <a href="#项目演示">视频演示</a> ·
   <a href="https://zzugbb.github.io/KVM-Recon/#cases">合成案例</a> ·
   <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0">下载安装包</a> ·
   <a href="docs/status.md#系统架构与技术实现">架构</a> ·
@@ -31,6 +32,14 @@ KVM-Recon 是面向无公网机房的 macOS / Windows 桌面客户端：记录�
 采集不依赖厂商、型号或协议族规则。工具负责留下证据，不自动登录、不做 MITM、不调用机房外 AI、不生成 Adapter，也不解码完整视频协议。原始资料**未脱敏**，只在受控环境保存和交接。
 
 当前应用版本为 **0.3.0**。历史 0.2.x 的旧包与 YES / PARTIAL / NO 结果不能当作 2.0 完整度结论。
+
+## 项目演示
+
+约 96 秒项目介绍视频，下方可直接播放 720p 版本（约 9.9 MB）；1080p 原片供下载。
+
+https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
+
+[下载 1080p 原片](https://github.com/zzugbb/KVM-Recon/raw/refs/heads/main/docs/assets/kvm-recon-promo-v3-1080p.mp4) · [打开交互展示](https://zzugbb.github.io/KVM-Recon/)
 
 ## 在线展示
 
