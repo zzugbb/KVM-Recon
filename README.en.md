@@ -51,6 +51,20 @@ The independent static site covers positioning, capabilities, architecture, proc
 
 Electron / Chromium provide observation, React / TypeScript provide the workbench, and Node.js handles files and streams. Module responsibilities, design choices and actual coverage are in [architecture and validation](docs/status.md).
 
+## Architecture
+
+```mermaid
+flowchart LR
+  UI["Desktop workbench<br/>React / TypeScript"] -->|IPC| Main["Electron / Node.js"]
+  Main --> Browser["Isolated Chromium"]
+  Browser -->|CDP / NetLog| Raw["Raw evidence workspace"]
+  Raw --> Derived["Evidence navigation and integrity"]
+  Derived --> ZIP["Manual export and validation<br/>Capture Pack 2.0"]
+  Main --> ZIP
+```
+
+The diagram shows the main modules and data relationships; observation, storage and derivation cooperate continuously. Original facts are saved first, derived results remain traceable, and export remains a manual decision after finalization. See [architecture details](docs/status.md#系统架构与技术实现).
+
 ## Download and use
 
 Get macOS / Windows installers from the [v0.3.0 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0), and verify `SHA256SUMS.txt`.

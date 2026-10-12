@@ -51,6 +51,20 @@ KVM-Recon 是面向无公网机房的 macOS / Windows 桌面客户端：记录�
 
 Electron / Chromium 提供观测环境，React / TypeScript 提供工作台，Node.js 负责文件与流。模块职责、设计取舍与实际覆盖见[架构及验证基线](docs/status.md)。
 
+## 系统架构
+
+```mermaid
+flowchart LR
+  UI["桌面工作台<br/>React / TypeScript"] -->|IPC| Main["Electron / Node.js"]
+  Main --> Browser["隔离 Chromium"]
+  Browser -->|CDP / NetLog| Raw["原始证据工作区"]
+  Raw --> Derived["证据导航与完整度"]
+  Derived --> ZIP["手动导出并校验<br/>Capture Pack 2.0"]
+  Main --> ZIP
+```
+
+图中为主要模块与数据关系；观测、落盘和派生持续协作。原始事实先保存，派生结论可追溯，自动收尾后仍由用户决定导出。详细模块和技术取舍见[架构说明](docs/status.md#系统架构与技术实现)。
+
 ## 下载与使用
 
 从 [v0.3.0 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0) 下载 macOS / Windows 安装包，并核对 `SHA256SUMS.txt`。
