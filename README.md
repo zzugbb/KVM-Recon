@@ -1,86 +1,91 @@
-# KVM-Recon
+<h1 align="center">KVM-Recon</h1>
 
-**简体中文** | [English](README.en.md)
+<p align="center">
+  <strong>BMC / HTML5 KVM 离线证据采集工具</strong>
+</p>
 
-[![CI](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml/badge.svg)](https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases)](https://github.com/zzugbb/KVM-Recon/releases)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
+  <a href="https://github.com/zzugbb/KVM-Recon/releases"><img src="https://img.shields.io/github/v/release/zzugbb/KVM-Recon?include_prereleases" alt="GitHub Release"></a>
+  <a href="https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/zzugbb/KVM-Recon/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI"></a>
+  <a href="https://github.com/zzugbb/KVM-Recon/actions/workflows/showcase-pages.yml?query=branch%3Amain"><img src="https://github.com/zzugbb/KVM-Recon/actions/workflows/showcase-pages.yml/badge.svg?branch=main&amp;event=push" alt="Showcase Pages"></a>
+</p>
 
-**BMC / HTML5 KVM 离线证据采集工具**
+<p align="center">
+  <a href="https://zzugbb.github.io/KVM-Recon/">在线展示</a> ·
+  <a href="https://zzugbb.github.io/KVM-Recon/#cases">合成案例</a> ·
+  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0">下载安装包</a> ·
+  <a href="docs/status.md#系统架构与技术实现">架构</a> ·
+  <a href="docs/README.md">文档</a> ·
+  <a href="CONTRIBUTING.md">贡献</a>
+</p>
 
-KVM-Recon 是面向机房现场的离线桌面客户端：记录操作员「登录 BMC → 打开 HTML5 KVM」时浏览器实际观察到的请求、正文、脚本、实时通道与画面，并手动导出 Capture Pack 2.0。采集不依赖厂商、型号或协议族规则。包内资料**未脱敏**，离场后由工程师或 AI 研究适配。
+<p align="center"><strong>简体中文</strong> | <a href="README.en.md">English</a></p>
 
-0.3.0 使用 Capture Pack 2.0。历史 0.2.x 版本的旧包和 YES/PARTIAL/NO 结果不能当作 2.0 完整度结论。
+---
 
-[下载安装包](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0) · [现场操作](docs/field-guide.md) · [阅读采集包](docs/capture-pack-guide.md) · [文档导航](docs/README.md)
+## 项目简介
 
-## 项目定位
+KVM-Recon 是面向无公网机房的 macOS / Windows 桌面客户端：记录现场人员「手工登录 BMC → 打开 HTML5 KVM」时浏览器实际观察到的事实，手动导出 **Capture Pack 2.0**，供离场后的工程师或获授权的 AI 研究适配。
 
-- 这是离线采集工具，**不是**生产 KVM 网关，也不提供用户远程控制台。
-- 不依赖公网，不在机房内调用外部分析服务。
-- 现场人员只需填写 BMC 地址与可选设备说明，手工登录并打开 HTML5 KVM；导出仍由用户手动触发。
-- 本工具**不写 Adapter**。
+采集不依赖厂商、型号或协议族规则。工具负责留下证据，不自动登录、不做 MITM、不调用机房外 AI、不生成 Adapter，也不解码完整视频协议。原始资料**未脱敏**，只在受控环境保存和交接。
 
-包只声明 `captureIntegrity`（COMPLETE/INCOMPLETE）与 `workflowStatus`（是否观察到 KVM 等阶段）；没有协议族分类状态。未知架构只要证据和门禁满足要求，同样可以 COMPLETE。完整度不是“保证能一次写出 Adapter”，而是对采集器已观察证据的可验证结论。
+当前应用版本为 **0.3.0**。历史 0.2.x 的旧包与 YES / PARTIAL / NO 结果不能当作 2.0 完整度结论。
 
-## 下载
+## 在线展示
 
-从 [v0.3.0 正式版](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0) 获取 macOS 与 Windows 安装包，并核对 `SHA256SUMS.txt`。维护者发版步骤见 [发布指南](docs/releasing.md)。
+[展示首页](https://zzugbb.github.io/KVM-Recon/) · [内部工作流程](https://zzugbb.github.io/KVM-Recon/#workflow) · [合成案例](https://zzugbb.github.io/KVM-Recon/#cases) · [系统架构](https://zzugbb.github.io/KVM-Recon/#architecture)
 
-当前构建**未使用 Apple / 微软付费开发者证书**：
+独立静态站展示定位、能力、架构、处理流程与证据浏览。完整案例来自公开 Mock 样例，缺口案例来自实际完整度引擎处理的故障 Fixture；无需登录或后端，不连接真实机器，不替代真机验收。运行与 Pages 发布方法见[展示说明](showcase/README.md)，部署结果见上方 Pages 工作流。
 
-- **macOS**：ad-hoc 签名。从浏览器下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。
-- **Windows**：无 Authenticode 签名。SmartScreen 若提示已保护你的电脑或未知发布者，点「更多信息 → 仍要运行」。
+## 核心能力
 
-0.3.0 现场流程见 [现场说明](docs/field-guide.md)。历史 0.2.x 说明可从对应 Git 标签获取。
+| 能力 | 交付内容 |
+| --- | --- |
+| 浏览器证据 | HTTP / HAR、正文、网络与动态脚本、Worker / WASM、状态、截图、动作及可观察实时通道；不可读取的内容明确记缺口 |
+| 离线研究 | 候选请求链、稳定 ID、已观察值传播、缺失证据及 Replay 计划，沿引用复核原始工件 |
+| 完整度与校验 | 独立的工作流进展与十项门禁；导出时检查 Schema、引用、字节数和 SHA-256 |
+| 磁盘与恢复 | 内容寻址去重、流式 ZIP64、单作业、磁盘水位保护及异常资料恢复导出 |
 
-## 现场流程
+`captureIntegrity` 表示 COMPLETE / INCOMPLETE，`workflowStatus` 表示是否观察到登录或 KVM 等阶段。未知架构满足证据与门禁要求也可 COMPLETE；完整度不保证协议已识别或 Adapter 一次实现。WebTransport 当前只记录生命周期并报告 payload 缺口。
 
-1. 在机房内安装并打开 KVM-Recon。
-2. 输入 BMC 地址；可选在另一个输入框填写自由文本设备说明（厂商/型号可写在一起）。
-3. 开始采集，工具打开独立浏览器并记录 TLS/Redfish 补充事实。
-4. 内嵌浏览器打开 BMC，现场人员按需**手工**登录。
-5. 点击 HTML5 KVM 入口，等待 Viewer 画面出现；弹出的 Viewer 窗口保持打开。
-6. 工具自动记录 Chromium 可观察的 HTTP、WebSocket、脚本/Worker、页面状态、截图与其他实时通道；包内同时生成含已取得正文的 `raw/http/session.har`，无需另行从 Chrome 导出 HAR。无法读取的正文或源码会在包内标记缺口；HAR 不等同于底层网络抓包。
-7. 在主界面手动导出 Capture Pack。离场后按包内 `00_START_HERE.md` 阅读资料。
+Electron / Chromium 提供观测环境，React / TypeScript 提供工作台，Node.js 负责文件与流。模块职责、设计取舍与实际覆盖见[架构及验证基线](docs/status.md)。
 
-主窗口标题旁会显示当前工具版本（`vX.Y.Z`）；导出包还会写入 `manifest.tool.buildId`，用于确认现场包来自哪次构建。
+## 下载与使用
 
-## 开发
+从 [v0.3.0 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0) 下载 macOS / Windows 安装包，并核对 `SHA256SUMS.txt`。
 
-需要 Node.js 22+。
+当前 macOS 为 ad-hoc 签名、未公证；Windows 无 Authenticode 签名。下载后可能提示未知开发者 / 发布者，处理方式见[安装与签名说明](docs/releasing.md#产物)。
+
+1. 打开客户端，输入 BMC 地址与可选的自由文本设备说明，点击“开始采集”。
+2. 在独立采集浏览器中手工登录并打开 HTML5 KVM，保持 Viewer 弹窗打开。
+3. 等待稳定后自动收尾，或点击“停止并收尾”；**自动收尾不会自动导出**。
+4. 核对完整度与缺口，手动导出。成功显示“已导出并校验”后，离场按包内 `00_START_HERE.md` 阅读。
+
+HAR 已随包保存，不必另开 Chrome 手工导出。未完整包仍可导出用于排查；异常退出后可恢复导出或保留原始资料。详细步骤见[现场指南](docs/field-guide.md)，离线分析见[采集包阅读指南](docs/capture-pack-guide.md)。
+
+## 本地开发
+
+需要 Node.js 22+（见 `.nvmrc`）与 npm：
 
 ```bash
 npm ci
-npm run typecheck
-npm test
-npm run build
-npm run test:e2e
 npm run dev
 ```
 
-- `npm test`：单测与 Mock KVM 样例、Schema、导出验证。
-- `npm run test:e2e`：Electron 真实浏览器采集与协议 Fixture 回放（需先 build）。设置 `KVM_RECON_FIELD_COLLECTION_2` 可选启用现场 HAR 回放；若还设置 `KVM_RECON_FIELD_HAR_ALL=1`，则回放全部 16 份 HAR。未设置语料目录时，现场 HAR 回放会跳过。
-- `npm run package:mac` / `npm run package:win`：本机构建安装包；正式发版请打 `v*` 标签，见 `docs/releasing.md`
+提交前按变更范围执行 `npm run typecheck`、`npm test`、`npm run build`；Electron 端到端验证使用 `npm run test:e2e`，须先构建。完整验证命令、可选现场 HAR 回放与贡献约定见[贡献指南](CONTRIBUTING.md)。安装包构建与发版见[发布指南](docs/releasing.md)。
 
-## 文档
+## 文档与反馈
 
-从[文档导航](docs/README.md)按现场采集、离线分析、开发或发布选择阅读入口。
+[文档导航](docs/README.md)按现场采集、离线研究、开发及发布组织入口：
 
-- [现场操作](docs/field-guide.md)：采集、收尾、导出与异常恢复。
-- [采集包阅读指南](docs/capture-pack-guide.md)：完整度、证据索引、原始资料与 Replay 的阅读顺序。
-- [开发规范](docs/v0.3-development-spec.md)：Capture Pack 2.0 契约与实现边界。
-- [项目状态与验证基线](docs/status.md)：当前能力、验证证据及覆盖范围。
-- [发布指南](docs/releasing.md)：构建、签名与安装包发布。
-- [Schema](schema/2.0/README.md)与[合成样例](examples/README.md)：结构校验和包内文件示例。
-- [版本记录](CHANGELOG.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)与[安全说明](SECURITY.md)。
+- [采集与数据契约](docs/v0.3-development-spec.md)：执行边界、文件结构与完整度规则。
+- [架构与项目状态](docs/status.md)：实现入口、验证证据及覆盖范围。
+- [Schema](schema/2.0/README.md) / [合成样例](examples/README.md)：结构校验与文件示例。
+- [普通问题](https://github.com/zzugbb/KVM-Recon/issues/new/choose) / [贡献指南](CONTRIBUTING.md) / [行为准则](CODE_OF_CONDUCT.md)。
 
-## 安全与边界
-
-- 原始采集包可能包含明文密码、Cookie、Token 和实时通道 payload；只在受控环境保存、传输和分析，禁止上传公开 Issue。
-- 不会做：自动登录、MITM、机房内调 AI、自动写 Adapter、完整视频解码。
-- 漏洞请走 [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new)，不要在 Issue 里贴凭证或未脱敏资料包。
+采集包、恢复工作区可能包含口令、Cookie、Token、内网地址与通道载荷，**不要提交公开 Issue**。采集窗口放宽部分浏览器安全限制，只连接可信 BMC。漏洞通过 [Security Advisories](https://github.com/zzugbb/KVM-Recon/security/advisories/new) 私下报告，详见[安全说明](SECURITY.md)。
 
 ## 许可
 
-[MIT](LICENSE)
+[MIT](LICENSE) · [版本记录](CHANGELOG.md)

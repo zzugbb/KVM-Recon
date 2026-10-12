@@ -1,0 +1,14 @@
+{
+  "name": "kvm-recon-showcase",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test scripts/*.test.mjs",
+    "preview:pages": "node scripts/serve.mjs --pages"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

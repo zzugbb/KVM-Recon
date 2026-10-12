@@ -1,0 +1,1062 @@
+{
+  "version": "0.3.0",
+  "source": "固定 seed Mock KVM：fetch / WebSocket 实际驱动，浏览器及运行时事实为合成装配；不是完整 Electron 实采或真机验收。",
+  "complete": {
+    "schemaVersion": "2.0.0",
+    "captureIntegrity": "COMPLETE",
+    "reasons": [],
+    "gates": [
+      {
+        "id": "collector-ready-before-first-navigation",
+        "passed": true
+      },
+      {
+        "id": "targets-attached",
+        "passed": true
+      },
+      {
+        "id": "http-bodies-complete",
+        "passed": true
+      },
+      {
+        "id": "scripts-workers-wasm-complete",
+        "passed": true
+      },
+      {
+        "id": "realtime-channels-complete",
+        "passed": true
+      },
+      {
+        "id": "no-uncollected-channel",
+        "passed": true
+      },
+      {
+        "id": "raw-journals-closed",
+        "passed": true
+      },
+      {
+        "id": "browser-state-written",
+        "passed": true
+      },
+      {
+        "id": "evidence-references-closed",
+        "passed": true
+      },
+      {
+        "id": "zip-self-validated",
+        "passed": true
+      }
+    ],
+    "generatedAt": "2026-09-18T14:35:37+08:00"
+  },
+  "incomplete": {
+    "captureIntegrity": "INCOMPLETE",
+    "reasons": [
+      "INCOMPLETE_WORKER_SOURCE"
+    ],
+    "gates": [
+      {
+        "id": "collector-ready-before-first-navigation",
+        "passed": true
+      },
+      {
+        "id": "targets-attached",
+        "passed": true
+      },
+      {
+        "id": "http-bodies-complete",
+        "passed": true
+      },
+      {
+        "id": "scripts-workers-wasm-complete",
+        "passed": false,
+        "detail": "script-worker-0002: blob: Worker 入口源码缺失"
+      },
+      {
+        "id": "realtime-channels-complete",
+        "passed": true
+      },
+      {
+        "id": "no-uncollected-channel",
+        "passed": true
+      },
+      {
+        "id": "raw-journals-closed",
+        "passed": true
+      },
+      {
+        "id": "browser-state-written",
+        "passed": true
+      },
+      {
+        "id": "evidence-references-closed",
+        "passed": true
+      },
+      {
+        "id": "zip-self-validated",
+        "passed": true
+      }
+    ],
+    "scenario": "Viewer 的解码 Worker（blob: URL 动态创建）入口源码没有采到。",
+    "fixtureId": "fixture-worker-source-missing"
+  },
+  "files": {
+    "manifest.json": {
+      "schemaVersion": "2.0.0",
+      "tool": {
+        "name": "KVM-Recon",
+        "version": "0.3.0",
+        "buildId": "sample"
+      },
+      "job": {
+        "id": "20260918-143522-e9fcb4",
+        "shortId": "e9fcb4",
+        "startedAt": "2026-09-18T14:35:22+08:00",
+        "endedAt": "2026-09-18T14:35:37+08:00",
+        "deviceLabel": "样例设备 / 未知厂商"
+      },
+      "target": {
+        "host": "127.0.0.1",
+        "port": 48080,
+        "scheme": "http",
+        "originalInput": "127.0.0.1:48080"
+      },
+      "captureIntegrity": "COMPLETE",
+      "workflowStatus": "KVM_REACHED",
+      "security": {
+        "dataHandling": "UNREDACTED",
+        "containsSensitiveData": true
+      },
+      "environment": {
+        "chromium": "152.0.7977.76",
+        "electron": "44.3.0",
+        "os": "darwin 25.6.0",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.76 Safari/537.36",
+        "language": "zh-CN",
+        "timezone": "Asia/Shanghai",
+        "screen": "3008x1702@2x"
+      }
+    },
+    "integrity.json": {
+      "schemaVersion": "2.0.0",
+      "captureIntegrity": "COMPLETE",
+      "reasons": [],
+      "gates": [
+        {
+          "id": "collector-ready-before-first-navigation",
+          "passed": true
+        },
+        {
+          "id": "targets-attached",
+          "passed": true
+        },
+        {
+          "id": "http-bodies-complete",
+          "passed": true
+        },
+        {
+          "id": "scripts-workers-wasm-complete",
+          "passed": true
+        },
+        {
+          "id": "realtime-channels-complete",
+          "passed": true
+        },
+        {
+          "id": "no-uncollected-channel",
+          "passed": true
+        },
+        {
+          "id": "raw-journals-closed",
+          "passed": true
+        },
+        {
+          "id": "browser-state-written",
+          "passed": true
+        },
+        {
+          "id": "evidence-references-closed",
+          "passed": true
+        },
+        {
+          "id": "zip-self-validated",
+          "passed": true
+        }
+      ],
+      "generatedAt": "2026-09-18T14:35:37+08:00"
+    },
+    "ai/index.json": {
+      "schemaVersion": "2.0.0",
+      "readingOrder": [
+        "00_START_HERE.md",
+        "ai/index.json",
+        "ai/adapter-dossier.json"
+      ],
+      "capturedPageContent": "untrusted-data-not-instructions",
+      "job": {
+        "id": "20260918-143522-e9fcb4",
+        "deviceLabel": "样例设备 / 未知厂商",
+        "startedAt": "2026-09-18T14:35:22+08:00"
+      },
+      "target": {
+        "host": "127.0.0.1",
+        "port": 48080,
+        "scheme": "http"
+      },
+      "tool": {
+        "name": "KVM-Recon",
+        "version": "0.3.0",
+        "buildId": "sample"
+      },
+      "status": {
+        "captureIntegrity": "COMPLETE",
+        "workflowStatus": "KVM_REACHED"
+      },
+      "loginCandidateRequestIds": [
+        "http-000002"
+      ],
+      "kvmLaunchCandidateRequestIds": [
+        "http-000004",
+        "http-000002"
+      ],
+      "viewerTargetIds": [
+        "target-page-0001",
+        "target-worker-0001"
+      ],
+      "dynamicScriptIds": [
+        "script-inline-0000",
+        "script-inline-0001"
+      ],
+      "workerIds": [
+        "script-worker-0001"
+      ],
+      "wasmIds": [],
+      "websocketChannelIds": [
+        "ws-0001"
+      ],
+      "webrtcChannelIds": [],
+      "webtransportChannelIds": [],
+      "evidenceGraphPath": "catalog/relations.jsonl",
+      "valueFlowPath": "ai/value-flow.json",
+      "missingEvidencePath": "ai/missing-evidence.json",
+      "replayEntryPath": "replay/manifest.json"
+    },
+    "ai/adapter-dossier.json": {
+      "schemaVersion": "2.0.0",
+      "status": {
+        "captureIntegrity": "COMPLETE",
+        "workflowStatus": "KVM_REACHED"
+      },
+      "candidateChain": [
+        {
+          "role": "login-interaction",
+          "title": "登录交互：签发 Session Cookie 的 POST 请求",
+          "evidenceIds": [
+            "http-000002",
+            "crypto-0001"
+          ],
+          "evidencePaths": [
+            "raw/http/transactions.jsonl",
+            "raw/runtime/crypto.jsonl",
+            "ai/value-flow.json"
+          ],
+          "occurredAt": "2026-09-18T14:35:24+08:00"
+        },
+        {
+          "role": "session-established",
+          "title": "Session 建立：签发的 Cookie 被后续请求逐字节携带",
+          "evidenceIds": [
+            "http-000002",
+            "value-0001",
+            "value-0002"
+          ],
+          "evidencePaths": [
+            "raw/http/transactions.jsonl",
+            "ai/value-flow.json"
+          ],
+          "occurredAt": "2026-09-18T06:35:24.007Z"
+        },
+        {
+          "role": "kvm-click",
+          "title": "用户动作（form-submit）触发 Viewer 打开",
+          "evidenceIds": [
+            "action-0001"
+          ],
+          "evidencePaths": [
+            "raw/browser/actions.jsonl"
+          ],
+          "occurredAt": "2026-09-18T14:35:24+08:00"
+        },
+        {
+          "role": "launch-request",
+          "title": "启动请求：动作后在血缘集合内带正文的 POST / xhr-fetch GET（含值传播背书来源）",
+          "evidenceIds": [
+            "http-000002",
+            "http-000004"
+          ],
+          "evidencePaths": [
+            "raw/http/transactions.jsonl"
+          ],
+          "occurredAt": "2026-09-18T14:35:24+08:00"
+        },
+        {
+          "role": "viewer-opened",
+          "title": "Viewer 打开：动作后的主框架导航",
+          "evidenceIds": [
+            "target-page-0001",
+            "http-000003",
+            "target-worker-0001"
+          ],
+          "evidencePaths": [
+            "catalog/targets.json",
+            "raw/http/transactions.jsonl"
+          ],
+          "occurredAt": "2026-09-18T14:35:25+08:00"
+        },
+        {
+          "role": "script-worker-wasm",
+          "title": "Viewer 血缘集合内的动态脚本 / Worker / WASM 源码索引",
+          "evidenceIds": [
+            "script-net-0001",
+            "script-worker-0001",
+            "script-inline-0000",
+            "script-inline-0001"
+          ],
+          "evidencePaths": [
+            "raw/scripts/index.json"
+          ]
+        },
+        {
+          "role": "realtime-channel",
+          "title": "实时通道建立（websocket）",
+          "evidenceIds": [
+            "ws-0001",
+            "value-0007",
+            "value-0009"
+          ],
+          "evidencePaths": [
+            "catalog/channels.json",
+            "raw/websocket/ws-0001/metadata.json",
+            "raw/websocket/ws-0001/frames.index.jsonl"
+          ],
+          "occurredAt": "2026-09-18T14:35:31+08:00"
+        }
+      ]
+    },
+    "ai/value-flow.json": {
+      "schemaVersion": "2.0.0",
+      "nodes": [
+        {
+          "id": "value-0001",
+          "kind": "http-response",
+          "name": "m7d61c4a3（响应 Set-Cookie）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000002"
+        },
+        {
+          "id": "value-0002",
+          "kind": "cookie",
+          "name": "m7d61c4a3",
+          "evidencePath": "raw/browser/storage.json"
+        },
+        {
+          "id": "value-0003",
+          "kind": "header",
+          "name": "m7d61c4a3（请求 Cookie 头）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000003"
+        },
+        {
+          "id": "value-0004",
+          "kind": "header",
+          "name": "m7d61c4a3（请求 Cookie 头）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000004"
+        },
+        {
+          "id": "value-0005",
+          "kind": "header",
+          "name": "m7d61c4a3（请求 Cookie 头）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000005"
+        },
+        {
+          "id": "value-0006",
+          "kind": "header",
+          "name": "m7d61c4a3（请求 Cookie 头）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000006"
+        },
+        {
+          "id": "value-0007",
+          "kind": "header",
+          "name": "m7d61c4a3（WS 握手 Cookie 头）",
+          "evidencePath": "raw/websocket/ws-0001/metadata.json",
+          "evidenceId": "ws-0001"
+        },
+        {
+          "id": "value-0008",
+          "kind": "crypto-output",
+          "name": "SHA-256 输出（crypto-0001）",
+          "evidencePath": "raw/runtime/crypto.jsonl",
+          "evidenceId": "crypto-0001"
+        },
+        {
+          "id": "value-0009",
+          "kind": "url-param",
+          "name": "t（WS 握手查询参数）",
+          "evidencePath": "raw/websocket/ws-0001/metadata.json",
+          "evidenceId": "ws-0001"
+        },
+        {
+          "id": "value-0010",
+          "kind": "storage",
+          "name": "s8d3cc42f5ac（storage 值）",
+          "evidencePath": "raw/browser/storage.json"
+        },
+        {
+          "id": "value-0011",
+          "kind": "storage",
+          "name": "s1eafb40370v（storage 值）",
+          "evidencePath": "raw/browser/storage.json"
+        },
+        {
+          "id": "value-0012",
+          "kind": "http-response",
+          "name": "响应正文（http://127.0.0.1:48080/4baa81443f20/0f2b14d699）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000002"
+        },
+        {
+          "id": "value-0013",
+          "kind": "http-response",
+          "name": "响应正文（http://127.0.0.1:48080/4baa81443f20/6bd45ecb6b）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000004"
+        },
+        {
+          "id": "value-0014",
+          "kind": "header",
+          "name": "x-2eeb22da-csrf（请求头）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000004"
+        },
+        {
+          "id": "value-0015",
+          "kind": "http-request-body",
+          "name": "请求正文（POST http://127.0.0.1:48080/4baa81443f20/0f2b14d699）",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "evidenceId": "http-000002"
+        }
+      ],
+      "edges": [
+        {
+          "from": "value-0001",
+          "to": "value-0002",
+          "relation": "propagated-to",
+          "evidencePath": "raw/browser/storage.json"
+        },
+        {
+          "from": "value-0002",
+          "to": "value-0003",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0002",
+          "to": "value-0004",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0002",
+          "to": "value-0005",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0002",
+          "to": "value-0006",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0002",
+          "to": "value-0007",
+          "relation": "propagated-to",
+          "evidencePath": "raw/websocket/ws-0001/metadata.json",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0012",
+          "to": "value-0010",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0013",
+          "to": "value-0009",
+          "relation": "propagated-to",
+          "evidencePath": "raw/websocket/ws-0001/metadata.json",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0013",
+          "to": "value-0011",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0010",
+          "to": "value-0014",
+          "relation": "propagated-to",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0011",
+          "to": "value-0009",
+          "relation": "propagated-to",
+          "evidencePath": "raw/websocket/ws-0001/metadata.json",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0008",
+          "to": "value-0015",
+          "relation": "used-in",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        },
+        {
+          "from": "value-0015",
+          "to": "value-0008",
+          "relation": "derived-from",
+          "evidencePath": "raw/http/transactions.jsonl",
+          "replaySubstitution": true
+        }
+      ]
+    },
+    "ai/missing-evidence.json": {
+      "schemaVersion": "2.0.0",
+      "captureIntegrity": "COMPLETE",
+      "items": []
+    },
+    "catalog/channels.json": {
+      "schemaVersion": "2.0.0",
+      "channels": [
+        {
+          "id": "ws-0001",
+          "kind": "websocket",
+          "url": "ws://127.0.0.1:48080/4baa81443f20/eed11298e3?t=76a0f653f5e653e37ab1c852ae71a9f8",
+          "targetId": "target-page-0001",
+          "createdAt": "2026-09-18T14:35:31+08:00",
+          "closedAt": "2026-09-18T14:35:38+08:00",
+          "frameCounts": {
+            "up": 2,
+            "down": 5
+          },
+          "payloadPath": "raw/websocket/ws-0001/frames.bin"
+        }
+      ]
+    },
+    "replay/manifest.json": {
+      "schemaVersion": "2.0.0",
+      "replayable": true,
+      "clockPolicy": "deterministic-accelerated",
+      "requests": [
+        {
+          "requestId": "http-000002",
+          "url": "http://127.0.0.1:48080/4baa81443f20/0f2b14d699",
+          "method": "POST",
+          "requiresDynamicValueIds": [
+            "value-0008"
+          ]
+        },
+        {
+          "requestId": "http-000004",
+          "url": "http://127.0.0.1:48080/4baa81443f20/6bd45ecb6b",
+          "method": "POST",
+          "requiresDynamicValueIds": [
+            "value-0002",
+            "value-0010"
+          ]
+        }
+      ],
+      "channels": [
+        {
+          "channelId": "ws-0001",
+          "kind": "websocket",
+          "framesIndexPath": "raw/websocket/ws-0001/frames.index.jsonl",
+          "requiresDynamicValueIds": [
+            "value-0002",
+            "value-0013",
+            "value-0011"
+          ]
+        }
+      ]
+    },
+    "raw/http/transactions.jsonl": [
+      {
+        "id": "http-000001",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:23+08:00",
+        "method": "GET",
+        "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+        "resourceType": "document",
+        "requestHeaders": {},
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "1833",
+          "content-type": "text/html; charset=utf-8",
+          "keep-alive": "timeout=5"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "d9f0b5337e8e1c194d83d4cc34ddaf7119211ec04df0e9cf036528b453381fda",
+          "bytes": 1833,
+          "path": "raw/http/bodies/d9f0b5337e8e1c194d83d4cc34ddaf7119211ec04df0e9cf036528b453381fda"
+        },
+        "initiator": {
+          "type": "other"
+        },
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      },
+      {
+        "id": "http-000002",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:24+08:00",
+        "method": "POST",
+        "url": "http://127.0.0.1:48080/4baa81443f20/0f2b14d699",
+        "resourceType": "xhr",
+        "requestHeaders": {
+          "content-type": "application/json"
+        },
+        "requestBody": {
+          "sha256": "e4c985cac41af14b5f2621235867c5d9dffcc6381f4506900dc96ce142ccacd3",
+          "bytes": 105,
+          "path": "raw/http/bodies/e4c985cac41af14b5f2621235867c5d9dffcc6381f4506900dc96ce142ccacd3"
+        },
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "108",
+          "content-type": "application/json",
+          "keep-alive": "timeout=5",
+          "set-cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252; Path=/"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "c100aceb52250f2282acc779f3dd24ece8ddd7f53815a7542086dd7a480033b6",
+          "bytes": 108,
+          "path": "raw/http/bodies/c100aceb52250f2282acc779f3dd24ece8ddd7f53815a7542086dd7a480033b6"
+        },
+        "initiator": {
+          "type": "script",
+          "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+          "lineNumber": 12,
+          "stackTrace": [
+            {
+              "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+              "functionName": "submitLogin",
+              "lineNumber": 12
+            }
+          ]
+        },
+        "referer": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      },
+      {
+        "id": "http-000003",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:25+08:00",
+        "method": "GET",
+        "url": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+        "resourceType": "document",
+        "requestHeaders": {
+          "cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252"
+        },
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "1017",
+          "content-type": "text/html; charset=utf-8",
+          "keep-alive": "timeout=5"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "8f58eb465948bec4a6739eaf1a2f81bf8f16d01ac7262e7a48de07b0cb3c0c96",
+          "bytes": 1017,
+          "path": "raw/http/bodies/8f58eb465948bec4a6739eaf1a2f81bf8f16d01ac7262e7a48de07b0cb3c0c96"
+        },
+        "initiator": {
+          "type": "other"
+        },
+        "referer": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      },
+      {
+        "id": "http-000004",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:26+08:00",
+        "method": "POST",
+        "url": "http://127.0.0.1:48080/4baa81443f20/6bd45ecb6b",
+        "resourceType": "xhr",
+        "requestHeaders": {
+          "cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252",
+          "x-2eeb22da-csrf": "8fd65901138f8f3f772be90788121d2c"
+        },
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "100",
+          "content-type": "application/json",
+          "keep-alive": "timeout=5"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "fd65ca3778e370132d40480ce9c525a379d2b8be17781a9735ac67551d650c16",
+          "bytes": 100,
+          "path": "raw/http/bodies/fd65ca3778e370132d40480ce9c525a379d2b8be17781a9735ac67551d650c16"
+        },
+        "initiator": {
+          "type": "script",
+          "url": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+          "lineNumber": 18,
+          "stackTrace": [
+            {
+              "url": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+              "functionName": "HTMLButtonElement.click",
+              "lineNumber": 18
+            }
+          ]
+        },
+        "referer": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      },
+      {
+        "id": "http-000005",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:27+08:00",
+        "method": "GET",
+        "url": "http://127.0.0.1:48080/4baa81443f20/8109a05e47.html",
+        "resourceType": "document",
+        "requestHeaders": {
+          "cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252"
+        },
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "695",
+          "content-type": "text/html; charset=utf-8",
+          "keep-alive": "timeout=5"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "fcdd8d4e621dc2112b0b0a39e2f20d7ab1e8e475e7fc5408a7c6e91dc5b41e8e",
+          "bytes": 695,
+          "path": "raw/http/bodies/fcdd8d4e621dc2112b0b0a39e2f20d7ab1e8e475e7fc5408a7c6e91dc5b41e8e"
+        },
+        "initiator": {
+          "type": "script",
+          "url": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+          "lineNumber": 18
+        },
+        "referer": "http://127.0.0.1:48080/4baa81443f20/935f1859fd.html",
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      },
+      {
+        "id": "http-000006",
+        "targetId": "target-page-0001",
+        "frameId": "frame-0001",
+        "windowId": "window-0001",
+        "startedAt": "2026-09-18T14:35:28+08:00",
+        "method": "GET",
+        "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+        "resourceType": "script",
+        "requestHeaders": {
+          "cookie": "m7d61c4a3=d4c7df4e79a8c8ab21394a44b4626252"
+        },
+        "status": 200,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "205",
+          "content-type": "application/javascript; charset=utf-8",
+          "keep-alive": "timeout=5"
+        },
+        "contentEncoding": null,
+        "responseBody": {
+          "sha256": "0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1",
+          "bytes": 205,
+          "path": "raw/http/bodies/0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1"
+        },
+        "initiator": {
+          "type": "parser",
+          "url": "http://127.0.0.1:48080/4baa81443f20/8109a05e47.html",
+          "lineNumber": 14
+        },
+        "referer": "http://127.0.0.1:48080/4baa81443f20/8109a05e47.html",
+        "timing": {
+          "sendMs": 1,
+          "waitMs": 4,
+          "receiveMs": 7
+        },
+        "connectionId": "conn-0001",
+        "remoteIpAddress": "127.0.0.1",
+        "remotePort": 48080
+      }
+    ],
+    "raw/scripts/index.json": {
+      "schemaVersion": "2.0.0",
+      "scripts": [
+        {
+          "id": "script-net-0001",
+          "kind": "network-script",
+          "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+          "targetId": "target-page-0001",
+          "bodyRef": {
+            "sha256": "0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1",
+            "bytes": 205,
+            "path": "raw/http/bodies/0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1"
+          }
+        },
+        {
+          "id": "script-worker-0001",
+          "kind": "worker",
+          "url": "http://127.0.0.1:48080/4baa81443f20/c17edef64c.js",
+          "targetId": "target-worker-0001",
+          "createdBy": "target-page-0001",
+          "bodyRef": {
+            "sha256": "0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1",
+            "bytes": 205,
+            "path": "raw/http/bodies/0043b9f37a197d204dc3dba4e19118684cdc896bbc4bd8a48a6451e26d9c0fd1"
+          }
+        },
+        {
+          "id": "script-inline-0000",
+          "kind": "inline",
+          "url": "http://127.0.0.1:48080/4baa81443f20/58c19b1607.html",
+          "targetId": "target-page-0001",
+          "createdBy": "target-page-0001",
+          "bodyRef": {
+            "sha256": "d1c7c62cdac6942806757b538390e88189508c34078875b86e8ff8c9a2c3dc59",
+            "bytes": 1257,
+            "path": "raw/scripts/files/d1c7c62cdac6942806757b538390e88189508c34078875b86e8ff8c9a2c3dc59"
+          }
+        },
+        {
+          "id": "script-inline-0001",
+          "kind": "inline",
+          "url": "http://127.0.0.1:48080/4baa81443f20/8109a05e47.html",
+          "targetId": "target-page-0001",
+          "createdBy": "target-page-0001",
+          "bodyRef": {
+            "sha256": "32b0d0500f07ed6b7ada481c74ed9f236532050b7a15e4d17ece02cbcba7d15b",
+            "bytes": 469,
+            "path": "raw/scripts/files/32b0d0500f07ed6b7ada481c74ed9f236532050b7a15e4d17ece02cbcba7d15b"
+          }
+        }
+      ]
+    },
+    "catalog/relations.jsonl": [
+      {
+        "from": "target-page-0001",
+        "to": "http-000001",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:23+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "http-000002",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:24+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "http-000003",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:25+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "http-000004",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:26+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "http-000005",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:27+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "http-000006",
+        "relation": "initiated",
+        "occurredAt": "2026-09-18T14:35:28+08:00",
+        "evidencePath": "raw/http/transactions.jsonl"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "target-worker-0001",
+        "relation": "created",
+        "occurredAt": "2026-09-18T14:35:29+08:00",
+        "evidencePath": "catalog/targets.json"
+      },
+      {
+        "from": "target-page-0001",
+        "to": "ws-0001",
+        "relation": "opened",
+        "occurredAt": "2026-09-18T14:35:31+08:00",
+        "evidencePath": "catalog/channels.json"
+      },
+      {
+        "from": "value-0001",
+        "to": "value-0002",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:32+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0002",
+        "to": "value-0003",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:25+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0002",
+        "to": "value-0004",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:26+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0002",
+        "to": "value-0005",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:27+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0002",
+        "to": "value-0006",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:28+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0002",
+        "to": "value-0007",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:31+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0012",
+        "to": "value-0010",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T06:35:24.007Z",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0013",
+        "to": "value-0009",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:31+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0013",
+        "to": "value-0011",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T06:35:26.007Z",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0010",
+        "to": "value-0014",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:26+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0011",
+        "to": "value-0009",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:31+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0008",
+        "to": "value-0015",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:24+08:00",
+        "evidencePath": "ai/value-flow.json"
+      },
+      {
+        "from": "value-0015",
+        "to": "value-0008",
+        "relation": "value-flow",
+        "occurredAt": "2026-09-18T14:35:24+08:00",
+        "evidencePath": "ai/value-flow.json"
+      }
+    ]
+  }
+}

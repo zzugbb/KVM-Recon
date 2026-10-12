@@ -21,4 +21,4 @@ KVM-Recon 在机房内访问 BMC 管理口。Capture Pack 2.0 **未脱敏**，�
 
 ## 发布产物
 
-GitHub Releases 中的 macOS / Windows 安装包未使用 Apple / 微软付费开发者证书。macOS 为 ad-hoc 签名，下载后若提示无法验证开发者，在「系统设置 → 隐私与安全性」中允许即可。Windows 无 Authenticode 签名，SmartScreen 若拦截，选择「更多信息 → 仍要运行」。签名与发布详情见[发布指南](docs/releasing.md)，现场操作见[现场指南](docs/field-guide.md)。下载后请核对 checksum，并只从本仓库 Releases 获取安装包。
+仅从本仓库 [GitHub Releases](https://github.com/zzugbb/KVM-Recon/releases) 获取安装包，并核对 `SHA256SUMS.txt`。当前签名状态与安装提示集中在[发布指南](docs/releasing.md#产物)，使用步骤见[现场指南](docs/field-guide.md)。

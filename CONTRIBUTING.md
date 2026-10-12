@@ -45,10 +45,6 @@ npm run test:e2e
 6. 使用仓库里的 PR 模板。
 7. 若改了 Capture Pack 2.0 导出结构，请同步 `schema/2.0/` 和 `examples/capture-pack-v2/`，并运行样例一致性测试。真实凭据必须进入导出包，但不得进入仓库样例。
 
-## Dependabot
+## 展示站与发布
 
-依赖与 GitHub Actions 的版本更新由 Dependabot 开 Pull Request，CI 通过后由维护者合并。
-
-## 发布
-
-0.3.0 已发布；后续版本按 `docs/releasing.md`：把 `[Unreleased]` 收成新版本章节，同步 `package.json` 与锁文件版本，验证并提交到 `main` 后由维护者创建对应标签和 GitHub Release。试构建可在 Actions 中运行 **Build installers**。
+展示站独立运行，文案、素材及页面变更按[展示说明](showcase/README.md)检查，不启动真实机器采集。应用安装包与版本发布按[发布指南](docs/releasing.md)处理；依赖与 GitHub Actions 更新由 Dependabot 开 PR，维护者核对 CI 后合并。

@@ -2,11 +2,12 @@
 
 按任务选择入口：
 
+- **先看项目展示**：[展示站说明](../showcase/README.md) → 定位、系统架构、内部工作流程、合成案例与证据浏览；实际采集仍需桌面客户端。
 - **了解项目与下载**：[中文首页](../README.md) / [English](../README.en.md) → [安装包](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0)。
 - **现场采集**：[现场指南](field-guide.md) → 采集、收尾、手动导出与异常恢复。
 - **离场后分析**：[采集包阅读指南](capture-pack-guide.md) → 包内 `00_START_HERE.md` → 完整度与证据索引。
 - **开发与贡献**：[贡献指南](../CONTRIBUTING.md) → [开发规范](v0.3-development-spec.md) → [Schema](../schema/2.0/README.md) / [合成样例](../examples/README.md)。
-- **核对项目状态**：[项目状态与验证基线](status.md)。
+- **核对架构与状态**：[系统架构与技术实现](status.md#系统架构与技术实现) / [项目状态与验证基线](status.md)。
 - **构建与发布**：[发布指南](releasing.md) → [版本记录](../CHANGELOG.md)。
 - **反馈与安全**：[普通问题](https://github.com/zzugbb/KVM-Recon/issues/new/choose) / [安全说明](../SECURITY.md)；协作遵循[行为准则](../CODE_OF_CONDUCT.md)。
 
