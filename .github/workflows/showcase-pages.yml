@@ -21,7 +21,7 @@ jobs:
           node-version-file: .nvmrc
       - run: npm --prefix showcase test
       - run: npm --prefix showcase run build
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: showcase/out
   deploy:
@@ -37,4 +37,4 @@ jobs:
     steps:
       - name: Deploy GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
