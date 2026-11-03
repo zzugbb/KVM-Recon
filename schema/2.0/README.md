@@ -1,6 +1,6 @@
 # Capture Pack 2.0 JSON Schema
 
-> 适用于 Capture Pack 2.0 / KVM-Recon 0.3.1。旧格式从已发布 Git 标签查阅。
+> 适用于 Capture Pack 2.0。Schema 版本独立于应用补丁版本；旧格式从已发布 Git 标签查阅。
 
 本目录是 Capture Pack 2.0 的独立 JSON Schema（33 个），方便出机房后用任意校验器核对 zip 内文件。
 数据规范见[开发规范](../../docs/v0.3-development-spec.md)；类型契约是 `src/core/capture-pack-v2/types.ts`。
