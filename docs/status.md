@@ -50,18 +50,21 @@ flowchart TD
 
 ## 验证基线
 
-本基线适用于 **0.3.1 发布准备**，核验日期为 **2026-11-03**。验证环境为 macOS arm64 / Electron 45.2.0；以下结论仅覆盖列出的场景。复验命令见[贡献指南](../CONTRIBUTING.md)，打包与发布门禁见[发布指南](releasing.md)。
+本基线适用于已发布的 **0.3.1**（buildId `dd3cc85a7dfcf34a`），核验日期为 **2026-11-03**。本地验证环境为 macOS arm64 / Electron 45.2.0；以下结论仅覆盖列出的场景。复验命令见[贡献指南](../CONTRIBUTING.md)，打包与发布门禁见[发布指南](releasing.md)。
 
 | 验证面 | 当前结论 | 覆盖范围 |
 | --- | --- | --- |
 | 源码与依赖 | 通过 | 独立源码快照执行 `npm ci`；类型检查、单测、构建及样例一致性检查；包内文档检查覆盖 Unix / Windows 路径、真实缺失及空产物 |
 | 采集与导出 | 通过 | Electron E2E：启动、popup、生产采集、异常关窗、Mock 登录 / Viewer / 双向 WS、ZIP 自校验与动态值 Replay |
-| 持续绘帧收尾 | 通过 | 真实 Chromium 持续 rAF 记录落盘期间仍自动收尾并导出 `COMPLETE + KVM_REACHED`；旧指纹逻辑在同一场景按预期超时 |
+| 持续绘帧收尾 | 通过 | Chromium 持续 rAF 回归通过，旧逻辑负向对照按预期超时；用户确认原问题设备新版复测通过，对应现场包记录为 `COMPLETE + KVM_REACHED` |
 | 现场语料回放 | 通过 | 三份代表 HAR 的离线 HTTP 回放；不执行真实设备登录，不证明实时视频通道兼容 |
 | macOS arm64 包体 | 通过 | 应用目录打包、版本 / buildId / ASAR 内容、深度签名、隔离启动与包内采集导出；随包文档链接检查已纳入发布门禁 |
+| GitHub 发布 | 已发布 | [v0.3.1 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1) 已包含 macOS x64 / arm64、Windows x64 安装包和 `SHA256SUMS.txt`；产物上传不等同于各平台安装验收 |
 | 文档与公开展示 | 通过 | 本地文档链接；展示站 8 项测试、根路径及 Pages 子路径的桌面 / 手机交互；本地视频解码与抽帧文字核对，素材范围见[视频说明](assets/README.md) |
 
-**待验证范围：**新版 Windows 与 macOS x64 安装包、GitHub 实际发布与 Pages 部署、远端 720p 视频，以及持续绘帧问题设备的新版复测。macOS arm64 应用目录验证不等同于 DMG 安装验收，路径模拟测试不等同于 Windows 安装验收；旧版真机和安装反馈不作为新版通过依据。
+**待验证范围：**新版 Windows 与 macOS x64 安装运行、Pages 线上部署验收、远端 720p 视频。macOS arm64 应用目录验证不等同于 DMG 安装验收，路径模拟测试不等同于 Windows 安装验收；旧版真机和安装反馈不作为新版通过依据。
+
+**已知问题：**收尾前的补充探测期间仍可能接纳新 HTTP 请求，随后事件排空时间不足，导致已接纳请求的响应正文未保存，结果为 `INCOMPLETE_BODY_MISSING`。此竞态已由现场包与 NetLog 对照确认，尚未修复；与持续绘帧重置稳定窗口是两个独立问题。需补齐在途请求的有界收尾及回归测试，保留超时缺口判定。
 
 其他设备 / 固件、复杂 popup / OOPIF / ServiceWorker 及真实 WebRTC / WebTransport 尚无同等级真机验证。WebTransport 只记录生命周期并报告 payload 缺口，通道目录存在不代表完整采集。
 
