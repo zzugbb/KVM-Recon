@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node e2e/launch-app.mjs && node e2e/popup-native-window.mjs && node e2e/capture-controller.mjs && node e2e/capture-controller.mjs --close-before-assert && node e2e/mock-kvm-browser-flow.mjs && node e2e/mock-kvm-collector-flow.mjs && node e2e/field-har-replay.mjs && node e2e/protocol-fixture-replay.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:packaged-docs": "node scripts/verify-packaged-docs.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -84,6 +85,11 @@
       "LICENSE",
       "README.md",
       "README.en.md",
+      "CHANGELOG.md",
+      "CONTRIBUTING.md",
+      "CODE_OF_CONDUCT.md",
+      "SECURITY.md",
+      "showcase/README.md",
       "docs/**/*",
       "!docs/assets/**/*.mp4",
       "examples/**/*",

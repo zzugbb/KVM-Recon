@@ -22,7 +22,7 @@
 
 ## 发布到 GitHub Releases
 
-当前源码已准备 **0.3.1**；实际发布日期以 GitHub Release 为准，无需在发布后再修改版本文档。发布说明直接复制 [CHANGELOG 的 0.3.1 章节](../CHANGELOG.md#031---2026-11-03)。
+本次发布版本为 **0.3.1**，标签为 **`v0.3.1`**。发布说明直接复制 [CHANGELOG 的 0.3.1 章节](../CHANGELOG.md#031---2026-11-03)。
 
 1. 将版本准备提交推送到 `main`，确认该提交的 CI 通过。`package.json`、`package-lock.json` 和 CHANGELOG 章节须对应同一版本。
 2. 打开 GitHub **Releases → Draft a new release**，创建新标签 **`v0.3.1`**，目标选已包含版本准备提交的 `main`，标题填写 **`KVM-Recon v0.3.1`**，粘贴更新日志后点击 **Publish release**。不要复用 `v0.3.0`，无需手工上传安装包。
@@ -31,9 +31,7 @@
 
 仅创建草稿或推送标签不会自动构建；自动构建在发布 Release 后触发。手动运行同样要求对应 Release 已存在。工作流检查标签对应的源码、应用版本和 CHANGELOG 章节，并将包内 buildId 固定为该标签的提交，手动补传也不会误用运行工作流分支的提交号。依赖安装后会显式安装 Electron 二进制。
 
-仓库里的 `CHANGELOG.md` 是版本历史：计划在后续安装包发布的功能、行为修复或安全变化写在 `[Unreleased]`；纯文档整理及不改变应用行为的依赖维护无需逐项记录或更新版本号。GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
-
-下一版重复上述步骤，使用新的版本号和标签。若某次构建成功但 Release 上没有安装包，在 Actions 打开 **Release** → Run workflow，填同一个已有标签即可补传。
+版本变更先记入 `CHANGELOG.md` 的 `[Unreleased]`，发版时归入对应版本及日期。下一版更新版本号和标签后重复上述流程；纯文档整理及不改变应用行为的依赖维护无需单独发版。
 
 ## 只构建、不发版
 
@@ -47,7 +45,7 @@ npm run electron:install
 npm run package:mac
 ```
 
-Windows 安装包请用 GitHub 的 Windows runner（**Build installers** 或 **Release**），避免在 macOS 上交叉编译。产物目录为 `release/`。
+Windows 安装包请用 GitHub 的 Windows runner（**Build installers** 或 **Release**），避免在 macOS 上交叉编译。产物目录为 `release/`。构建后运行 `npm run verify:packaged-docs`，检查实际 ASAR 内的文档相对链接；GitHub 打包与发布流程会在上传前执行同一检查。
 
 如以后启用 Apple Developer ID / 公证或 Windows 签名，证书通过仓库 Secrets 配置，不提交到 Git。
 

@@ -205,6 +205,13 @@ async function run() {
       async () => handle.capturedFrames().filter(frame => frame.direction === 'up').length >= 1,
     );
 
+    // 原问题回归：在真实 Chromium 中持续调用 rAF，观察器必须不断落盘，
+    // 但不得重置稳定窗口。并行 30 个循环避免低帧率 CI 无法产生周期上报。
+    await wc.executeJavaScript(`(() => {
+      function frame() { requestAnimationFrame(frame); }
+      for (let i = 0; i < 30; i++) requestAnimationFrame(frame);
+    })()`);
+
     // Viewer 活动信号（§7.3）必须从会话事实识别出来。
     // 服务端先看到上行帧、会话通道事实稍后落齐，按会话事实等待（不按服务端观察）
     let signals = [];
@@ -226,6 +233,12 @@ async function run() {
 
     await session.stop();
     const dir = session.workspace.dir;
+    const surfaces = jsonl(await readFile(join(dir, 'raw/browser/render-surfaces.jsonl'), 'utf8'));
+    const raf = surfaces.filter(row => row.surface === 'request-animation-frame');
+    if (raf.length < 4 || !raf.some(row => Number(row.detail) >= 1230)) {
+      throw new Error('持续 rAF 回归场景没有产生足够的周期绘帧证据');
+    }
+    console.log(`continuous rAF auto-stop verified: ${raf.length} persisted observations`);
     const events = jsonl(await readFile(join(dir, 'raw/cdp/events.jsonl'), 'utf8'));
     const transactions = jsonl(await readFile(join(dir, 'raw/http/transactions.jsonl'), 'utf8'));
 

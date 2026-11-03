@@ -21,6 +21,8 @@ jobs:
       - run: npm run build
       - name: electron-builder macOS
         run: npx electron-builder --mac --publish never
+      - name: Verify packaged documentation
+        run: npm run verify:packaged-docs
       - uses: actions/upload-artifact@v7
         with:
           name: kvm-recon-macos
@@ -48,6 +50,8 @@ jobs:
       - run: npm run build
       - name: electron-builder Windows
         run: npx electron-builder --win --publish never
+      - name: Verify packaged documentation
+        run: npm run verify:packaged-docs
       - uses: actions/upload-artifact@v7
         with:
           name: kvm-recon-windows
