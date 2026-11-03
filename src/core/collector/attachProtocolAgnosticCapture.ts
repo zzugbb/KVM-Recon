@@ -64,7 +64,7 @@ function internalScriptSource(name: string, source: string): string {
  * 以及在途 HTTP 请求的完成事件（responseReceived / loadingFinished /
  * loadingFailed / extraInfo）——收尾截断在途请求的完成事实等于把未完成
  * 请求伪装成「无正文语义」（规范 §14 条 3）。
- * requestWillBeSent 不放开：drain 期不追踪新请求。
+ * requestWillBeSent 只允许已接纳请求的重定向续跳；drain 期不追踪独立新请求。
  */
 const DRAIN_METHODS = new Set([
   'Target.attachedToTarget',
@@ -151,6 +151,7 @@ export interface AttachProtocolAgnosticCaptureInput {
   networkEnableTimeoutMs?: number;
   rootCommandTimeoutMs?: number;
   bodyCommandTimeoutMs?: number;
+  httpDrainTimeoutMs?: number;
 }
 
 /**
@@ -170,7 +171,7 @@ export interface BrowserStateStepOutcome {
 
 export interface AttachedCapture {
   drain(): Promise<void>;
-  /** 之后到达的 CDP 事件不再写入工作区。 */
+  /** 停止接纳独立新请求；在途完成事件、重定向及实时尾帧仍可排空落盘。 */
   stopAccepting(): void;
   /** Cookie / Storage / IndexedDB / CacheStorage 快照 + 收尾截图与 DOM 快照；stopAccepting 之后、finalize 之前调用。返回各步骤成败明细。 */
   snapshotBrowserState(): Promise<BrowserStateStepOutcome>;
@@ -462,6 +463,7 @@ export async function attachProtocolAgnosticCapture(
   let navigationSeen = false;
   const rootCommandTimeoutMs = input.rootCommandTimeoutMs ?? DEFAULT_ROOT_COMMAND_TIMEOUT_MS;
   const bodyCommandTimeoutMs = input.bodyCommandTimeoutMs ?? DEFAULT_BODY_COMMAND_TIMEOUT_MS;
+  const httpDrainTimeoutMs = input.httpDrainTimeoutMs ?? 5_000;
 
   function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -495,7 +497,9 @@ export async function attachProtocolAgnosticCapture(
       }
       return;
     }
-    if (phase === 'drain' && method && !DRAIN_METHODS.has(method)) {
+    const drainingRedirect = phase === 'drain' && method === 'Network.requestWillBeSent' &&
+      isRecord(params?.redirectResponse);
+    if (phase === 'drain' && method && !DRAIN_METHODS.has(method) && !drainingRedirect) {
       input.evidence.droppedEvent(method, new Error('drain 阶段丢弃事件（收尾中不落盘）'));
       return;
     }
@@ -526,6 +530,16 @@ export async function attachProtocolAgnosticCapture(
     }
     const run = async () => {
       try {
+        if (drainingRedirect) {
+          // 在事件链内判断：截止前的首跳可能还排在队列里。仅延续尚在途的
+          // 已接纳请求，不能凭一个无关联的 redirectResponse 开始新请求。
+          const chain = requestChains.get(scopedId(stringValue(params?.requestId), sessionId));
+          const previousId = chain?.at(-1);
+          if (!previousId || !input.http.inFlightHops().some(hop => hop.id === previousId)) {
+            input.evidence.droppedEvent(method!, new Error('drain 阶段重定向缺少已接纳的在途请求'));
+            return;
+          }
+        }
         await work();
       } catch (error) {
         // 事件链失败显式记账：不吞、不中断后续事件
@@ -1704,7 +1718,7 @@ export async function attachProtocolAgnosticCapture(
       }
       // Debugger.enable 的 scriptParsed 可能略晚于命令返回（CDP 推送无完成
       // 信号，无法用 Promise 门控确定性等待）。此处是有界收尾宽限：只补
-      // 迟到的脚本/目标事件，50ms 后到达的事件由 enqueueEvent 显式记账丢弃。
+      // 迟到的脚本/目标事件；HTTP 完成事件另按下方预算等待。
       await new Promise(resolve => setTimeout(resolve, 50));
       for (let round = 0; round < 20; round += 1) {
         const events = eventQueue;
@@ -1712,6 +1726,18 @@ export async function attachProtocolAgnosticCapture(
         await events;
         await sources;
         if (eventQueue === events && sourceQueue === sources) break;
+      }
+      // 排空队列不等于网络请求完成。停止接纳新请求后，给已接纳的非持续
+      // 请求固定完成预算；重定向不重置预算，流式响应不参与等待。
+      // 多根附件共享 HTTP collector，并行排空时共同等在途集合清空。
+      // 超时不伪造 loadingFailed：后续 http.flush 仍据真实缺失记 INCOMPLETE。
+      const httpDeadline = performance.now() + httpDrainTimeoutMs;
+      while (input.http.pendingNonStreamingHops().length > 0 && performance.now() < httpDeadline) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(25, Math.max(1, httpDeadline - performance.now()))));
+        const events = eventQueue;
+        const sources = sourceQueue;
+        await events;
+        await sources;
       }
       // loadingFinished 的延迟提交计时器收口（responseReceivedExtraInfo 竞态）：
       // 计时器最迟一个宽限后自行提交，此处只等其触发，不引入新的等待源

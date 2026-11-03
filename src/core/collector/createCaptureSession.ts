@@ -63,6 +63,8 @@ export interface CaptureSessionInit extends JobWorkspaceInit {
   /** CDP 命令挂死反例可注入短超时；生产使用 attach 层默认预算。 */
   rootCommandTimeoutMs?: number;
   bodyCommandTimeoutMs?: number;
+  /** 收尾时等待已接纳的非持续 HTTP 请求完成的预算；超时仍按缺口导出。 */
+  httpDrainTimeoutMs?: number;
 }
 
 const EMPTY_IF_MISSING_JSONL = [
@@ -580,6 +582,7 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
             rootOpenerTargetId: context?.openerTargetId,
             rootCommandTimeoutMs: init.rootCommandTimeoutMs,
             bodyCommandTimeoutMs: init.bodyCommandTimeoutMs,
+            httpDrainTimeoutMs: init.httpDrainTimeoutMs,
           });
         } catch (error) {
           // 挂载中途失败（enable 序列某步抛出）：附件被丢弃，但已进共享

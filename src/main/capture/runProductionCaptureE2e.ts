@@ -26,6 +26,7 @@ import { PRODUCTION_CAPTURE_E2E_PASSED } from './evaluateProductionCaptureE2eExi
 const VIEWER_JS_MARKER = 'kvm-recon-e2e-viewer-js';
 const POPUP_HTML_MARKER = 'kvm-recon-e2e-popup-html';
 const POST_TOKEN = 'e2e-secret-token';
+const STOP_RACE_BODY = '{"stopRace":"late response preserved"}';
 
 export const FIELD_HAR_REPLAY_E2E_PASSED = 'field har replay e2e passed';
 
@@ -57,9 +58,18 @@ export async function runProductionCaptureE2e() {
   const zipDir = await mkdtemp(join(tmpdir(), 'kvm-recon-e2e-zip-'));
   const posted = { received: false };
   const popupLoaded = { received: false };
+  let stopRaceObservedInFlight = false;
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = String(req.url || '/');
+    if (url === '/stop-race') {
+      // 重现现场时序：收尾补充探测期间发起，超过旧 50ms 排空宽限才响应。
+      setTimeout(() => {
+        res.setHeader('content-type', 'application/json');
+        res.end(STOP_RACE_BODY);
+      }, 500);
+      return;
+    }
     if (url.startsWith('/viewer-app.js')) {
       res.setHeader('content-type', 'application/javascript; charset=utf-8');
       res.end(`window.__viewerAppLoaded = true; // ${VIEWER_JS_MARKER}`);
@@ -113,6 +123,19 @@ export async function runProductionCaptureE2e() {
   let e2eProbeCalls = 0;
   const e2eProbe = async (): Promise<ProbeBmcTargetResult> => {
     e2eProbeCalls += 1;
+    if (e2eProbeCalls === 2 && !isE2eCaptureCloseBeforeAssert()) {
+      const popup = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().includes('/popup'));
+      if (!popup) throw new Error('收尾竞态场景缺少 popup');
+      await popup.webContents.executeJavaScript("void fetch('/stop-race').catch(() => {})");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (controller.session.pendingNonStreamingRequests().some(hop => hop.url.endsWith('/stop-race'))) {
+          stopRaceObservedInFlight = true;
+          break;
+        }
+        await sleep(10);
+      }
+      if (!stopRaceObservedInFlight) throw new Error('收尾竞态场景没有观察到在途请求');
+    }
     return {
       basic: { host: '127.0.0.1', port, scheme: 'http', vendor: '', product: '', firmwareVersion: '' },
       redfish: {
@@ -196,7 +219,7 @@ export async function runProductionCaptureE2e() {
   const transactionRows = transactions
     .split('\n')
     .filter(Boolean)
-    .map(line => JSON.parse(line) as { url: string; method: string; requestBody?: { path: string; sha256: string } });
+    .map(line => JSON.parse(line) as { id: string; url: string; method: string; requestBody?: { path: string; sha256: string }; responseBody?: { path: string; sha256: string } });
   const postRequest = transactionRows.find(
     row => row.method.toUpperCase() === 'POST' && row.url.includes('/form-target'),
   );
@@ -224,8 +247,15 @@ export async function runProductionCaptureE2e() {
     .filter(Boolean)
     .map(line => JSON.parse(line) as { kind?: string });
   const closeBeforeAssert = isE2eCaptureCloseBeforeAssert();
+  const stopRace = transactionRows.find(row => row.url.endsWith('/stop-race'));
 
   const failures = [
+    !closeBeforeAssert && (!stopRaceObservedInFlight || zipEntries.get(stopRace?.responseBody?.path ?? '') !== STOP_RACE_BODY)
+      ? '收尾补充探测期间接纳的请求未保存完整响应正文'
+      : '',
+    !closeBeforeAssert && controller.session.integrityEvidence().missingBodies.some(gap => gap.id === stopRace?.id)
+      ? '收尾竞态回归不应产生响应正文缺口'
+      : '',
     !posted.received ? 'target=_blank POST 未到达服务端' : '',
     e2eProbeCalls !== 2
       ? `并发 stop 收尾序列重复执行（probe 跑了 ${e2eProbeCalls} 次，应为 start 1 次 + stop 1 次）`

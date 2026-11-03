@@ -25,7 +25,7 @@ async function newRootDir(): Promise<string> {
 async function startSession(
   options: Parameters<typeof startCaptureSession>[0],
 ): Promise<CaptureSession> {
-  const session = await startCaptureSession(options);
+  const session = await startCaptureSession({ httpDrainTimeoutMs: 100, ...options });
   sessions.push(session);
   return session;
 }
@@ -1143,6 +1143,96 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect(session.integrityEvidence().missingBodies).toEqual([]);
   });
 
+  it.each([false, true])('收尾等待超过旧宽限的响应，保留完整正文（重定向=%s）', async redirect => {
+    const rootDir = await newRootDir();
+    const session = await startSession({ jobId: 'job-late-response', rootDir, safetyMarginBytes: 1, httpDrainTimeoutMs: 2_000 });
+    const main = createFakeCdp();
+    const popup = createFakeCdp({ responseBodies: { 'req-late': { body: 'late response payload' } } });
+    await session.attachCdp(main.cdp, { targetId: 'target-root' });
+    await session.attachCdp(popup.cdp, { targetId: 'target-popup', windowRole: 'popup', openerTargetId: 'target-root' });
+    popup.emit('Network.requestWillBeSent', {
+      requestId: 'req-late', type: 'XHR',
+      request: { method: 'GET', url: 'http://bmc.test/poll', headers: {} },
+    });
+    const stop = session.stop();
+    // 已入队的请求也必须计入等待；收尾后独立的新请求不能延长采集。
+    popup.emit('Network.requestWillBeSent', {
+      requestId: 'req-new', type: 'XHR',
+      request: { method: 'GET', url: 'http://bmc.test/new', headers: {} },
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (redirect) {
+      popup.emit('Network.requestWillBeSent', {
+        requestId: 'req-late', type: 'XHR',
+        redirectResponse: { status: 302, headers: { location: '/poll-result' } },
+        request: { method: 'GET', url: 'http://bmc.test/poll-result', headers: {} },
+      });
+      // 不可借一个未跟踪的 redirectResponse 创建新采集链。
+      popup.emit('Network.requestWillBeSent', {
+        requestId: 'req-untracked', type: 'XHR', redirectResponse: { status: 302, headers: {} },
+        request: { method: 'GET', url: 'http://bmc.test/untracked', headers: {} },
+      });
+    }
+    popup.emit('Network.responseReceived', {
+      requestId: 'req-late', response: { status: 200, headers: {}, mimeType: 'application/json' },
+    });
+    popup.emit('Network.loadingFinished', { requestId: 'req-late', encodedDataLength: 21 });
+    await stop;
+    const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    expect(rows).toHaveLength(redirect ? 2 : 1);
+    const last = rows.at(-1)!;
+    expect(last.status).toBe(200);
+    expect(last.responseBody).toMatchObject({ sha256: sha256Hex('late response payload') });
+    const body = last.responseBody as { path: string };
+    expect((await session.workspace.readArtifact(body.path)).toString()).toBe('late response payload');
+    expect(session.integrityEvidence().missingBodies).toEqual([]);
+    if (redirect) {
+      expect(rows[0]).toMatchObject({ status: 302, redirectToId: last.id });
+      expect(last.redirectFromId).toBe(rows[0].id);
+    }
+  });
+
+  it.each(['EventSource', 'text/event-stream', 'multipart/x-mixed-replace'])('持续 HTTP 流不占用在途请求收尾等待：%s', async kind => {
+    const session = await startSession({ jobId: 'job-stream-drain', rootDir: await newRootDir(), safetyMarginBytes: 1, httpDrainTimeoutMs: 2_000 });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp);
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-stream', type: kind === 'EventSource' ? kind : 'XHR',
+      request: { method: 'GET', url: 'http://bmc.test/events', headers: {} },
+    });
+    const started = performance.now();
+    const stop = session.stop();
+    if (kind !== 'EventSource') {
+      // 截止时尚无响应头，排空期间才确认为持续流，也不能等到完整响应结束。
+      await new Promise(resolve => setTimeout(resolve, 200));
+      fake.emit('Network.responseReceived', {
+        requestId: 'req-stream', response: { status: 200, headers: { 'content-type': kind }, mimeType: kind },
+      });
+    }
+    await stop;
+    expect(performance.now() - started).toBeLessThan(1_500);
+    if (kind !== 'EventSource') {
+      const rows = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+      expect(rows[0].status).toBe(200);
+    }
+  });
+
+  it('在途请求延迟 loadingFailed 后按真实失败收口，不伪报正文缺失', async () => {
+    const session = await startSession({ jobId: 'job-late-failure', rootDir: await newRootDir(), safetyMarginBytes: 1, httpDrainTimeoutMs: 2_000 });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp);
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'req-failure', type: 'XHR',
+      request: { method: 'GET', url: 'http://bmc.test/failure', headers: {} },
+    });
+    const stop = session.stop();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    fake.emit('Network.loadingFailed', { requestId: 'req-failure', errorText: 'net::ERR_CONNECTION_RESET' });
+    await stop;
+    expect(jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'))).toHaveLength(1);
+    expect(session.integrityEvidence().missingBodies).toEqual([]);
+  });
+
   it('drain 期不追踪新请求：requestWillBeSent 显式记账丢弃，不新增事务行', async () => {
     const rootDir = await newRootDir();
     const session = await startSession({
@@ -1185,7 +1275,10 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
       type: 'XHR',
       request: { method: 'GET', url: 'http://bmc.test/api/pending', headers: {} },
     });
+    const started = performance.now();
     await session.stop();
+    expect(performance.now() - started).toBeGreaterThanOrEqual(100);
+    expect(performance.now() - started).toBeLessThan(1_500);
 
     // status=null（从未有完成事件）不构成「明确无正文语义」（规范 §14 条 3）：
     // 必须显式作证缺失，不得静默放行 COMPLETE
