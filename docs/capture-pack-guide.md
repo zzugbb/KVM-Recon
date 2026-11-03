@@ -1,6 +1,6 @@
 # Capture Pack 2.0 阅读指南
 
-适用于 KVM-Recon 0.3.1 导出的采集包，面向离场后的工程师与获授权的 AI。现场操作见[现场指南](field-guide.md)，完整数据契约见[开发规范](v0.3-development-spec.md)。
+适用于 KVM-Recon 0.3.2 导出的采集包，面向离场后的工程师与获授权的 AI。现场操作见[现场指南](field-guide.md)，完整数据契约见[开发规范](v0.3-development-spec.md)。
 
 ## 先确认包与状态
 

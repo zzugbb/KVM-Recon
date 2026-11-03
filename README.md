@@ -15,7 +15,7 @@
   <a href="https://zzugbb.github.io/KVM-Recon/">在线展示</a> ·
   <a href="#项目演示">视频演示</a> ·
   <a href="https://zzugbb.github.io/KVM-Recon/#cases">合成案例</a> ·
-  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1">下载安装包</a> ·
+  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.2">下载安装包</a> ·
   <a href="docs/status.md#系统架构与技术实现">架构</a> ·
   <a href="docs/README.md">文档</a> ·
   <a href="CONTRIBUTING.md">贡献</a>
@@ -31,13 +31,13 @@ KVM-Recon 是面向无公网机房的 macOS / Windows 桌面客户端：记录�
 
 采集不依赖厂商、型号或协议族规则。工具负责留下证据，不自动登录、不做 MITM、不调用机房外 AI、不生成 Adapter，也不解码完整视频协议。原始资料**未脱敏**，只在受控环境保存和交接。
 
-当前应用版本为 **0.3.1**。历史 0.2.x 的旧包与 YES / PARTIAL / NO 结果不能当作 2.0 完整度结论。
+当前应用版本为 **0.3.2**。历史 0.2.x 的旧包与 YES / PARTIAL / NO 结果不能当作 2.0 完整度结论。
 
 ## 项目演示
 
 约 96 秒项目介绍视频，下方可直接播放 720p 版本（约 9.9 MB）；1080p 原片供下载。
 
-视频保留制作时的概念演示与合成案例，技术栈截图中的依赖版本属于历史快照；片头终端动画不是可执行的 CLI 命令。当前 0.3.1 的操作与自动收尾规则以[现场指南](docs/field-guide.md)为准，素材范围见[视频说明](docs/assets/README.md)。
+视频保留制作时的概念演示与合成案例，技术栈截图中的依赖版本属于历史快照；片头终端动画不是可执行的 CLI 命令。当前 0.3.2 的操作与自动收尾规则以[现场指南](docs/field-guide.md)为准，素材范围见[视频说明](docs/assets/README.md)。
 
 https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
 
@@ -78,7 +78,7 @@ flowchart LR
 
 ## 下载与使用
 
-从 [v0.3.1 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1) 下载 macOS / Windows 安装包，并核对 `SHA256SUMS.txt`。
+从 [v0.3.2 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.2) 下载 macOS / Windows 安装包，并核对 `SHA256SUMS.txt`。
 
 当前 macOS 为 ad-hoc 签名、未公证；Windows 无 Authenticode 签名。下载后可能提示未知开发者 / 发布者，处理方式见[安装与签名说明](docs/releasing.md#产物)。
 

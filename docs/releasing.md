@@ -22,12 +22,12 @@
 
 ## 发布到 GitHub Releases
 
-本次发布版本为 **0.3.1**，标签为 **`v0.3.1`**。发布说明直接复制 [CHANGELOG 的 0.3.1 章节](../CHANGELOG.md#031---2026-11-03)。
+本次发布版本为 **0.3.2**，标签为 **`v0.3.2`**。发布说明直接复制 [CHANGELOG 的 0.3.2 章节](../CHANGELOG.md#032---2026-11-03)。
 
 1. 将版本准备提交推送到 `main`，确认该提交的 CI 通过。`package.json`、`package-lock.json` 和 CHANGELOG 章节须对应同一版本。
-2. 打开 GitHub **Releases → Draft a new release**，创建新标签 **`v0.3.1`**，目标选已包含版本准备提交的 `main`，标题填写 **`KVM-Recon v0.3.1`**，粘贴更新日志后点击 **Publish release**。不要复用 `v0.3.0`，无需手工上传安装包。
+2. 打开 GitHub **Releases → Draft a new release**，创建新标签 **`v0.3.2`**，目标选已包含版本准备提交的 `main`，标题填写 **`KVM-Recon v0.3.2`**，粘贴更新日志后点击 **Publish release**。不要复用旧标签，无需手工上传安装包。
 3. 发布 Release 会触发 **Release** workflow，按该标签的源码构建 macOS x64 / arm64 和 Windows x64 安装包，上传到该 Release，最后生成 `SHA256SUMS.txt`。等待三个 job 全部通过后再下载安装包。触发方式依据 [GitHub 的 release.published 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)。
-4. 如需重跑，在 **Actions → Release → Run workflow** 中填写已有标签 **`v0.3.1`**。同标签发布任务串行运行；上传会替换同名附件。
+4. 如需重跑，在 **Actions → Release → Run workflow** 中填写已有标签 **`v0.3.2`**。同标签发布任务串行运行；上传会替换同名附件。
 
 仅创建草稿或推送标签不会自动构建；自动构建在发布 Release 后触发。手动运行同样要求对应 Release 已存在。工作流检查标签对应的源码、应用版本和 CHANGELOG 章节，并将包内 buildId 固定为该标签的提交，手动补传也不会误用运行工作流分支的提交号。依赖安装后会显式安装 Electron 二进制。
 
