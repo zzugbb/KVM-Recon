@@ -22,22 +22,14 @@
 
 ## 发布到 GitHub Releases
 
-0.3.0 已于 2026-09-28 [正式发布](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0)。以下流程供后续版本使用：维护者可先用下文 **Build installers** 试构建；将版本变更提交到 `main`，确认本地验收和该提交的 CI 均通过后，再创建对应 Release 和标签。实际发布日期以 GitHub Release 为准。
+当前源码已准备 **0.3.1**；实际发布日期以 GitHub Release 为准，无需在发布后再修改版本文档。发布说明直接复制 [CHANGELOG 的 0.3.1 章节](../CHANGELOG.md#031---2026-11-03)。
 
-当前 Release workflow 用 `gh release upload` 上传附件，**要求 GitHub Release 已经存在**。只打 tag 并推送不够：没有对应 Release 时，构建产物无法挂上。
+1. 将版本准备提交推送到 `main`，确认该提交的 CI 通过。`package.json`、`package-lock.json` 和 CHANGELOG 章节须对应同一版本。
+2. 打开 GitHub **Releases → Draft a new release**，创建新标签 **`v0.3.1`**，目标选已包含版本准备提交的 `main`，标题填写 **`KVM-Recon v0.3.1`**，粘贴更新日志后点击 **Publish release**。不要复用 `v0.3.0`，无需手工上传安装包。
+3. 发布 Release 会触发 **Release** workflow，按该标签的源码构建 macOS x64 / arm64 和 Windows x64 安装包，上传到该 Release，最后生成 `SHA256SUMS.txt`。等待三个 job 全部通过后再下载安装包。触发方式依据 [GitHub 的 release.published 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)。
+4. 如需重跑，在 **Actions → Release → Run workflow** 中填写已有标签 **`v0.3.1`**。同标签发布任务串行运行；上传会替换同名附件。
 
-顺序：
-
-```text
-核对版本与发布说明
-→ 提交 main
-→ 创建 GitHub Release/tag
-→ workflow 构建并上传附件
-```
-
-1. 核对 `package.json` 与 `package-lock.json` 的版本一致，`CHANGELOG.md` 有对应版本章节，并把待发布变更提交到 `main`。Release workflow 会校验标签、版本和 CHANGELOG 章节。
-2. 创建 GitHub Release（标签如 `vX.Y.Z`，目标分支 `main`），填写标题和说明。不要在网页上上传 dmg/exe。
-3. 标签匹配 `v*` 后，workflow 会构建安装包并挂到**已有** Release，再附 `SHA256SUMS.txt`。也可在 Actions 里手动运行 **Release**，填写同一个已有标签（例如 `vX.Y.Z`）。
+仅创建草稿或推送标签不会自动构建；自动构建在发布 Release 后触发。手动运行同样要求对应 Release 已存在。工作流检查标签对应的源码、应用版本和 CHANGELOG 章节。依赖安装后会显式安装 Electron 二进制。
 
 仓库里的 `CHANGELOG.md` 是版本历史：计划在后续安装包发布的功能、行为修复或安全变化写在 `[Unreleased]`；纯文档整理及不改变应用行为的依赖维护无需逐项记录或更新版本号。GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
 
@@ -51,6 +43,7 @@
 
 ```bash
 npm ci
+npm run electron:install
 npm run package:mac
 ```
 

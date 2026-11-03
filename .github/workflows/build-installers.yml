@@ -15,6 +15,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Install Electron binary
+        run: npm run electron:install
+        timeout-minutes: 5
       - run: npm run build
       - name: electron-builder macOS
         run: npx electron-builder --mac --publish never
@@ -39,6 +42,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Install Electron binary
+        run: npm run electron:install
+        timeout-minutes: 5
       - run: npm run build
       - name: electron-builder Windows
         run: npx electron-builder --win --publish never

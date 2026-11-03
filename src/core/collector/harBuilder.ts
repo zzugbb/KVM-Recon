@@ -11,13 +11,15 @@ import { mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { APP_VERSION } from '../../version';
+
 import type { JobWorkspace } from '../job-workspace/createJobWorkspace';
 import type { PackV2BodyRef, PackV2HttpTransactionRow } from '../capture-pack-v2/types';
 
 export const HAR_PATH = 'raw/http/session.har';
 const TRANSACTIONS_PATH = 'raw/http/transactions.jsonl';
 
-export const HAR_CREATOR = { name: 'KVM-Recon', version: '0.3.0' };
+export const HAR_CREATOR = { name: 'KVM-Recon', version: APP_VERSION };
 
 /** 可作为 UTF-8 文本内嵌的 MIME；其他正文按原始字节 Base64 编码。 */
 const TEXTUAL_MIME = /(?:^text\/|json|xml|javascript|ecmascript|x-www-form-urlencoded|yaml|csv|html|svg|plain)/i;

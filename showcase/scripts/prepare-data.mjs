@@ -17,6 +17,6 @@ const files={};for(const p of selected)files[p]=await json(p);
 files['raw/http/transactions.jsonl']=await rows('raw/http/transactions.jsonl');
 files['raw/scripts/index.json']=await json('raw/scripts/index.json');
 files['catalog/relations.jsonl']=await rows('catalog/relations.jsonl');
-const data={version:'0.3.0',source:'固定 seed Mock KVM：fetch / WebSocket 实际驱动，浏览器及运行时事实为合成装配；不是完整 Electron 实采或真机验收。',complete,incomplete:{...incomplete,scenario:fixture.scenario,fixtureId:fixture.id},files};
+const data={version:files['manifest.json'].tool.version,source:'固定 seed Mock KVM：fetch / WebSocket 实际驱动，浏览器及运行时事实为合成装配；不是完整 Electron 实采或真机验收。',complete,incomplete:{...incomplete,scenario:fixture.scenario,fixtureId:fixture.id},files};
 await writeFile(new URL('cases.json',dest),JSON.stringify(data,null,2)+'\n');
 console.log('Prepared audited public Mock excerpts and actual integrity-engine failure result.');

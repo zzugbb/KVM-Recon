@@ -15,7 +15,7 @@
   <a href="https://zzugbb.github.io/KVM-Recon/">Showcase</a> ·
   <a href="#project-demo">Video</a> ·
   <a href="https://zzugbb.github.io/KVM-Recon/#cases">Cases</a> ·
-  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0">Download</a> ·
+  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1">Download</a> ·
   <a href="docs/status.md#系统架构与技术实现">Architecture</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
@@ -31,7 +31,7 @@ KVM-Recon is an offline macOS / Windows desktop client for server rooms without 
 
 Capture does not rely on vendor, model or protocol-family rules. The tool does not automate login, perform MITM, call external AI, generate adapters or fully decode video protocols. Original evidence is **unredacted** and must remain in controlled storage and handoff channels.
 
-The application version is **0.3.0**. Historical 0.2.x packs and YES / PARTIAL / NO results are not Capture Pack 2.0 integrity verdicts. The client UI and detailed guides are Chinese.
+The application version is **0.3.1**. Historical 0.2.x packs and YES / PARTIAL / NO results are not Capture Pack 2.0 integrity verdicts. The client UI and detailed guides are Chinese.
 
 ## Project demo
 
@@ -76,7 +76,7 @@ The diagram shows the main modules and data relationships; observation, storage 
 
 ## Download and use
 
-Get macOS / Windows installers from the [v0.3.0 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.0), and verify `SHA256SUMS.txt`.
+Get macOS / Windows installers from the [v0.3.1 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1), and verify `SHA256SUMS.txt`.
 
 macOS builds are ad-hoc signed without notarization; Windows builds have no Authenticode signature. Downloads may show unknown developer / publisher prompts; see [installation and signing](docs/releasing.md#产物).
 

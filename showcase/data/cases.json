@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.3.1",
   "source": "固定 seed Mock KVM：fetch / WebSocket 实际驱动，浏览器及运行时事实为合成装配；不是完整 Electron 实采或真机验收。",
   "complete": {
     "schemaVersion": "2.0.0",
@@ -105,7 +105,7 @@
       "schemaVersion": "2.0.0",
       "tool": {
         "name": "KVM-Recon",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "buildId": "sample"
       },
       "job": {
@@ -205,7 +205,7 @@
       },
       "tool": {
         "name": "KVM-Recon",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "buildId": "sample"
       },
       "status": {

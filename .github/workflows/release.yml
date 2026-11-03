@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -14,8 +13,12 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
 env:
-  TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+  TAG_NAME: ${{ github.event.inputs.tag || github.event.release.tag_name }}
 
 jobs:
   release-mac:
@@ -53,6 +56,9 @@ jobs:
             exit 1
           fi
       - run: npm ci
+      - name: Install Electron binary
+        run: npm run electron:install
+        timeout-minutes: 5
       - run: npm run build
       - name: Build macOS packages
         run: npx electron-builder --mac --publish never
@@ -104,6 +110,9 @@ jobs:
             exit 1
           fi
       - run: npm ci
+      - name: Install Electron binary
+        run: npm run electron:install
+        timeout-minutes: 5
       - run: npm run build
       - name: Build unsigned Windows packages
         run: npx electron-builder --win --publish never
@@ -147,5 +156,6 @@ jobs:
           gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir dist-rel --pattern '*' --clobber
           cd dist-rel
           rm -f SHA256SUMS.txt
-          sha256sum $(find . -maxdepth 1 -type f | sort) > SHA256SUMS.txt
+          files=(./*)
+          sha256sum "${files[@]}" > SHA256SUMS.txt
           gh release upload "$TAG_NAME" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
