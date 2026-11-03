@@ -2,9 +2,9 @@ name: Showcase Pages
 on:
   push:
     branches: [main]
-    paths: ['showcase/**', '.github/workflows/showcase-pages.yml']
+    paths: ['showcase/**', 'package.json', 'examples/capture-pack-v2/**', '.nvmrc', '.github/workflows/showcase-pages.yml']
   pull_request:
-    paths: ['showcase/**', '.github/workflows/showcase-pages.yml']
+    paths: ['showcase/**', 'package.json', 'examples/capture-pack-v2/**', '.nvmrc', '.github/workflows/showcase-pages.yml']
   workflow_dispatch:
 permissions:
   contents: read

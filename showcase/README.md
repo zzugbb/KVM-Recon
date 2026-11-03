@@ -32,7 +32,7 @@ npm --prefix showcase run preview:pages # 构建产物预览，端口 3101 /KVM-
 
 ## GitHub Pages
 
-[发布工作流](https://github.com/zzugbb/KVM-Recon/blob/main/.github/workflows/showcase-pages.yml)在 main 上展示目录或工作流变化时检查、构建并发布，PR 仅检查，支持手动运行。首次将仓库 **Settings → Pages → Source** 设置为 **GitHub Actions**。站点地址为 [zzugbb.github.io/KVM-Recon](https://zzugbb.github.io/KVM-Recon/)，是否已上线以对应部署结果为准。
+[发布工作流](https://github.com/zzugbb/KVM-Recon/blob/main/.github/workflows/showcase-pages.yml)在 main 上展示目录、应用版本文件、公开样例、Node.js 版本或工作流变化时检查、构建并发布，PR 仅检查，支持手动运行。首次将仓库 **Settings → Pages → Source** 设置为 **GitHub Actions**。站点地址为 [zzugbb.github.io/KVM-Recon](https://zzugbb.github.io/KVM-Recon/)，是否已上线以对应部署结果为准。
 
 资源使用相对路径，案例数据相对模块 URL 加载；无需 SPA 路由回退、后端或额外 Secrets。仅上传 `showcase/out/`。修复或回滚 main 后重新发布，核对工作流、实际地址和线上交互；本地验证不替代线上检查。
 

@@ -16,7 +16,7 @@ npm run build
 npm run test:e2e
 ```
 
-`npm test` 含单测和离线采集/导出闭环。`npm run test:e2e` 覆盖 Electron 启动、原生 popup、生产采集 Controller、主/弹窗、请求正文、脚本、窗口血缘和 ZIP 自校验，需要先 `npm run build`。现场 HAR 回放属于 `test:e2e`：设置 `KVM_RECON_FIELD_COLLECTION_2` 指向本机语料目录；需全量回放时再设置 `KVM_RECON_FIELD_HAR_ALL=1`，未设置目录则跳过。
+`npm test` 含单测、离线采集/导出闭环及打包检查脚本回归。`npm run test:e2e` 覆盖 Electron 启动、原生 popup、生产采集 Controller、主/弹窗、请求正文、脚本、窗口血缘和 ZIP 自校验，需要先 `npm run build`。现场 HAR 回放属于 `test:e2e`：设置 `KVM_RECON_FIELD_COLLECTION_2` 指向本机语料目录；需全量回放时再设置 `KVM_RECON_FIELD_HAR_ALL=1`，未设置目录则跳过。
 
 ## 可以做的改动
 
