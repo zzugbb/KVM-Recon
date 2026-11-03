@@ -770,7 +770,7 @@ export const OBSERVER_SCRIPT_SOURCE = `(function () {
   // 组合（§7.3 KVM 判定合取的第 2 组事实）。CDP worker target 行不带 opener
   // 血缘归属，页面侧构造事实补上这一面。
   // rAF 稀疏上报（第 1、30 次回调，其后每 600 次）：持续渲染事实在场而
-  // 不过量刷行——密集上报会让活动指纹永不稳定，自动收尾永不触发（§7.4）。
+  // 不过量刷行。rAF 证据不参与稳定窗口指纹，持续绘帧不应阻止自动收尾（§7.4）。
 
   function installRenderSurfaceHook() {
     function reportSurface(surface, detail) {

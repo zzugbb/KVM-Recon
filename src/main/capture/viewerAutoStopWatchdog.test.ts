@@ -153,6 +153,34 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     expect(harness.getFacts.mock.calls.length).toBe(calls);
   });
 
+  it('Viewer 每 10 秒上报 rAF：持续绘帧期间仍在稳定窗口通过后收尾', () => {
+    const facts = viewerFacts({
+      renderSurfaces: [renderSurface({ surface: 'request-animation-frame', detail: '30' })],
+    });
+    const harness = setupDeps(facts);
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+
+    vi.advanceTimersByTime(10_000);
+    harness.setFacts({
+      ...facts,
+      renderSurfaces: [
+        ...facts.renderSurfaces,
+        renderSurface({
+          id: 'render-0002',
+          occurredAt: at(12_000),
+          surface: 'request-animation-frame',
+          detail: '630',
+        }),
+      ],
+    });
+    vi.advanceTimersByTime(4_000);
+    expect(harness.autoStop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.autoStop).toHaveBeenCalledTimes(1);
+  });
+
   it('窗口内新动作出现 → 重置稳定窗口，不提前收尾', () => {
     const harness = setupDeps(viewerFacts());
     const watchdog = createViewerAutoStopWatchdog(harness.deps);

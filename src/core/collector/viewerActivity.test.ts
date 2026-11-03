@@ -434,6 +434,27 @@ describe('detectViewerActivity（§7.3 信号）', () => {
 });
 
 describe('activityFingerprint（稳定窗口重置依据）', () => {
+  it('持续 rAF 绘帧保留 Viewer 信号，但不改变稳定窗口指纹', () => {
+    const base = viewerActivityFacts();
+    const rafOnly = {
+      ...base,
+      renderSurfaces: base.renderSurfaces.map(surface => ({
+        ...surface,
+        surface: 'request-animation-frame' as const,
+      })),
+    };
+    const continuing = {
+      ...rafOnly,
+      renderSurfaces: [
+        ...rafOnly.renderSurfaces,
+        renderSurface({ id: 'render-0002', surface: 'request-animation-frame', detail: '630' }),
+      ],
+    };
+    expect(detectViewerActivity(rafOnly)).toHaveLength(1);
+    expect(detectViewerActivity(continuing)).toHaveLength(1);
+    expect(activityFingerprint(continuing)).toBe(activityFingerprint(rafOnly));
+  });
+
   it('只随动作 / target / 通道 / 导航 / 渲染表面计数变化，事务增长不改变指纹', () => {
     const base = viewerActivityFacts();
     const first = activityFingerprint(base);

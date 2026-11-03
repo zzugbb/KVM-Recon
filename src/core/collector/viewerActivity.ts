@@ -178,8 +178,12 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
 /**
  * 活动指纹（§7.4 稳定窗口重置依据）：动作 / target / 通道 / 导航 / 渲染表面计数。
  * 新 target、通道、导航、渲染表面或用户动作出现 → 指纹变化 → 稳定窗口重置；
- * 事务行增长（后台轮询流量）不重置窗口。
+ * rAF 是已有表面的持续绘帧证据，不代表新建表面，不重置窗口。
+ * 事务行增长（后台轮询流量）也不重置窗口。
  */
 export function activityFingerprint(facts: WorkflowFacts): string {
-  return `${facts.actions.length}/${facts.targets.length}/${facts.channels.length}/${facts.navigations.length}/${facts.renderSurfaces.length}`;
+  const newSurfaceCount = facts.renderSurfaces.filter(
+    surface => surface.surface !== 'request-animation-frame',
+  ).length;
+  return `${facts.actions.length}/${facts.targets.length}/${facts.channels.length}/${facts.navigations.length}/${newSurfaceCount}`;
 }
