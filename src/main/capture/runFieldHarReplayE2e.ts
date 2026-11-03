@@ -1,6 +1,6 @@
 /**
  * 现场 HAR 回放 E2E（规范 §20 的现场语料版）：
- * 把 0.2.x 时代的真实现场语料（HAR）在本地回放给 0.3.0 新链路采集，
+ * 把 0.2.x 时代的真实现场语料（HAR）在本地回放给 Capture Pack 2.0 链路采集，
  * 断言新包是旧语料的超集——
  * - 所有资源 URL 均在 catalog/resources.jsonl（>24 个资源反例）；
  * - 每个响应正文 SHA-256 逐条目相等（>1 MiB 文本 / >2 MiB 大正文无上限）；
@@ -18,6 +18,8 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { APP_VERSION } from '../../version';
 
 import { parseChecksumsManifest, sha256OfContent } from '../../core/export/checksumsManifest';
 import { PACK_V2_CHECKSUMS_PATH, verifyPackV2Zip } from '../../core/export/exportPackV2Zip';
@@ -241,7 +243,7 @@ export async function runFieldHarReplayE2e(harPath: string) {
     jobId: 'e2e-field-har-replay',
     workspacesRootDir: workspacesRoot,
     target: { host: '127.0.0.1', port, scheme: 'http', originalInput: harPath },
-    tool: { version: '0.3.0-dev', buildId: 'e2e-field' },
+    tool: { version: `${APP_VERSION}-dev`, buildId: 'e2e-field' },
     probeRunner: e2eProbe,
     netlog: createElectronNetlogSource(),
   });

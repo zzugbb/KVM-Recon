@@ -7,3 +7,12 @@ test('complete excerpt uses original verified public sample',()=>assert.deepEqua
 test('failure result keeps exact ten gates and explicit worker gap',()=>{assert.equal(data.incomplete.captureIntegrity,'INCOMPLETE');assert.deepEqual(data.incomplete.reasons,['INCOMPLETE_WORKER_SOURCE']);assert.equal(data.incomplete.gates.length,10);assert.deepEqual(data.incomplete.gates.filter(g=>!g.passed).map(g=>g.id),['scripts-workers-wasm-complete']);});
 test('public data limited to intentional sample files and local Mock addresses',()=>{assert.equal(Object.keys(data.files).length,11);assert.equal(data.files['manifest.json'].target.host,'127.0.0.1');for(const row of data.files['raw/http/transactions.jsonl'])assert.equal(new URL(row.url).hostname,'127.0.0.1');assert.deepEqual(data.files['ai/index.json'].webrtcChannelIds,[]);assert.deepEqual(data.files['ai/index.json'].webtransportChannelIds,[]);});
 test('relative assets work under a GitHub Pages project path',async()=>{const html=await readFile(new URL('../index.html',import.meta.url),'utf8');assert.match(html,/href="\.\/styles.css"/);assert.match(html,/src="\.\/app.js"/);const js=await readFile(new URL('../app.js',import.meta.url),'utf8');assert.match(js,/new URL\('\.\/data\/cases.json',import.meta.url\)/);for(const path of ['workflow','cases','capabilities','pack'])assert.ok(html.includes(`id="${path}"`));});
+test('release links and public sample versions match the application version',async()=>{
+ const app=JSON.parse(await readFile(new URL('../../package.json',import.meta.url),'utf8'));
+ const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
+ const releases=[...html.matchAll(/href="https:\/\/github\.com\/zzugbb\/KVM-Recon\/releases\/tag\/([^"]+)"/g)].map(match=>match[1]);
+ assert.ok(releases.length>=2);
+ assert.ok(releases.every(tag=>tag===`v${app.version}`));
+ assert.equal(data.version,app.version);
+ assert.equal(data.files['manifest.json'].tool.version,app.version);
+});

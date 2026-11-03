@@ -9,6 +9,7 @@
 
 ```bash
 npm ci
+npm run electron:install
 npm run typecheck
 npm test
 npm run build

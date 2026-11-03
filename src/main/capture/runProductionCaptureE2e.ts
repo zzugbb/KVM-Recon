@@ -13,6 +13,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { APP_VERSION } from '../../version';
+
 import { parseChecksumsManifest, sha256OfContent } from '../../core/export/checksumsManifest';
 import { PACK_V2_CHECKSUMS_PATH, verifyPackV2Zip } from '../../core/export/exportPackV2Zip';
 import { readZipEntries } from '../../core/export/readZipEntries';
@@ -137,7 +139,7 @@ export async function runProductionCaptureE2e() {
     jobId: 'e2e-capture-controller',
     workspacesRootDir: workspacesRoot,
     target: { host: '127.0.0.1', port, scheme: 'http', originalInput: `http://127.0.0.1:${port}/` },
-    tool: { version: '0.3.0-dev', buildId: 'e2e' },
+    tool: { version: `${APP_VERSION}-dev`, buildId: 'e2e' },
     probeRunner: e2eProbe,
     netlog: createElectronNetlogSource(),
   });
@@ -286,7 +288,7 @@ export async function runProductionCaptureE2e() {
   }
 
   if (failures.length) {
-    fail(['生产采集链路 E2E（0.3.0 新链路）断言失败', ...failures].join('\n'));
+    fail(['生产采集链路 E2E（Capture Pack 2.0 链路）断言失败', ...failures].join('\n'));
   }
 
   // 包一致性：checksums 清单 + 自身哈希 → 重开逐条目校验

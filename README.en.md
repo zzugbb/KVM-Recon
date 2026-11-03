@@ -37,6 +37,8 @@ The application version is **0.3.1**. Historical 0.2.x packs and YES / PARTIAL /
 
 A 96-second project introduction video. Play the 720p version below (about 9.9 MB), or download the 1080p original.
 
+The video preserves the original concept demonstration and synthetic examples. Dependency versions in its screenshots are historical; the opening terminal animation is not an executable CLI. See the [field guide](docs/field-guide.md) for current 0.3.1 behavior and the [video notes](docs/assets/README.md) for the scope of the footage.
+
 https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
 
 [Download 1080p original](https://github.com/zzugbb/KVM-Recon/raw/refs/heads/main/docs/assets/kvm-recon-promo-v3-1080p.mp4) · [Open interactive showcase](https://zzugbb.github.io/KVM-Recon/)
@@ -93,6 +95,7 @@ Requires Node.js 22+ (see `.nvmrc`) and npm:
 
 ```bash
 npm ci
+npm run electron:install
 npm run dev
 ```
 

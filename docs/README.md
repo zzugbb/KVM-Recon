@@ -2,6 +2,7 @@
 
 按任务选择入口：
 
+- **视频素材与适用范围**：[视频说明](assets/README.md) → 历史概念演示、当前操作依据与素材维护。
 - **先看项目展示**：[展示站说明](../showcase/README.md) → 定位、系统架构、内部工作流程、合成案例与证据浏览；实际采集仍需桌面客户端。
 - **了解项目与下载**：[中文首页](../README.md) / [English](../README.en.md) → [安装包](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.1)。
 - **现场采集**：[现场指南](field-guide.md) → 采集、收尾、手动导出与异常恢复。

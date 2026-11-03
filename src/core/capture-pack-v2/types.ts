@@ -1,5 +1,5 @@
 /**
- * Capture Pack 2.0 数据契约（KVM-Recon 0.3.0）。
+ * Capture Pack 2.0 数据契约（KVM-Recon 0.3.x）。
  *
  * 权威规范：docs/v0.3-development-spec.md。schema/2.0/ 下的 JSON Schema
  * 必须与本文件逐字段同步（规范 §22）；修改类型时同步修改 Schema 与测试。

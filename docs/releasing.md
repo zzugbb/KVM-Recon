@@ -29,7 +29,7 @@
 3. 发布 Release 会触发 **Release** workflow，按该标签的源码构建 macOS x64 / arm64 和 Windows x64 安装包，上传到该 Release，最后生成 `SHA256SUMS.txt`。等待三个 job 全部通过后再下载安装包。触发方式依据 [GitHub 的 release.published 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release)。
 4. 如需重跑，在 **Actions → Release → Run workflow** 中填写已有标签 **`v0.3.1`**。同标签发布任务串行运行；上传会替换同名附件。
 
-仅创建草稿或推送标签不会自动构建；自动构建在发布 Release 后触发。手动运行同样要求对应 Release 已存在。工作流检查标签对应的源码、应用版本和 CHANGELOG 章节。依赖安装后会显式安装 Electron 二进制。
+仅创建草稿或推送标签不会自动构建；自动构建在发布 Release 后触发。手动运行同样要求对应 Release 已存在。工作流检查标签对应的源码、应用版本和 CHANGELOG 章节，并将包内 buildId 固定为该标签的提交，手动补传也不会误用运行工作流分支的提交号。依赖安装后会显式安装 Electron 二进制。
 
 仓库里的 `CHANGELOG.md` 是版本历史：计划在后续安装包发布的功能、行为修复或安全变化写在 `[Unreleased]`；纯文档整理及不改变应用行为的依赖维护无需逐项记录或更新版本号。GitHub Release 说明可从对应版本章节复制。如需要，也可在发版后补记真实发布日期；这不是创建 Release 的前置条件。
 

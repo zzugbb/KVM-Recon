@@ -26,6 +26,8 @@ npm --prefix showcase run preview:pages # 构建产物预览，端口 3101 /KVM-
 - **完整案例**：来自 `examples/capture-pack-v2/`。固定 seed 随机 URL Mock 经 fetch / WebSocket 驱动；浏览器和运行时事实为确定性装配，不是完整 Electron 实采或真机验收。
 - **缺口案例**：`fixture-worker-source-missing` 经项目 `derivePackIntegrity` 实际派生。其他门禁为 Fixture 预设通过，不声称执行了对应 ZIP 导出，也不伪造失败网络请求。
 
+应用版本变更时同步页面下载标签、公开样例与 `data/cases.json`；演示流程中的稳定等待只指关键活动，持续绘帧不会反复重置等待。项目视频单独维护，素材边界见[视频说明](../docs/assets/README.md)。
+
 契约或样例变更后，在根项目依赖已安装的环境运行 `node showcase/scripts/prepare-data.mjs`，再执行上方测试与构建。准备脚本复用根开发依赖 esbuild；访客浏览器和 Pages CI 不执行该脚本、Collector 或完整度引擎。不得把现场目录或用户采集包作为公开素材输入。
 
 ## GitHub Pages

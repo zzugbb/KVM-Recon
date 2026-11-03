@@ -37,6 +37,8 @@ KVM-Recon 是面向无公网机房的 macOS / Windows 桌面客户端：记录�
 
 约 96 秒项目介绍视频，下方可直接播放 720p 版本（约 9.9 MB）；1080p 原片供下载。
 
+视频保留制作时的概念演示与合成案例，技术栈截图中的依赖版本属于历史快照；片头终端动画不是可执行的 CLI 命令。当前 0.3.1 的操作与自动收尾规则以[现场指南](docs/field-guide.md)为准，素材范围见[视频说明](docs/assets/README.md)。
+
 https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
 
 [下载 1080p 原片](https://github.com/zzugbb/KVM-Recon/raw/refs/heads/main/docs/assets/kvm-recon-promo-v3-1080p.mp4) · [打开交互展示](https://zzugbb.github.io/KVM-Recon/)
@@ -93,6 +95,7 @@ HAR 已随包保存，不必另开 Chrome 手工导出。未完整包仍可导�
 
 ```bash
 npm ci
+npm run electron:install
 npm run dev
 ```
 

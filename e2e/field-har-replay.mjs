@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * 现场 HAR 回放 E2E 启动器：用 0.2.x 时代的真实现场语料（HAR）回放给
- * 0.3.0 新链路采集，断言新包是旧语料的超集（大正文无上限、登录口令不脱敏）。
+ * Capture Pack 2.0 链路采集，断言新包是旧语料的超集（大正文无上限、登录口令不脱敏）。
  *
  * 语料目录由 KVM_RECON_FIELD_COLLECTION_2 指定（仓库外，只读）；缺失时跳过
  * （exit 0 + skipped 标记），没有现场数据的环境不阻塞其余 E2E。
