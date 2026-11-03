@@ -4,8 +4,8 @@
  * 通用规则（规范 §6 / §7.3，不依赖厂商 URL / 页面语义）：
  * - LOGIN_REACHED：POST + 请求正文 + 2xx/3xx + 响应 Set-Cookie，且之后的
  *   请求逐字节携带该 name=value（观察到的 cookie 传播）；
- * - KVM_REACHED：用户动作之后，在同一 target 血缘内严格按“导航/popup →
- *   新渲染/执行表面 → 持续双向通道”出现事实（WS 双向帧、WebRTC 双向消息、
+ * - KVM_REACHED：用户动作之后，在同一 target 血缘内打开导航/popup 后，
+ *   出现新渲染/执行表面与持续双向通道，先后不限（WS 双向帧、WebRTC 双向消息、
  *   WebTransport 存在即通道事实）；
  * - 观察脚本钩子失败 = 对应观察面不可信，派生退回保守状态，不用残缺观察
  *   断言更高状态。
@@ -457,13 +457,13 @@ describe('workflowStatus 派生引擎（协议无关，观察事实驱动）', (
     expect(derived.workflowStatus).toBe('TARGET_OPENED');
   });
 
-  it('反例：双向通道晚于导航但早于新渲染表面 → 不拼接倒挂事实', () => {
+  it('双向通道晚于导航但早于新渲染表面，仍可派生 KVM_REACHED', () => {
     const derived = deriveWorkflowStatus({
       ...viewerActivityFacts(),
       renderSurfaces: [renderSurface({ occurredAt: at(1500) })],
       channels: [channel({ id: 'ws-1', createdAt: at(1200) })],
     });
-    expect(derived.workflowStatus).toBe('TARGET_OPENED');
+    expect(derived.workflowStatus).toBe('KVM_REACHED');
   });
 
   it('反例：渲染表面早于动作（登录前就存在的 Canvas）→ 不派生 KVM_REACHED', () => {

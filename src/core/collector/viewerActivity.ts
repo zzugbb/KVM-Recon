@@ -4,7 +4,7 @@
  * 从 WorkflowFacts 识别 Viewer 活动组合信号：用户动作（click / form-submit）
  * 之后，在动作 target 的**血缘集合**（自身 + opener/parent 链后代）
  * 内出现 popup target 或主框架导航，随后新建渲染/执行表面并建立持续双向
- * 通道（动作 → 打开 → 表面 → 通道）。与 workflowStatusEngine 的 KVM_REACHED 派生共用同一
+ * 通道（两者先后不限）。与 workflowStatusEngine 的 KVM_REACHED 派生共用同一
  * 事实组合与钩子失败折扣，不出现两套定义（单测以
  * deriveWorkflowStatus.viewerActivity 对照）。
  *
@@ -96,8 +96,8 @@ function earliestSurfaceEvidence(
  * 识别 Viewer 活动信号（每组动作一条：取最早的合格打开证据与最早的合格通道）。
  * 永不抛出：字段缺失 / 时间不可解析按保守处理，不构成信号。
  * 打开证据（popup / 导航）、渲染表面与通道都必须属动作 target 的血缘集合，
- * 且严格按“动作 → 打开 → 表面 → 通道”排序。任何倒挂都不构成信号，
- * 也不能复用打开前已存在的 Dashboard Canvas。无渲染/执行表面证据
+ * 动作之后打开，表面与通道均不早于打开，但两者初始化顺序不限。
+ * 不能复用打开前已存在的 Dashboard Canvas 或通道。无渲染/执行表面证据
  * （登录后 Dashboard 后台告警 WS）不构成信号（§7.3 四组事实合取）。
  */
 export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal[] {
@@ -143,14 +143,13 @@ export function detectViewerActivity(facts: WorkflowFacts): ViewerActivitySignal
 
     const surface = earliestSurfaceEvidence(facts, lineage, openedAt, brokenHooks);
     if (!surface) continue;
-    const surfaceAt = timeOf(surface.at);
 
     let channel: PackV2ChannelRow | null = null;
     let channelAt = Number.POSITIVE_INFINITY;
     for (const candidate of facts.channels) {
       if (candidate.targetId === null || !lineage.has(candidate.targetId)) continue;
       const at = timeOf(candidate.createdAt);
-      if (at < surfaceAt || at > channelAt) continue;
+      if (at < openedAt || at > channelAt) continue;
       if (!isBidirectionalChannel(candidate, brokenHooks)) continue;
       channel = candidate;
       channelAt = at;

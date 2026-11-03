@@ -153,6 +153,25 @@ describe('viewerAutoStopWatchdog（§7.4 自动收尾）', () => {
     expect(harness.getFacts.mock.calls.length).toBe(calls);
   });
 
+  it('通道先建、表面后到：补齐识别事实后才启动稳定窗口并自动收尾', () => {
+    const snapshot = viewerFacts({
+      channels: [channel({ id: 'ws-1', createdAt: at(2_498) })],
+      renderSurfaces: [],
+    });
+    const harness = setupDeps(snapshot);
+    const watchdog = createViewerAutoStopWatchdog(harness.deps);
+    watchdog.start();
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.captureViewerInitialState).not.toHaveBeenCalled();
+    harness.setFacts({ ...snapshot, renderSurfaces: [renderSurface()] });
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.captureViewerInitialState).toHaveBeenCalledWith('target-root');
+    vi.advanceTimersByTime(VIEWER_STABLE_WINDOW_MS - 1_000);
+    expect(harness.autoStop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(VIEWER_POLL_INTERVAL_MS);
+    expect(harness.autoStop).toHaveBeenCalledTimes(1);
+  });
+
   it('Viewer 每 10 秒上报 rAF：持续绘帧期间仍在稳定窗口通过后收尾', () => {
     const facts = viewerFacts({
       renderSurfaces: [renderSurface({ surface: 'request-animation-frame', detail: '30' })],

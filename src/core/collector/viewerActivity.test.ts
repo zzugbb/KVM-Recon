@@ -3,8 +3,8 @@
  *
  * 信号规则与 workflowStatusEngine 的 KVM_REACHED 派生保持同一事实组合：
  * 用户动作（click / form-submit）的 target 血缘集合（动作 target + 经
- * openerTargetId / parentTargetId 链关联的后代）内，严格按“动作 → 打开或
- * 导航 → 新渲染/执行表面 → 持续双向通道”出现事实（WS 双向帧 / WebRTC
+ * openerTargetId / parentTargetId 链关联的后代）内，动作后打开或导航，
+ * 再出现新渲染/执行表面与持续双向通道，两者先后不限（WS 双向帧 / WebRTC
  * 双向消息 / WebTransport 在场）。
  * 反例约束：
  * - 与 deriveWorkflowStatus 的 viewerActivity 结论必须一致（不出现两套定义，
@@ -173,13 +173,35 @@ describe('detectViewerActivity（§7.3 信号）', () => {
     expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(false);
   });
 
-  it('反例：通道晚于导航但早于新渲染表面 → 零信号', () => {
+  it.each([-300, -2, 0, 300])('打开后通道与表面先后不限：通道相对表面 %s ms', offset => {
     const snapshot = facts({
       ...viewerActivityFacts(),
-      channels: [channel({ id: 'ws-1', createdAt: at(2_200) })],
+      channels: [channel({ id: 'ws-1', createdAt: at(2_500 + offset) })],
     });
-    expect(detectViewerActivity(snapshot)).toHaveLength(0);
-    expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(false);
+    expect(detectViewerActivity(snapshot)).toHaveLength(1);
+    expect(deriveWorkflowStatus(snapshot).viewerActivity).toBe(true);
+  });
+
+  it('popup 内通道早于 Canvas 2ms：识别 Viewer，缺少任一必要事实仍不识别', () => {
+    const snapshot = facts({
+      actions: [action({ occurredAt: at(1_000) })],
+      targets: [target({ id: 'popup', type: 'popup', openerTargetId: 'target-root', attachedAt: at(2_000) })],
+      renderSurfaces: [renderSurface({ targetId: 'popup', occurredAt: at(3_364) })],
+      channels: [channel({ id: 'ws-popup', targetId: 'popup', createdAt: at(3_362) })],
+    });
+    expect(detectViewerActivity(snapshot)[0]).toMatchObject({ openedVia: 'popup', viewerTargetId: 'popup', channelId: 'ws-popup' });
+    expect(deriveWorkflowStatus(snapshot).workflowStatus).toBe('KVM_REACHED');
+    const invalid = [
+      { ...snapshot, actions: [] },
+      { ...snapshot, renderSurfaces: [] },
+      { ...snapshot, channels: [channel({ id: 'ws-popup', targetId: 'popup', createdAt: at(1_999) })] },
+      { ...snapshot, channels: [channel({ id: 'ws-popup', targetId: 'popup', createdAt: at(3_362), frameCounts: { up: 0, down: 10 } })] },
+      { ...snapshot, channels: [channel({ id: 'ws-other', targetId: 'unrelated', createdAt: at(3_362) })] },
+    ];
+    for (const candidate of invalid) {
+      expect(detectViewerActivity(candidate)).toHaveLength(0);
+      expect(deriveWorkflowStatus(candidate).viewerActivity).toBe(false);
+    }
   });
 
   it('反例：render-surface 钩子失败 → 页面侧表面不可信，零信号；WASM 事务（CDP 观察）仍可', () => {

@@ -9,7 +9,7 @@
  *   （观察到的 cookie 传播，不猜登录语义）；
  * - KVM_REACHED：用户动作（click / form-submit）之后，在动作 target 的
  *   血缘集合（自身 + 经 openerTargetId / parentTargetId 链关联的后代）内，
- *   严格按“打开或导航 → 新渲染/执行表面 → 持续双向通道”的顺序出现事实。
+ *   打开或导航之后出现新渲染/执行表面与持续双向通道，两者先后不限。
  *   WS 双向帧 >0、WebRTC 双向消息 >0，或 WebTransport 通道在场（payload
  *   不可观察，存在即通道事实）；SSE / 下载为单向通道，单独不构成；
  * - 否则 TARGET_OPENED。
@@ -319,13 +319,14 @@ function deriveViewerActivity(facts: WorkflowFacts): boolean {
     // 登录前/导航前已存在的 Dashboard Canvas 拼出 Viewer。
     const surfaceAt = earliestRenderSurfaceAt(facts, lineage, openedAt, brokenHooks);
     if (surfaceAt === null) continue;
-    // 通道必须不早于渲染表面：动作 → 打开 → 表面 → 通道。
+    // 通道与渲染表面都必须在打开之后出现；Viewer 可以先连通道再建画布，
+    // 且 CDP 与页面观察器分别上报，不能用两者的毫秒先后否定完整组合。
     if (
       facts.channels.some(
         channel =>
           channel.targetId !== null &&
           lineage.has(channel.targetId) &&
-          timeOf(channel.createdAt) >= surfaceAt &&
+          timeOf(channel.createdAt) >= openedAt &&
           isBidirectionalChannel(channel, brokenHooks),
       )
     ) {
