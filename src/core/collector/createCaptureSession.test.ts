@@ -2728,6 +2728,46 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     }
   });
 
+  it.each(['成功', '失败'])('导航截图超时先记账，封包后迟到%s不再写日志或改变完整度', async outcome => {
+    const session = await startSession({
+      jobId: 'job-late-screenshot', rootDir: await newRootDir(), safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp();
+    const send = fake.cdp.sendCommand.bind(fake.cdp);
+    let screenshotCalls = 0;
+    let finishLate!: () => void;
+    fake.cdp.sendCommand = (command, params, sessionId) => {
+      if (command === 'Page.captureScreenshot' && screenshotCalls++ === 0) {
+        return new Promise((resolve, reject) => {
+          finishLate = () => outcome === '成功'
+            ? resolve({ data: 'bGF0ZS1zY3JlZW5zaG90' })
+            : reject(new Error('Target closed after export'));
+        });
+      }
+      return sessionId ? send(command, params, sessionId) : send(command, params);
+    };
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'http://bmc.test/' } });
+    await until(() => screenshotCalls === 1);
+    try {
+      await session.stop();
+      const before = session.integrityEvidence();
+      const commandsBefore = await session.workspace.readArtifact('raw/cdp/commands.jsonl');
+      const screenshots = jsonl(commandsBefore).filter(row => row.method === 'Page.captureScreenshot');
+      expect(screenshots.filter(row => row.error === 'Page.captureScreenshot timed out')).toHaveLength(1);
+      // 收尾阶段的正常截图依然保存；没有把真正必需的截图缺失改成 COMPLETE。
+      expect(screenshots.some(row => !row.error && row.result)).toBe(true);
+      expect(before.journalWriteFailures).toEqual([]);
+      expect(session.workspace.state).toBe('finalized');
+      finishLate();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(await session.workspace.readArtifact('raw/cdp/commands.jsonl')).toEqual(commandsBefore);
+      expect(session.integrityEvidence()).toEqual(before);
+    } finally {
+      finishLate();
+    }
+  }, 10_000);
+
   it.each([false, true])('跨导航正文保留不可用=%s：仍走原读取链并按实际正文判断缺口', async unavailable => {
     const session = await startSession({
       jobId: `job-durable-${unavailable}`, rootDir: await newRootDir(), safetyMarginBytes: 1,

@@ -686,12 +686,23 @@ export async function attachProtocolAgnosticCapture(
     params?: Record<string, unknown>,
     sessionId?: string,
     earlyRead?: EarlyRead,
+    commandDeadline?: { timeoutMs: number; message: string },
   ): Promise<unknown> {
     const timestamp = earlyRead?.timestamp ?? input.now();
     try {
       const outcome = earlyRead ? await earlyRead.outcome : undefined;
       if (outcome && !outcome.ok) throw outcome.error;
-      const result = outcome?.ok ? outcome.result : await sendCdpCommand(input.cdp, command, params, sessionId);
+      let result: unknown;
+      if (outcome?.ok) {
+        result = outcome.result;
+      } else {
+        const pending = sendCdpCommand(input.cdp, command, params, sessionId);
+        // 截图超时也必须先写入命令日志，再让调用方继续收尾。只对原始
+        // CDP Promise 计时：超时后的迟到结果不再进入下面的日志写入分支。
+        result = commandDeadline
+          ? await awaitWithTimeout(pending, commandDeadline.timeoutMs, commandDeadline.message)
+          : await pending;
+      }
       await input.journal.recordCommand({
         timestamp,
         method: command,
@@ -947,10 +958,9 @@ export async function attachProtocolAgnosticCapture(
     label: string,
   ): Promise<boolean> {
     try {
-      const result = await awaitWithTimeout(
-        loggedSend('Page.captureScreenshot', { format: 'png' }, sessionId),
-        OPTIONAL_CDP_TIMEOUT_MS,
-        'Page.captureScreenshot timed out',
+      const result = await loggedSend(
+        'Page.captureScreenshot', { format: 'png' }, sessionId, undefined,
+        { timeoutMs: OPTIONAL_CDP_TIMEOUT_MS, message: 'Page.captureScreenshot timed out' },
       );
       const data = isRecord(result) ? stringValue(result.data) : '';
       if (!data) throw new Error('captureScreenshot 返回空数据（隐藏窗口可能未渲染）');
