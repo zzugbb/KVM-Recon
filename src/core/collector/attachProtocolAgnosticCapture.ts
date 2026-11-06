@@ -1698,28 +1698,29 @@ export async function attachProtocolAgnosticCapture(
     if (!(typeof input.cdp.isAttached === 'function' && input.cdp.isAttached())) {
       await awaitWithTimeout(input.cdp.attach('1.3'), rootCommandTimeoutMs, 'CDP attach timed out');
     }
+    const enableRootNetwork = async () => {
+      try {
+        // 根窗口/原生弹窗在启用 Network 的同一次命令中配置正文保留。
+        // 禁止在请求已开始后调用 configureDurableMessages：它会关闭
+        // renderer 的正文缓存，而在途请求可能未进入浏览器侧缓存。
+        // 此选项仅用于未被 waitForDebugger 暂停的根附件；Worker 仍走原顺序。
+        await loggedSend('Network.enable', {
+          maxTotalBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
+          maxResourceBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
+          enableDurableMessages: true,
+        });
+      } catch (error) {
+        // 仅能力/参数不兼容回退；超时、断连等实际挂载错误仍由外层处理。
+        if (!/invalid parameters|unknown parameter|unsupported parameter|not supported/i.test(errorMessage(error))) throw error;
+        input.evidence.droppedEvent('Network.enable.durable', error);
+        await loggedSend('Network.enable', {});
+      }
+    };
     await awaitWithTimeout(
-      loggedSend('Network.enable', {}),
+      enableRootNetwork(),
       input.networkEnableTimeoutMs ?? DEFAULT_NETWORK_ENABLE_TIMEOUT_MS,
       'Network.enable timed out before the renderer committed a document',
     );
-    try {
-      // XHR 的 onload 可立即导航；loadingFinished 到达主进程时旧 renderer
-      // 已释放正文，事件到达时预读也来不及。将正文暂存到 renderer 外。
-      // 单独配置根窗口/popup，避免改变暂停中的 Worker 初始化顺序。
-      await awaitWithTimeout(
-        loggedSend('Network.configureDurableMessages', {
-          maxTotalBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
-          maxResourceBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
-        }),
-        OPTIONAL_CDP_TIMEOUT_MS,
-        'Network.configureDurableMessages timed out',
-      );
-    } catch (error) {
-      // 可选能力：旧内核不支持时继续原有读取链，实际漏采仍由 missingBodies
-      // 门禁判定，不能因能力不可用中断原本能完整采集的设备。
-      input.evidence.droppedEvent('Network.configureDurableMessages', error);
-    }
     try {
       await awaitWithTimeout(
         loggedSend('Network.setCacheDisabled', { cacheDisabled: true }),

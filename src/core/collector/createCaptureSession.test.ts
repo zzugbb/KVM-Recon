@@ -2733,12 +2733,23 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
       jobId: `job-durable-${unavailable}`, rootDir: await newRootDir(), safetyMarginBytes: 1,
     });
     const fake = createFakeCdp({
-      failingCommands: unavailable ? ['Network.configureDurableMessages'] : [],
       responseBodies: { available: { body: 'preserved response' } },
       invalidResponseBodyIds: ['missing'],
     });
+    const send = fake.cdp.sendCommand.bind(fake.cdp);
+    const attempts: Array<Record<string, unknown> | undefined> = [];
+    fake.cdp.sendCommand = (command, params, sessionId) => {
+      if (command === 'Network.enable' && !sessionId) {
+        attempts.push(params);
+        if (unavailable && params?.enableDurableMessages) throw new Error('Invalid parameters: enableDurableMessages');
+      }
+      return sessionId ? send(command, params, sessionId) : send(command, params);
+    };
     await session.attachCdp(fake.cdp, { targetId: 'target-root' });
-    expect(fake.commands.indexOf('Network.configureDurableMessages')).toBeGreaterThan(fake.commands.indexOf('Network.enable'));
+    expect(attempts[0]?.enableDurableMessages).toBe(true);
+    expect(attempts).toHaveLength(unavailable ? 2 : 1);
+    if (unavailable) expect(attempts[1]).toEqual({});
+    expect(fake.commands).not.toContain('Network.configureDurableMessages');
     for (const requestId of ['available', 'missing']) {
       fake.emit('Network.requestWillBeSent', { requestId, request: { method: 'GET', url: `http://bmc.test/${requestId}` } });
       fake.emit('Network.responseReceived', { requestId, response: { status: 200, headers: {} } });
@@ -2750,7 +2761,7 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect((await session.workspace.readArtifact(body.path)).toString()).toBe('preserved response');
     expect(transactions.find(row => row.id === 'missing')?.responseBody).toBeUndefined();
     expect(session.integrityEvidence().missingBodies.map(gap => gap.id)).toEqual(['missing']);
-    expect(session.evidence().diagnostics().droppedEventByMethod['Network.configureDurableMessages'] ?? 0).toBe(unavailable ? 1 : 0);
+    expect(session.evidence().diagnostics().droppedEventByMethod['Network.enable.durable'] ?? 0).toBe(unavailable ? 1 : 0);
   });
 
   it('短命脚本在慢 journal 前预读且积压有界，超限按序保存，closed 不再发读命令', async () => {
