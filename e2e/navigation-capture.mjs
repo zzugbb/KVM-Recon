@@ -22,7 +22,7 @@ try {
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH;
   await new Promise((resolve, reject) => {
-    const child = spawn(binary, [appDir, '--no-sandbox', '--disable-gpu'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(binary, [appDir, '--no-sandbox', '--disable-gpu', ...process.argv.slice(2)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {
       output += String(chunk);

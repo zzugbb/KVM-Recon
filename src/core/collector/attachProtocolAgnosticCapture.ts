@@ -48,6 +48,8 @@ const DEFAULT_BODY_COMMAND_TIMEOUT_MS = 120000;
 const OPTIONAL_CDP_TIMEOUT_MS = 3000;
 const SCRIPT_SOURCE_TIMEOUT_MS = 15000;
 const LARGE_SCRIPT_SOURCE_TIMEOUT_MS = 60000;
+// 浏览器侧跨导航临时缓存；不是采集包正文大小上限，读到的正文仍完整落盘。
+const DURABLE_RESPONSE_BUFFER_BYTES = 100 * 1024 * 1024;
 const INTERNAL_SCRIPT_URL_PREFIX = 'kvm-recon-internal://';
 
 /**
@@ -1701,6 +1703,23 @@ export async function attachProtocolAgnosticCapture(
       input.networkEnableTimeoutMs ?? DEFAULT_NETWORK_ENABLE_TIMEOUT_MS,
       'Network.enable timed out before the renderer committed a document',
     );
+    try {
+      // XHR 的 onload 可立即导航；loadingFinished 到达主进程时旧 renderer
+      // 已释放正文，事件到达时预读也来不及。将正文暂存到 renderer 外。
+      // 单独配置根窗口/popup，避免改变暂停中的 Worker 初始化顺序。
+      await awaitWithTimeout(
+        loggedSend('Network.configureDurableMessages', {
+          maxTotalBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
+          maxResourceBufferSize: DURABLE_RESPONSE_BUFFER_BYTES,
+        }),
+        OPTIONAL_CDP_TIMEOUT_MS,
+        'Network.configureDurableMessages timed out',
+      );
+    } catch (error) {
+      // 可选能力：旧内核不支持时继续原有读取链，实际漏采仍由 missingBodies
+      // 门禁判定，不能因能力不可用中断原本能完整采集的设备。
+      input.evidence.droppedEvent('Network.configureDurableMessages', error);
+    }
     try {
       await awaitWithTimeout(
         loggedSend('Network.setCacheDisabled', { cacheDisabled: true }),

@@ -8,12 +8,16 @@ import { startCaptureSession } from './capture-session.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const jsonl = buffer => buffer.toString().split('\n').filter(Boolean).map(line => JSON.parse(line));
+const xhrMode = process.argv.includes('--xhr');
+const navigateAfterResponse = (path, next) => xhrMode
+  ? `const xhr = new XMLHttpRequest(); xhr.open('GET', '${path}'); xhr.onload = () => { location.href = '${next}'; }; xhr.send();`
+  : `fetch('${path}').then(r=>r.text()).then(()=>location.replace('${next}'));`;
 const content = {
   '/': '<html><body>initial-document<script src="/index.js"></script></body></html>',
-  '/index.js': 'fetch("/summary").then(r=>r.text()).then(()=>location.replace("/login")); // initial-source',
+  '/index.js': navigateAfterResponse('/summary', '/login'),
   '/summary': '{"initialResponse":true}',
   '/login': '<html><body>login-document<script src="/login.js"></script></body></html>',
-  '/login.js': 'setTimeout(()=>fetch("/privileges").then(r=>r.text()).then(()=>location.replace("/dashboard")),150); // login-source',
+  '/login.js': `setTimeout(() => { ${navigateAfterResponse('/privileges', '/dashboard')} },150);`,
   '/privileges': '{"loginResponse":true}',
   '/dashboard': '<html><body>final-document</body></html>',
 };
@@ -71,7 +75,7 @@ app.whenReady().then(async () => {
     }
     assert.deepEqual(session.integrityEvidence().missingBodies, []);
     assert.deepEqual(session.integrityEvidence().missingWorkerSources, []);
-    console.log('navigation capture e2e passed: 7 HTTP bodies and both navigation scripts preserved through slow screenshots');
+    console.log(`navigation capture e2e passed (${xhrMode ? 'XHR' : 'fetch'}): 7 HTTP bodies and both navigation scripts preserved through slow screenshots`);
   } finally {
     if (session) { await session.stop(); await session.workspace.close(); }
     win?.destroy();

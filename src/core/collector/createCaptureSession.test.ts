@@ -2728,6 +2728,31 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     }
   });
 
+  it.each([false, true])('跨导航正文保留不可用=%s：仍走原读取链并按实际正文判断缺口', async unavailable => {
+    const session = await startSession({
+      jobId: `job-durable-${unavailable}`, rootDir: await newRootDir(), safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({
+      failingCommands: unavailable ? ['Network.configureDurableMessages'] : [],
+      responseBodies: { available: { body: 'preserved response' } },
+      invalidResponseBodyIds: ['missing'],
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    expect(fake.commands.indexOf('Network.configureDurableMessages')).toBeGreaterThan(fake.commands.indexOf('Network.enable'));
+    for (const requestId of ['available', 'missing']) {
+      fake.emit('Network.requestWillBeSent', { requestId, request: { method: 'GET', url: `http://bmc.test/${requestId}` } });
+      fake.emit('Network.responseReceived', { requestId, response: { status: 200, headers: {} } });
+      fake.emit('Network.loadingFinished', { requestId });
+    }
+    await session.stop();
+    const transactions = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+    const body = transactions.find(row => row.id === 'available')?.responseBody as { path: string };
+    expect((await session.workspace.readArtifact(body.path)).toString()).toBe('preserved response');
+    expect(transactions.find(row => row.id === 'missing')?.responseBody).toBeUndefined();
+    expect(session.integrityEvidence().missingBodies.map(gap => gap.id)).toEqual(['missing']);
+    expect(session.evidence().diagnostics().droppedEventByMethod['Network.configureDurableMessages'] ?? 0).toBe(unavailable ? 1 : 0);
+  });
+
   it('短命脚本在慢 journal 前预读且积压有界，超限按序保存，closed 不再发读命令', async () => {
     const session = await startSession({
       jobId: 'job-early-read-bound', rootDir: await newRootDir(), safetyMarginBytes: 1,
