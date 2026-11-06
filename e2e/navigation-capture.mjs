@@ -16,6 +16,8 @@ const appDir = await mkdtemp(join(tmpdir(), 'kvm-navigation-e2e-'));
 try {
   await build({ entryPoints: [join(root, 'src/core/collector/createCaptureSession.ts')],
     bundle: true, platform: 'node', format: 'esm', outfile: join(appDir, 'capture-session.mjs') });
+  await build({ entryPoints: [join(root, 'src/main/capture/electronRequestObserver.ts')],
+    bundle: true, platform: 'node', format: 'esm', outfile: join(appDir, 'request-observer.mjs') });
   await copyFile(join(here, 'navigation-capture-main.mjs'), join(appDir, 'main.mjs'));
   await writeFile(join(appDir, 'package.json'), JSON.stringify({ name: 'navigation-capture-e2e', main: 'main.mjs' }));
   const env = { ...process.env };

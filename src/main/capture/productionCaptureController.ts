@@ -41,6 +41,7 @@ import { createDiagnosticRecorder } from './controllerDiagnosticRecorder';
 import { createElectronNetlogSource } from './electronNetlogSource';
 import { createViewerAutoStopWatchdog, type ViewerAutoStopWatchdog } from './viewerAutoStopWatchdog';
 import { shouldCommitAboutBlankBeforeCdp } from './cdpRendererReady';
+import { createElectronRequestObserver } from './electronRequestObserver';
 
 export type ProductionCaptureTarget = BmcTarget & { originalInput?: string };
 
@@ -113,6 +114,7 @@ export async function createProductionCapture(
   // 同一形态——收尾序列不可重放（认证 probe 是带会话 Cookie 的网络副作用），
   // 失败也复用同一 promise：调用方拿到同一拒绝，重试入口在 discard/恢复链路
   let stopPromise: Promise<void> | null = null;
+  let requestObserver: ReturnType<typeof createElectronRequestObserver> | undefined;
 
   // Viewer 自动收尾看门狗（规范 §7.4）：检测 → 稳定 → 只 stop，
   // 绝不自动导出 / 关窗 / 弹保存框；识别失败只记诊断，绝不停采集。
@@ -317,12 +319,17 @@ export async function createProductionCapture(
     if (stopped) throw new Error(`采集作业已收尾，拒绝重复 start：${init.jobId}`);
     const electronSession = session.fromPartition(partition);
     registerCaptureSession(electronSession);
+    requestObserver = createElectronRequestObserver(electronSession, captureSession, contentsId => {
+      const window = [...windows].find(candidate => !candidate.isDestroyed() && candidate.webContents.id === contentsId);
+      return window ? windowRootTargetIds.get(window) : undefined;
+    });
     electronSession.setCertificateVerifyProc((_request, callback) => {
       // 采集分区只打开目标 BMC。现场自签证书在 Chrome 要点「高级」；这里直接放行，避免白屏。
       callback(0);
     });
     // 安全网：万一有窗口没走 ensureCdp（如脚本控制的 window.open），请求前补挂
     electronSession.webRequest.onBeforeRequest((details, callback) => {
+      requestObserver?.beforeRequest(details);
       const contents =
         typeof details.webContentsId === 'number'
           ? webContents.fromId(details.webContentsId)
@@ -394,6 +401,7 @@ export async function createProductionCapture(
           captureSession.evidence().droppedEvent('probe-stop-write', error);
         }
         await captureSession.stop();
+        requestObserver?.dispose();
         stoppedAt = new Date().toISOString();
         stopped = true;
       } finally {

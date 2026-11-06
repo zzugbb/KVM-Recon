@@ -9,6 +9,7 @@
  */
 
 import type { CdpJournal } from './createCdpJournal';
+import { createBrowserRequestCancellationTracker, type BrowserRequestEvent } from './browserRequestCancellation';
 import type { HttpCollector } from './createHttpCollector';
 import type { WebSocketCollector } from './createWebSocketCollector';
 import type { RuntimeCryptoCollector } from './createRuntimeCryptoCollector';
@@ -134,6 +135,7 @@ export interface PageEnvironment {
 }
 
 export interface AttachProtocolAgnosticCaptureInput {
+  recordBrowserNetwork?: (row: unknown) => Promise<void>;
   cdp: CdpSession;
   journal: CdpJournal;
   evidence: CollectorEvidence;
@@ -172,6 +174,7 @@ export interface BrowserStateStepOutcome {
 }
 
 export interface AttachedCapture {
+  recordBrowserRequest(event: BrowserRequestEvent): void;
   drain(): Promise<void>;
   /** 停止接纳独立新请求；在途完成事件、重定向及实时尾帧仍可排空落盘。 */
   stopAccepting(): void;
@@ -482,6 +485,14 @@ export async function attachProtocolAgnosticCapture(
   const rootCommandTimeoutMs = input.rootCommandTimeoutMs ?? DEFAULT_ROOT_COMMAND_TIMEOUT_MS;
   const bodyCommandTimeoutMs = input.bodyCommandTimeoutMs ?? DEFAULT_BODY_COMMAND_TIMEOUT_MS;
   const httpDrainTimeoutMs = input.httpDrainTimeoutMs ?? 5_000;
+  const cancellations = createBrowserRequestCancellationTracker({
+    record: row => {
+      if (!input.recordBrowserNetwork) return Promise.reject(new Error('浏览器网络事件记录器未配置'));
+      return input.recordBrowserNetwork(row);
+    },
+    isPending: id => input.http.inFlightHops().some(hop => hop.id === id),
+    cancel: id => input.http.commit(id, 'failed'),
+  });
 
   function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -1680,6 +1691,11 @@ export async function attachProtocolAgnosticCapture(
     enqueueEvent(async () => {
       try {
         await handleEvent(method, params, sessionId, earlyRead);
+        if (!sessionId) {
+          await cancellations.observeCdp(method, params,
+            method === 'Network.requestWillBeSent'
+              ? activeHopId(scopedId(stringValue(params.requestId), sessionId)) : undefined);
+        }
       } finally {
         // 无匹配 hop / journal 失败等分支也记下已执行的命令，释放预读槽位。
         if (earlyRead && !earlyRead.claimed) {
@@ -1807,6 +1823,11 @@ export async function attachProtocolAgnosticCapture(
   ready = true;
 
   return {
+    recordBrowserRequest(event) {
+      // 与 CDP 共用事件队列，先落取消证据再提交事务；不修改/伪造 CDP journal。
+      if (phase === 'closed' || (phase === 'drain' && event.kind === 'before-request')) return;
+      enqueueEvent(() => cancellations.observeBrowser(event));
+    },
     stopAccepting() {
       if (phase === 'live') phase = 'drain';
     },

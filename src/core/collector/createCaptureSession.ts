@@ -20,6 +20,7 @@ import {
   type CollectorEvidence,
 } from './collectorEvidence';
 import { createHttpCollector } from './createHttpCollector';
+import type { BrowserRequestEvent } from './browserRequestCancellation';
 import { createWebSocketCollector } from './createWebSocketCollector';
 import { createRuntimeCryptoCollector } from './createRuntimeCryptoCollector';
 import { createScriptCollector } from './createScriptCollector';
@@ -96,6 +97,7 @@ export interface CaptureSessionAttachContext {
 }
 
 export interface CaptureSession {
+  recordBrowserRequest(targetId: string, event: BrowserRequestEvent): void;
   readonly workspace: JobWorkspace;
   /**
    * 挂载一个根 CDP 会话（一个 Electron 窗口一个 webContents.debugger）。
@@ -559,6 +561,9 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
 
   return {
     workspace,
+    recordBrowserRequest(targetId, event) {
+      rootAttachments.get(targetId)?.recordBrowserRequest(event);
+    },
     attachCdp(cdp, context) {
       if (stopped) return Promise.reject(new Error('采集会话已停止，不能再挂载 CDP'));
       let operation!: Promise<void>;
@@ -576,6 +581,16 @@ export async function startCaptureSession(init: CaptureSessionInit): Promise<Cap
             realtime,
             evidence,
             now,
+            recordBrowserNetwork: async row => {
+              try {
+                await workspace.appendJsonl('raw/browser/network-events.jsonl', {
+                  targetId: context?.targetId ?? 'target-root', observation: row,
+                });
+              } catch (error) {
+                evidence.recordGap('journalWriteFailures', 'browser-network', '浏览器网络取消证据写入失败');
+                throw error;
+              }
+            },
             rootTargetId: context?.targetId ?? 'target-root',
             windowId: context?.windowId,
             rootWindowRole: context?.windowRole,
