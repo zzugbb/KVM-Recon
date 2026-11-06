@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { startCaptureSession, type CaptureSession, type CdpSession } from './createCaptureSession';
 import { derivePackIntegrity } from '../capture-pack-v2/packStatus';
+import { detectViewerActivity } from './viewerActivity';
 
 /**
  * 采集会话：协议无关采集把 CDP 事实落到 JobWorkspace。
@@ -2637,6 +2638,128 @@ describe('采集会话（CDP / HTTP / WS / WebCrypto / 脚本 / 浏览器状态�
     expect(facts.workflowStatus).toBe('KVM_REACHED');
     expect(facts.evidenceSummary.workflowStatus).toBe('KVM_REACHED');
     expect(session.integrityEvidence().workflowStatus).toBe('KVM_REACHED');
+  });
+
+  it.each([
+    { name: '主框架页内跳转', surface: 'new', channel: true, child: false, reached: true },
+    { name: '无画布的后台通道', surface: 'none', channel: true, child: false, reached: false },
+    { name: '仅有画布', surface: 'new', channel: false, child: false, reached: false },
+    { name: '跳转前已存在的画布', surface: 'old', channel: true, child: false, reached: false },
+    { name: '子框架跳转不能冒充主框架', surface: 'new', channel: true, child: true, reached: false },
+  ])('页内 Viewer 识别：$name', async ({ surface, channel, child, reached }) => {
+    let clockMs = Date.parse('2026-11-06T06:00:00.000Z');
+    const session = await startSession({
+      jobId: 'job-same-document-viewer', rootDir: await newRootDir(), safetyMarginBytes: 1,
+      now: () => new Date(clockMs).toISOString(),
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    const report = (payload: Record<string, unknown>) => fake.emit('Runtime.bindingCalled', {
+      name: '__kvmReconObserver', payload: JSON.stringify(payload),
+    });
+    // 首次整页导航在用户动作之前，不能借此满足「打开 Viewer」。
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'http://bmc.test/#/login' } });
+    await until(() => session.workflowFacts().navigations.length === 1);
+    clockMs += 1000;
+    report({ kind: 'action', actionKind: 'click', elementSummary: 'a', url: 'http://bmc.test/#/' });
+    await until(() => session.workflowFacts().actions.length === 1);
+    if (surface === 'old') {
+      report({ kind: 'render-surface', surface: 'canvas-context', detail: '2d' });
+      await until(() => session.workflowFacts().renderSurfaces.length === 1);
+    }
+    clockMs += 1000;
+    fake.emit('Page.navigatedWithinDocument', {
+      frameId: child ? 'child' : 'main', url: 'http://bmc.test/#/operations/kvm', navigationType: 'fragment',
+    });
+    if (surface === 'new') report({ kind: 'render-surface', surface: 'canvas-context', detail: '2d' });
+    if (channel) {
+      fake.emit('Network.webSocketCreated', { requestId: 'ws-spa', url: 'ws://bmc.test/stream' });
+      for (const method of ['Network.webSocketFrameSent', 'Network.webSocketFrameReceived']) {
+        fake.emit(method, { requestId: 'ws-spa', response: { opcode: 2, payloadData: 'AQ==' } });
+      }
+    }
+    await until(async () => (await session.workspace.readArtifact('raw/browser/timeline.jsonl')).includes('hash-change'));
+    await session.stop();
+    expect(session.integrityEvidence().workflowStatus).toBe(reached ? 'KVM_REACHED' : 'TARGET_OPENED');
+    // 看门狗与最终完整度必须使用同一事实，防止仅改标签却不触发阶段截图。
+    expect(detectViewerActivity(session.workflowFacts()).length > 0).toBe(reached);
+    const timeline = jsonl(await session.workspace.readArtifact('raw/browser/timeline.jsonl'));
+    expect(timeline.some(row => row.kind === 'hash-change')).toBe(true);
+  });
+
+  it('慢速导航截图不阻塞旧文档响应正文和脚本源码的保存；stop 等待截图完成', async () => {
+    let releaseScreenshot!: (value: string) => void;
+    const screenshotDataPromise = new Promise<string>(resolve => { releaseScreenshot = resolve; });
+    const session = await startSession({
+      jobId: 'job-navigation-body-race', rootDir: await newRootDir(), safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp({
+      screenshotDataPromise,
+      responseBodies: { 'old-document': { body: 'original response before navigation' } },
+      scriptSources: { 'old-script': { scriptSource: 'window.oldDocument = true;' } },
+    });
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'http://bmc.test/' } });
+    await until(() => fake.commands.includes('Page.captureScreenshot'));
+    fake.emit('Network.requestWillBeSent', {
+      requestId: 'old-document', type: 'Document',
+      request: { method: 'GET', url: 'http://bmc.test/', headers: {} },
+    });
+    fake.emit('Network.responseReceived', { requestId: 'old-document', response: { status: 200, headers: {} } });
+    fake.emit('Network.loadingFinished', { requestId: 'old-document' });
+    fake.emit('Debugger.scriptParsed', { scriptId: 'old-script', url: 'http://bmc.test/index.js' });
+    try {
+      // 截图仍被门控阻塞；真正的浏览器可能此时导航并回收旧文档资源。
+      await until(() => fake.commands.includes('Network.getResponseBody') && fake.commands.includes('Debugger.getScriptSource'), 1000);
+      let stopped = false;
+      const stopping = session.stop().then(() => { stopped = true; });
+      await new Promise(resolve => setImmediate(resolve));
+      expect(stopped).toBe(false);
+      releaseScreenshot('c2NyZWVuc2hvdA==');
+      await stopping;
+      const transactions = jsonl(await session.workspace.readArtifact('raw/http/transactions.jsonl'));
+      const body = transactions[0].responseBody as { path: string };
+      expect((await session.workspace.readArtifact(body.path)).toString()).toBe('original response before navigation');
+      expect(session.integrityEvidence().missingBodies).toEqual([]);
+      expect(session.integrityEvidence().missingWorkerSources).toEqual([]);
+    } finally {
+      releaseScreenshot('c2NyZWVuc2hvdA==');
+      await session.stop();
+    }
+  });
+
+  it('短命脚本在慢 journal 前预读且积压有界，超限按序保存，closed 不再发读命令', async () => {
+    const session = await startSession({
+      jobId: 'job-early-read-bound', rootDir: await newRootDir(), safetyMarginBytes: 1,
+    });
+    const fake = createFakeCdp();
+    await session.attachCdp(fake.cdp, { targetId: 'target-root' });
+    let releaseJournal!: () => void;
+    const journalGate = new Promise<void>(resolve => { releaseJournal = resolve; });
+    const append = session.workspace.appendJsonl.bind(session.workspace);
+    const appendSpy = vi.spyOn(session.workspace, 'appendJsonl').mockImplementation(async (...args) => {
+      if (args[0] === 'raw/cdp/events.jsonl') await journalGate;
+      return append(...args);
+    });
+    try {
+      for (let index = 0; index < 33; index += 1) {
+        fake.emit('Debugger.scriptParsed', { scriptId: `short-${index}`, url: `http://bmc.test/${index}.js` });
+      }
+      expect(fake.commands.filter(command => command === 'Debugger.getScriptSource')).toHaveLength(32);
+      releaseJournal();
+      await session.stop();
+      expect(fake.commands.filter(command => command === 'Debugger.getScriptSource')).toHaveLength(33);
+      const scripts = JSON.parse((await session.workspace.readArtifact('raw/scripts/index.json')).toString()).scripts;
+      expect(scripts).toHaveLength(33);
+      expect(scripts.every((script: { bodyRef?: unknown }) => script.bodyRef)).toBe(true);
+      expect(session.integrityEvidence().missingWorkerSources).toEqual([]);
+      fake.emit('Debugger.scriptParsed', { scriptId: 'after-stop', url: 'http://bmc.test/late.js' });
+      expect(fake.commands.filter(command => command === 'Debugger.getScriptSource')).toHaveLength(33);
+    } finally {
+      releaseJournal();
+      await session.stop();
+      appendSpy.mockRestore();
+    }
   });
 
   // （规范 §7.4「非持续响应正文全部落盘」）：自动收尾看门狗

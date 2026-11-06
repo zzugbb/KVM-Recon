@@ -189,7 +189,7 @@ export interface AttachedCapture {
   collectPageEnvironment(): Promise<PageEnvironment | null>;
   /** catalog/targets.json 与 raw/browser/targets.json 的行。 */
   targets(): PackV2TargetRow[];
-  /** 主框架导航事实（Page.frameNavigated 无 parentId 的帧；派生引擎只读快照）。 */
+  /** 主框架导航事实（含已知主框架的页内导航；派生引擎只读快照）。 */
   mainFrameNavigations(): Array<{ occurredAt: string; targetId: string; url: string | null }>;
   /** 采集器是否在第一次导航前就绪（规范 §14 条件 1 的事实）。 */
   readyBeforeFirstNavigation(): boolean;
@@ -434,6 +434,8 @@ export async function attachProtocolAgnosticCapture(
   const targetRows = new Map<string, PackV2TargetRow>();
   // 主框架导航事实（内存态，数量小；派生引擎与 Viewer 识别只读快照）
   const mainFrameNavigations: Array<{ occurredAt: string; targetId: string; url: string | null }> = [];
+  // 每个 CDP session 各自的主框架，避免把普通 iframe 的 hash 变化算作根页面打开。
+  const mainFrameIds = new Map<string, string>();
   const requestChains = new Map<string, string[]>();
   const ignored = new Set<string>();
   // Worker 跨 session 事务关联：入口脚本由页面 loader 发起（requestWillBeSent 落根会话），Worker
@@ -456,6 +458,20 @@ export async function attachProtocolAgnosticCapture(
   const pendingFinishCommits = new Map<string, ReturnType<typeof setTimeout>>();
   let eventQueue = Promise.resolve();
   let sourceQueue = Promise.resolve();
+  // 页面截图/DOM 可能等待渲染，不能挡住短命 HTTP 正文与脚本的读取。
+  // 单独串行保存，drain 仍等待它落定，不减少截图或绕过收尾门禁。
+  let snapshotQueue = Promise.resolve();
+  type EarlyRead = {
+    command: string;
+    params: Record<string, unknown>;
+    timestamp: string;
+    claimed: boolean;
+    outcome: Promise<{ ok: true; result: unknown } | { ok: false; error: unknown }>;
+  };
+  // CDP 正文属于旧文档：必须在事件到达时读取，不能等 journal/其他命令落盘。
+  // 只提前读取，关联、校验和落盘仍走原有队列；最多保留 32 个预读结果，
+  // 超限回到原有按序读取，绝不为限流静默丢正文或放松完整度门禁。
+  const earlyReads = new Set<EarlyRead>();
   let queuedHighVolumeEvents = 0;
   let queuedHighVolumeBytes = 0;
   let phase: 'live' | 'drain' | 'closed' = 'live';
@@ -489,6 +505,7 @@ export async function attachProtocolAgnosticCapture(
     method?: string,
     params?: Record<string, unknown>,
     sessionId?: string,
+    onAccepted?: () => void,
   ): void {
     if (phase === 'closed') {
       // 丢弃必须记账（规范 §3：没有记账的静默丢弃等于编造「没有发生过」）
@@ -528,6 +545,7 @@ export async function attachProtocolAgnosticCapture(
       queuedHighVolumeEvents += 1;
       queuedHighVolumeBytes += estimatedBytes;
     }
+    onAccepted?.();
     const run = async () => {
       try {
         if (drainingRedirect) {
@@ -654,10 +672,13 @@ export async function attachProtocolAgnosticCapture(
     command: string,
     params?: Record<string, unknown>,
     sessionId?: string,
+    earlyRead?: EarlyRead,
   ): Promise<unknown> {
-    const timestamp = input.now();
+    const timestamp = earlyRead?.timestamp ?? input.now();
     try {
-      const result = await sendCdpCommand(input.cdp, command, params, sessionId);
+      const outcome = earlyRead ? await earlyRead.outcome : undefined;
+      if (outcome && !outcome.ok) throw outcome.error;
+      const result = outcome?.ok ? outcome.result : await sendCdpCommand(input.cdp, command, params, sessionId);
       await input.journal.recordCommand({
         timestamp,
         method: command,
@@ -679,7 +700,37 @@ export async function attachProtocolAgnosticCapture(
         error: errorMessage(error),
       });
       throw error;
+    } finally {
+      if (earlyRead) earlyReads.delete(earlyRead);
     }
+  }
+
+  function startEarlyRead(method: string, params: Record<string, unknown>, sessionId?: string): EarlyRead | undefined {
+    if (earlyReads.size >= 32) return undefined;
+    const scriptId = stringValue(params.scriptId);
+    const requestId = stringValue(params.requestId);
+    const isScript = method === 'Debugger.scriptParsed' && scriptId &&
+      !stringValue(params.url).startsWith(INTERNAL_SCRIPT_URL_PREFIX);
+    if (!isScript && !(method === 'Network.loadingFinished' && requestId)) return undefined;
+    // Worker 的 HTTP 可能跨 session 迁移，必须先按原逻辑消歧关联；
+    // 这里只提前读取主窗口/popup 自身的网络正文，不改变 Worker 补读行为。
+    if (!isScript && sessionId) return undefined;
+    const command = isScript ? 'Debugger.getScriptSource' : 'Network.getResponseBody';
+    const commandParams = isScript ? { scriptId } : { requestId };
+    const timeoutMs = isScript
+      ? (numberValue(params.length) >= 2 * 1024 * 1024 ? LARGE_SCRIPT_SOURCE_TIMEOUT_MS : SCRIPT_SOURCE_TIMEOUT_MS)
+      : bodyCommandTimeoutMs;
+    const timestamp = input.now();
+    // async 包装也接住同步抛错；立即注册 reject handler，排队期间不产生未处理拒绝。
+    const read = async () => await awaitWithTimeout(
+      sendCdpCommand(input.cdp, command, commandParams, sessionId), timeoutMs, `${command} timed out`,
+    );
+    const earlyRead: EarlyRead = {
+      command, params: commandParams, timestamp, claimed: false,
+      outcome: read().then(result => ({ ok: true as const, result }), error => ({ ok: false as const, error })),
+    };
+    earlyReads.add(earlyRead);
+    return earlyRead;
   }
 
   function hopIds(baseId: string): string[] {
@@ -826,9 +877,9 @@ export async function attachProtocolAgnosticCapture(
    * 取响应正文并挂到事务行。false = 行已 commit（detach 强制收尾 / flush 等），
    * 正文已取出但无法再关联——由调用方显式记账，不得无痕丢弃。
    */
-  async function storeResponseBody(hopId: string, requestId: string, sessionId?: string): Promise<boolean> {
+  async function storeResponseBody(hopId: string, requestId: string, sessionId?: string, earlyRead?: EarlyRead): Promise<boolean> {
     const result = await awaitWithTimeout(
-      loggedSend('Network.getResponseBody', { requestId }, sessionId),
+      loggedSend('Network.getResponseBody', { requestId }, sessionId, earlyRead),
       bodyCommandTimeoutMs,
       'Network.getResponseBody timed out',
     );
@@ -1013,6 +1064,7 @@ export async function attachProtocolAgnosticCapture(
     method: string,
     params: Record<string, unknown>,
     sessionId?: string,
+    earlyRead?: EarlyRead,
   ): Promise<void> {
     await input.journal.recordEvent({
       timestamp: input.now(),
@@ -1174,6 +1226,7 @@ export async function attachProtocolAgnosticCapture(
       const lengthBytes = optionalNumber(params.length);
       const contentHash = optionalString(params.hash);
       const fetchSessionId = sessionId;
+      if (earlyRead) earlyRead.claimed = true;
       // getScriptSource 走独立队列，避免挡住 Target.attachedToTarget / Network.enable
       enqueueSourceFetch(async () => {
         let source = '';
@@ -1181,7 +1234,7 @@ export async function attachProtocolAgnosticCapture(
         let fetchFailed = false;
         try {
           const result = await awaitWithTimeout(
-            loggedSend('Debugger.getScriptSource', { scriptId }, fetchSessionId),
+            loggedSend('Debugger.getScriptSource', { scriptId }, fetchSessionId, earlyRead),
             lengthBytes !== undefined && lengthBytes >= 2 * 1024 * 1024
               ? LARGE_SCRIPT_SOURCE_TIMEOUT_MS
               : SCRIPT_SOURCE_TIMEOUT_MS,
@@ -1264,6 +1317,8 @@ export async function attachProtocolAgnosticCapture(
       });
       const isMainFrame = !frame.parentId;
       if (isMainFrame) {
+        const frameId = stringValue(frame.id);
+        if (frameId) mainFrameIds.set(sessionId ?? '', frameId);
         mainFrameNavigations.push({
           occurredAt: input.now(),
           targetId: targetIdOf(sessionId),
@@ -1271,19 +1326,32 @@ export async function attachProtocolAgnosticCapture(
         });
         // 主框架导航点：截图 + DOM 快照（规范 §8.4）
         const label = optionalString(frame.url) || 'navigation';
-        await captureScreenshot(sessionId, targetIdOf(sessionId), label);
-        await captureDomSnapshot(sessionId, targetIdOf(sessionId), label);
+        const targetId = targetIdOf(sessionId);
+        snapshotQueue = snapshotQueue.then(async () => {
+          await captureScreenshot(sessionId, targetId, label);
+          await captureDomSnapshot(sessionId, targetId, label);
+        }).catch(error => {
+          input.evidence.droppedEvent('navigation-snapshot', error);
+          input.evidence.recordGap('browserState', targetId, `导航快照失败：${errorMessage(error)}`);
+        });
       }
       return;
     }
 
     if (method === 'Page.navigatedWithinDocument') {
+      const occurredAt = input.now();
+      const targetId = targetIdOf(sessionId);
+      const url = optionalString(params.url);
       await input.browser.addTimeline({
-        occurredAt: input.now(),
+        occurredAt,
         kind: 'hash-change',
-        targetId: targetIdOf(sessionId),
-        url: optionalString(params.url),
+        targetId,
+        url,
       });
+      const frameId = stringValue(params.frameId);
+      if (frameId && frameId === mainFrameIds.get(sessionId ?? '')) {
+        mainFrameNavigations.push({ occurredAt, targetId, url: url ?? null });
+      }
       return;
     }
 
@@ -1491,7 +1559,8 @@ export async function attachProtocolAgnosticCapture(
       }
       let stored = true;
       try {
-        stored = await storeResponseBody(id, requestId, sessionId);
+        if (earlyRead) earlyRead.claimed = true;
+        stored = await storeResponseBody(id, requestId, sessionId, earlyRead);
       } catch (error) {
         // 捕获响应体不可读取：缓存命中、重定向、流式资源或 CDP 生命周期限制
         // 读失败的事实按 droppedEvent 显式记账；缺正文是否构成缺口由 commit
@@ -1605,7 +1674,21 @@ export async function attachProtocolAgnosticCapture(
   ) => {
     // 「首个导航前就绪」按事件到达时刻判定（排队处理可能晚于 ready 置位）
     if (method === 'Page.frameNavigated' && !ready) navigationSeen = true;
-    enqueueEvent(() => handleEvent(method, params, sessionId), method, params, sessionId);
+    let earlyRead: EarlyRead | undefined;
+    enqueueEvent(async () => {
+      try {
+        await handleEvent(method, params, sessionId, earlyRead);
+      } finally {
+        // 无匹配 hop / journal 失败等分支也记下已执行的命令，释放预读槽位。
+        if (earlyRead && !earlyRead.claimed) {
+          try {
+            await loggedSend(earlyRead.command, earlyRead.params, sessionId, earlyRead);
+          } catch (error) {
+            input.evidence.droppedEvent(earlyRead.command, error);
+          }
+        }
+      }
+    }, method, params, sessionId, () => { earlyRead = startEarlyRead(method, params, sessionId); });
   };
   input.cdp.on('message', onCdpMessage);
 
@@ -1712,9 +1795,11 @@ export async function attachProtocolAgnosticCapture(
       for (let round = 0; round < 50; round += 1) {
         const events = eventQueue;
         const sources = sourceQueue;
+        const snapshots = snapshotQueue;
         await events;
         await sources;
-        if (eventQueue === events && sourceQueue === sources) break;
+        await snapshots;
+        if (eventQueue === events && sourceQueue === sources && snapshotQueue === snapshots) break;
       }
       // Debugger.enable 的 scriptParsed 可能略晚于命令返回（CDP 推送无完成
       // 信号，无法用 Promise 门控确定性等待）。此处是有界收尾宽限：只补
@@ -1723,9 +1808,11 @@ export async function attachProtocolAgnosticCapture(
       for (let round = 0; round < 20; round += 1) {
         const events = eventQueue;
         const sources = sourceQueue;
+        const snapshots = snapshotQueue;
         await events;
         await sources;
-        if (eventQueue === events && sourceQueue === sources) break;
+        await snapshots;
+        if (eventQueue === events && sourceQueue === sources && snapshotQueue === snapshots) break;
       }
       // 排空队列不等于网络请求完成。停止接纳新请求后，给已接纳的非持续
       // 请求固定完成预算；重定向不重置预算，流式响应不参与等待。
@@ -1738,6 +1825,7 @@ export async function attachProtocolAgnosticCapture(
         const sources = sourceQueue;
         await events;
         await sources;
+        await snapshotQueue;
       }
       // loadingFinished 的延迟提交计时器收口（responseReceivedExtraInfo 竞态）：
       // 计时器最迟一个宽限后自行提交，此处只等其触发，不引入新的等待源
