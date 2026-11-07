@@ -22,7 +22,7 @@
 
 ## 发布到 GitHub Releases
 
-本次发布版本为 **0.3.3**，标签为 **`v0.3.3`**。发布说明直接复制 [CHANGELOG 的 0.3.3 章节](../CHANGELOG.md#033---2026-11-07)。
+当前已发布版本为 **0.3.3**，标签为 **`v0.3.3`**；macOS arm64 安装版实采验收结果见[验证基线](status.md#验证基线)。以下以该版本说明发布流程；后续发版须替换为新版本号，不重复创建或移动已有标签。发布说明取自 [CHANGELOG 的对应章节](../CHANGELOG.md#033---2026-11-07)。
 
 1. 将版本准备提交推送到 `main`，确认该提交的 CI 通过。`package.json`、`package-lock.json` 和 CHANGELOG 章节须对应同一版本。
 2. 打开 GitHub **Releases → Draft a new release**，创建新标签 **`v0.3.3`**，目标选已包含版本准备提交的 `main`，标题填写 **`KVM-Recon v0.3.3`**，粘贴更新日志后点击 **Publish release**。不要复用旧标签，无需手工上传安装包。
