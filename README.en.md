@@ -15,7 +15,7 @@
   <a href="https://zzugbb.github.io/KVM-Recon/">Showcase</a> ·
   <a href="#project-demo">Video</a> ·
   <a href="https://zzugbb.github.io/KVM-Recon/#cases">Cases</a> ·
-  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.2">Download</a> ·
+  <a href="https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.3">Download</a> ·
   <a href="docs/status.md#系统架构与技术实现">Architecture</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
@@ -31,13 +31,13 @@ KVM-Recon is an offline macOS / Windows desktop client for server rooms without 
 
 Capture does not rely on vendor, model or protocol-family rules. The tool does not automate login, perform MITM, call external AI, generate adapters or fully decode video protocols. Original evidence is **unredacted** and must remain in controlled storage and handoff channels.
 
-The application version is **0.3.2**. Historical 0.2.x packs and YES / PARTIAL / NO results are not Capture Pack 2.0 integrity verdicts. The client UI and detailed guides are Chinese.
+The application version is **0.3.3**. Historical 0.2.x packs and YES / PARTIAL / NO results are not Capture Pack 2.0 integrity verdicts. The client UI and detailed guides are Chinese.
 
 ## Project demo
 
 A 96-second project introduction video. Play the 720p version below (about 9.9 MB), or download the 1080p original.
 
-The video preserves the original concept demonstration and synthetic examples. Dependency versions in its screenshots are historical; the opening terminal animation is not an executable CLI. See the [field guide](docs/field-guide.md) for current 0.3.2 behavior and the [video notes](docs/assets/README.md) for the scope of the footage.
+The video preserves the original concept demonstration and synthetic examples. Dependency versions in its screenshots are historical; the opening terminal animation is not an executable CLI. See the [field guide](docs/field-guide.md) for current 0.3.3 behavior and the [video notes](docs/assets/README.md) for the scope of the footage.
 
 https://github.com/user-attachments/assets/bb067c0c-5118-45ce-aeeb-b0b4935e9243
 
@@ -78,7 +78,7 @@ The diagram shows the main modules and data relationships; observation, storage 
 
 ## Download and use
 
-Get macOS / Windows installers from the [v0.3.2 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.2), and verify `SHA256SUMS.txt`.
+Get macOS / Windows installers from the [v0.3.3 Release](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.3), and verify `SHA256SUMS.txt`.
 
 macOS builds are ad-hoc signed without notarization; Windows builds have no Authenticode signature. Downloads may show unknown developer / publisher prompts; see [installation and signing](docs/releasing.md#产物).
 

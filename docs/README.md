@@ -4,7 +4,7 @@
 
 - **视频素材与适用范围**：[视频说明](assets/README.md) → 历史概念演示、当前操作依据与素材维护。
 - **先看项目展示**：[展示站说明](../showcase/README.md) → 定位、系统架构、内部工作流程、合成案例与证据浏览；实际采集仍需桌面客户端。
-- **了解项目与下载**：[中文首页](../README.md) / [English](../README.en.md) → [安装包](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.2)。
+- **了解项目与下载**：[中文首页](../README.md) / [English](../README.en.md) → [安装包](https://github.com/zzugbb/KVM-Recon/releases/tag/v0.3.3)。
 - **现场采集**：[现场指南](field-guide.md) → 采集、收尾、手动导出与异常恢复。
 - **离场后分析**：[采集包阅读指南](capture-pack-guide.md) → 包内 `00_START_HERE.md` → 完整度与证据索引。
 - **开发与贡献**：[贡献指南](../CONTRIBUTING.md) → [开发规范](v0.3-development-spec.md) → [Schema](../schema/2.0/README.md) / [合成样例](../examples/README.md)。
@@ -14,7 +14,7 @@
 
 ## 维护约定
 
-当前文档适用于 KVM-Recon 0.3.2 / Capture Pack 2.0。已发布 0.2.x 的源码、旧格式说明与样例从对应 Git 标签查阅；版本记录中的旧行为只描述当时版本。现场历史资料保留在仓库外，不属于公开样例。
+当前文档适用于 KVM-Recon 0.3.3 / Capture Pack 2.0。已发布 0.2.x 的源码、旧格式说明与样例从对应 Git 标签查阅；版本记录中的旧行为只描述当时版本。现场历史资料保留在仓库外，不属于公开样例。
 
 README 提供概览，专题文档维护具体规则，其他入口优先引用。验证基线只保留当前版本的核验日期、结论、覆盖范围与待验证项，复验后更新原条目；开发过程从 Git 历史查询，不追加逐轮记录。
 

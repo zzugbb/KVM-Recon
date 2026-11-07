@@ -5,7 +5,7 @@
 本目录是 Capture Pack 2.0 的独立 JSON Schema（33 个），方便出机房后用任意校验器核对 zip 内文件。
 数据规范见[开发规范](../../docs/v0.3-development-spec.md)；类型契约是 `src/core/capture-pack-v2/types.ts`。
 Schema、类型与规范须保持一致；发现冲突时核对实现和契约，并同步修正，不绕过导出校验。`packV2Consistency.ts`
-导出时会按包内 `schema/` 副本对全部结构化文件执行 Schema 自校验（规范 §14 条件 10），
+导出时会按已注册的路径映射，使用包内 `schema/` 副本执行 Schema 自校验（规范 §14 条件 10），
 因此 `ajv` 是运行时依赖。导出器只复制本目录的 `*.schema.json`，本 README 是仓库维护说明，不属于离线包的必需文件。
 
 字段关系约束（负向用例见 `capturePackV2Schema.test.ts`）：
@@ -51,8 +51,14 @@ Schema、类型与规范须保持一致；发现冲突时核对实现和契约�
 | `replay-channels.schema.json` | `replay/channels.json` |
 | `probe-index.schema.json` | `raw/probe/index.json` |
 
-以下文件不是 JSON，不设 Schema：`00_START_HERE.md`、`ai/summary.md`、`report.html`
-（内容契约由 `packV2Layout.ts` 的 `checkStartHereContent` 校验）；`checksums.sha256`
+上表列出可供离线使用的 Schema，不代表每条路径都接入导出器的自动 Schema 校验。
+当前 `raw/browser/frame-tree.json` 和 `raw/controller/diagnostics.jsonl` 有对应 Schema，
+但尚未注册到 `packV2Consistency.ts` 的路径映射；`raw/browser/network-events.jsonl` 等
+补充工件尚无专用 Schema。它们仍保存到包内并参与文件清单和 SHA-256 核对，
+不能仅凭 checksum 通过就声称其结构已通过 Schema 校验。
+
+以下文件不使用本目录的 JSON Schema：`00_START_HERE.md`、`ai/summary.md`、`report.html`
+（其中只有 `00_START_HERE.md` 的内容由 `packV2Layout.ts` 的 `checkStartHereContent` 专项校验）；`checksums.sha256`
 （`<sha256>  <path>` 行，导出时计算）；`raw/http/bodies/*`、`raw/scripts/files/*`（按
 SHA-256 寻址的正文 blob）；`raw/websocket/*/frames.bin`（二进制 payload，偏移由
 frames.index.jsonl 描述）；`raw/browser/dom-snapshots/*`、`raw/browser/screenshots/*`；
@@ -60,7 +66,7 @@ frames.index.jsonl 描述）；`raw/browser/dom-snapshots/*`、`raw/browser/scre
 
 维护要求（规范 §19、§22）：
 
-- 本目录 Schema 覆盖当前 Capture Pack 2.0 的结构化文件；今后扩展
+- 本目录 Schema 的文件映射及当前自动校验边界见上文；今后扩展
   `JobWorkspace` / `BodyStore` / 采集器 / `EvidenceGraph` 导出的字段时，
   必须同步更新本目录与 `types.ts`，再更新测试与样例包。
 - `examples/capture-pack-v2/` 是与这些 Schema 保持同步的样例包。
