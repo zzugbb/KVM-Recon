@@ -65,7 +65,12 @@
     "vitest": "^5.1.0"
   },
   "overrides": {
-    "js-yaml": "4.3.2"
+    "js-yaml": "4.3.2",
+    "fast-uri": "3.1.9",
+    "source-map-js": "1.2.2",
+    "undici@7": "7.30.2",
+    "vite": "7.3.8",
+    "minimatch@>=7 <11.0.1": "11.0.1"
   },
   "build": {
     "appId": "com.kvmrecon.desktop",
