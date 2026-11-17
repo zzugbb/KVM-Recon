@@ -63,7 +63,7 @@
 - AMI IVTP 弱首字节只在 `/kvm` 且声明 `binary` / `base64` 子协议的 WebSocket 上标记，HPE IRC 等二进制流不再被提示为 AMI。
 - Dell Angular 差分加载的 ES2015 / ES5 主包按逻辑 bundle 互为替代；现代 Chromium 已完整采到 ES2015 时，不再因未加载 `nomodule` ES5 包而 PARTIAL。
 - 提升 HPE iLO、Dell DVC/APCP 与 Viewer Worker 关键源码的预算优先级；不提高 24 文件 / 8 MiB 安全上限。
-- 新增 `KVM_RECON_FIELD_COLLECTION_2` 可选离线门禁，覆盖 27 个现场 ZIP、16 份 HAR、H3C HDM2、Dell 两种 Viewer、HPE iLO4/iLO5 及现有 AMI/Huawei 回归。
+- 新增 `KVM_RECON_FIELD_COLLECTION_2` 可选离线门禁，覆盖外部验证 ZIP、HAR 及多种 Viewer 回归。
 
 ## [0.2.9] - 2026-09-15
 
